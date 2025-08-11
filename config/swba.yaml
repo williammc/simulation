@@ -1,0 +1,11 @@
+# Sliding Window Bundle Adjustment configuration
+type: sliding_window_ba
+
+swba:
+  window_size: 10  # Number of keyframes
+  max_iterations: 10
+  convergence_threshold: 1.0e-6
+  robust_kernel: huber
+  huber_delta: 1.0
+
+output_rate: 100.0  # Hz

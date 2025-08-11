@@ -1,0 +1,46 @@
+# Simulation configuration for circle trajectory
+trajectory:
+  type: circle
+  duration: 20.0
+  params:
+    radius: 2.0
+    height: 1.5
+    angular_velocity: 0.5
+
+cameras:
+  - id: cam0
+    model: pinhole-radtan
+    rate: 30.0
+    intrinsics:
+      fx: 458.654
+      fy: 457.296
+      cx: 367.215
+      cy: 248.375
+      width: 640
+      height: 480
+      distortion: [-0.28, 0.07, 0.0001, 0.0001, 0.0]
+    extrinsics:
+      translation: [0.065, 0.0, 0.0]  # 6.5cm forward of IMU
+      quaternion: [1.0, 0.0, 0.0, 0.0]  # No rotation
+    noise_std: 1.0  # 1 pixel standard deviation
+
+imus:
+  - id: imu0
+    rate: 200.0
+    noise_model: standard
+    noise_params:
+      accelerometer_noise_density: 0.00018
+      accelerometer_random_walk: 0.001
+      accelerometer_bias_stability: 0.0001
+      gyroscope_noise_density: 0.00026
+      gyroscope_random_walk: 0.0001
+      gyroscope_bias_stability: 0.0001
+
+environment:
+  num_landmarks: 1000
+  landmark_range: [10.0, 10.0, 5.0]
+  min_distance: 0.5
+  max_distance: 20.0
+
+coordinate_system: ENU
+seed: 42  # For reproducibility

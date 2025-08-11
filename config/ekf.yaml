@@ -1,0 +1,12 @@
+# Extended Kalman Filter configuration
+type: ekf
+
+ekf:
+  chi2_threshold: 5.991  # 95% confidence for 2 DOF
+  innovation_threshold: 3.0  # 3-sigma outlier rejection
+  initial_position_std: 0.1  # meters
+  initial_orientation_std: 0.087  # radians (~5 degrees)
+  initial_velocity_std: 0.1  # m/s
+  initial_bias_std: 0.01
+
+output_rate: 100.0  # Hz

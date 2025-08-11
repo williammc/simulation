@@ -1,0 +1,9 @@
+# Square Root Information Filter configuration
+type: srif
+
+srif:
+  qr_threshold: 1.0e-10  # Numerical stability threshold
+  chi2_threshold: 5.991  # 95% confidence
+  initial_information_scale: 10.0
+
+output_rate: 100.0  # Hz
