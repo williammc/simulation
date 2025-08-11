@@ -1,14 +1,15 @@
 """
 Mathematical utilities for SLAM simulation.
-Includes SO3, SE3, quaternion operations and coordinate transformations.
+Uses scipy.spatial.transform.Rotation for robust implementations.
 """
 
 import numpy as np
 from typing import Tuple, Union, Optional
+from scipy.spatial.transform import Rotation
 
 
 # ============================================================================
-# SO3 Operations (3D Rotations)
+# SO3 Operations (3D Rotations) - Using scipy.spatial.transform.Rotation
 # ============================================================================
 
 def so3_exp(omega: np.ndarray) -> np.ndarray:
@@ -23,18 +24,13 @@ def so3_exp(omega: np.ndarray) -> np.ndarray:
         3x3 rotation matrix
     """
     omega = np.asarray(omega).flatten()
-    theta = np.linalg.norm(omega)
     
-    if theta < 1e-8:
-        # First-order approximation for small angles
-        return np.eye(3) + skew(omega)
+    # Use scipy's Rotation for robust implementation
+    if np.linalg.norm(omega) < 1e-8:
+        return np.eye(3)
     
-    omega_hat = skew(omega)
-    # Rodrigues' formula
-    R = np.eye(3) + (np.sin(theta) / theta) * omega_hat + \
-        ((1 - np.cos(theta)) / (theta ** 2)) * (omega_hat @ omega_hat)
-    
-    return R
+    rotation = Rotation.from_rotvec(omega)
+    return rotation.as_matrix()
 
 
 def so3_log(R: np.ndarray) -> np.ndarray:
@@ -52,29 +48,17 @@ def so3_log(R: np.ndarray) -> np.ndarray:
     
     # Ensure R is a valid rotation matrix
     if not is_rotation_matrix(R):
-        # Project to nearest rotation matrix
+        # Project to nearest rotation matrix using SVD
         U, _, Vt = np.linalg.svd(R)
         R = U @ Vt
+        if np.linalg.det(R) < 0:
+            # Fix reflection
+            Vt[-1, :] *= -1
+            R = U @ Vt
     
-    trace = np.trace(R)
-    
-    if trace >= 3.0 - 1e-6:
-        # Near identity, use first-order approximation
-        return vee(0.5 * (R - R.T))
-    elif trace <= -1.0 + 1e-6:
-        # Rotation by π
-        # Find the axis of rotation
-        vals = np.diag(R)
-        k = np.argmax(vals)
-        axis = np.zeros(3)
-        axis[k] = 1.0
-        axis = axis + R[:, k]
-        axis = axis / np.linalg.norm(axis)
-        return np.pi * axis
-    else:
-        # General case
-        theta = np.arccos((trace - 1) / 2)
-        return (theta / (2 * np.sin(theta))) * vee(R - R.T)
+    # Use scipy's Rotation for robust implementation
+    rotation = Rotation.from_matrix(R)
+    return rotation.as_rotvec()
 
 
 def skew(v: np.ndarray) -> np.ndarray:
@@ -255,7 +239,7 @@ def se3_adjoint(T: np.ndarray) -> np.ndarray:
 
 
 # ============================================================================
-# Quaternion Operations
+# Quaternion Operations - Using scipy.spatial.transform.Rotation
 # ============================================================================
 
 def quaternion_multiply(q1: np.ndarray, q2: np.ndarray) -> np.ndarray:
@@ -273,15 +257,16 @@ def quaternion_multiply(q1: np.ndarray, q2: np.ndarray) -> np.ndarray:
     q1 = np.asarray(q1).flatten()
     q2 = np.asarray(q2).flatten()
     
-    w1, x1, y1, z1 = q1
-    w2, x2, y2, z2 = q2
+    # Convert to scipy format [x, y, z, w]
+    r1 = Rotation.from_quat([q1[1], q1[2], q1[3], q1[0]])
+    r2 = Rotation.from_quat([q2[1], q2[2], q2[3], q2[0]])
     
-    w = w1*w2 - x1*x2 - y1*y2 - z1*z2
-    x = w1*x2 + x1*w2 + y1*z2 - z1*y2
-    y = w1*y2 - x1*z2 + y1*w2 + z1*x2
-    z = w1*z2 + x1*y2 - y1*x2 + z1*w2
+    # Multiply rotations
+    r_result = r1 * r2
     
-    return np.array([w, x, y, z])
+    # Convert back to [w, x, y, z] format
+    q_result = r_result.as_quat()  # Returns [x, y, z, w]
+    return np.array([q_result[3], q_result[0], q_result[1], q_result[2]])
 
 
 def quaternion_conjugate(q: np.ndarray) -> np.ndarray:
@@ -309,10 +294,14 @@ def quaternion_inverse(q: np.ndarray) -> np.ndarray:
         Inverse quaternion
     """
     q = np.asarray(q).flatten()
-    norm_sq = np.sum(q ** 2)
-    if norm_sq < 1e-10:
-        raise ValueError("Cannot invert zero quaternion")
-    return quaternion_conjugate(q) / norm_sq
+    
+    # Convert to scipy format and invert
+    r = Rotation.from_quat([q[1], q[2], q[3], q[0]])
+    r_inv = r.inv()
+    
+    # Convert back to [w, x, y, z] format
+    q_inv = r_inv.as_quat()  # Returns [x, y, z, w]
+    return np.array([q_inv[3], q_inv[0], q_inv[1], q_inv[2]])
 
 
 def quaternion_normalize(q: np.ndarray) -> np.ndarray:
@@ -343,21 +332,15 @@ def quaternion_to_rotation_matrix(q: np.ndarray) -> np.ndarray:
         3x3 rotation matrix
     """
     q = quaternion_normalize(q)
-    w, x, y, z = q
     
-    R = np.array([
-        [1 - 2*(y**2 + z**2), 2*(x*y - w*z), 2*(x*z + w*y)],
-        [2*(x*y + w*z), 1 - 2*(x**2 + z**2), 2*(y*z - w*x)],
-        [2*(x*z - w*y), 2*(y*z + w*x), 1 - 2*(x**2 + y**2)]
-    ])
-    
-    return R
+    # Convert to scipy format [x, y, z, w] and get matrix
+    r = Rotation.from_quat([q[1], q[2], q[3], q[0]])
+    return r.as_matrix()
 
 
 def rotation_matrix_to_quaternion(R: np.ndarray) -> np.ndarray:
     """
     Convert rotation matrix to quaternion.
-    Uses Shepperd's method for numerical stability.
     
     Args:
         R: 3x3 rotation matrix
@@ -367,34 +350,12 @@ def rotation_matrix_to_quaternion(R: np.ndarray) -> np.ndarray:
     """
     R = np.asarray(R)
     
-    trace = np.trace(R)
+    # Use scipy for robust conversion
+    r = Rotation.from_matrix(R)
+    q = r.as_quat()  # Returns [x, y, z, w]
     
-    if trace > 0:
-        s = 0.5 / np.sqrt(trace + 1.0)
-        w = 0.25 / s
-        x = (R[2, 1] - R[1, 2]) * s
-        y = (R[0, 2] - R[2, 0]) * s
-        z = (R[1, 0] - R[0, 1]) * s
-    elif R[0, 0] > R[1, 1] and R[0, 0] > R[2, 2]:
-        s = 2.0 * np.sqrt(1.0 + R[0, 0] - R[1, 1] - R[2, 2])
-        w = (R[2, 1] - R[1, 2]) / s
-        x = 0.25 * s
-        y = (R[0, 1] + R[1, 0]) / s
-        z = (R[0, 2] + R[2, 0]) / s
-    elif R[1, 1] > R[2, 2]:
-        s = 2.0 * np.sqrt(1.0 + R[1, 1] - R[0, 0] - R[2, 2])
-        w = (R[0, 2] - R[2, 0]) / s
-        x = (R[0, 1] + R[1, 0]) / s
-        y = 0.25 * s
-        z = (R[1, 2] + R[2, 1]) / s
-    else:
-        s = 2.0 * np.sqrt(1.0 + R[2, 2] - R[0, 0] - R[1, 1])
-        w = (R[1, 0] - R[0, 1]) / s
-        x = (R[0, 2] + R[2, 0]) / s
-        y = (R[1, 2] + R[2, 1]) / s
-        z = 0.25 * s
-    
-    return quaternion_normalize(np.array([w, x, y, z]))
+    # Convert to [w, x, y, z] format
+    return np.array([q[3], q[0], q[1], q[2]])
 
 
 def quaternion_slerp(q1: np.ndarray, q2: np.ndarray, t: float) -> np.ndarray:
@@ -412,27 +373,17 @@ def quaternion_slerp(q1: np.ndarray, q2: np.ndarray, t: float) -> np.ndarray:
     q1 = quaternion_normalize(q1)
     q2 = quaternion_normalize(q2)
     
-    # Compute angle between quaternions
-    dot = np.dot(q1, q2)
+    # Convert to scipy format
+    r1 = Rotation.from_quat([q1[1], q1[2], q1[3], q1[0]])
+    r2 = Rotation.from_quat([q2[1], q2[2], q2[3], q2[0]])
     
-    # If quaternions are nearly opposite, flip one
-    if dot < 0:
-        q2 = -q2
-        dot = -dot
+    # Create a path and interpolate
+    rotations = Rotation.concatenate([r1, r2])
+    slerp = rotations[0] * (rotations[0].inv() * rotations[1]) ** t
     
-    # If quaternions are very close, use linear interpolation
-    if dot > 0.9995:
-        q = q1 + t * (q2 - q1)
-        return quaternion_normalize(q)
-    
-    # Compute slerp
-    theta = np.arccos(np.clip(dot, -1.0, 1.0))
-    sin_theta = np.sin(theta)
-    
-    w1 = np.sin((1 - t) * theta) / sin_theta
-    w2 = np.sin(t * theta) / sin_theta
-    
-    return w1 * q1 + w2 * q2
+    # Convert back to [w, x, y, z] format
+    q_result = slerp.as_quat()  # Returns [x, y, z, w]
+    return np.array([q_result[3], q_result[0], q_result[1], q_result[2]])
 
 
 def axis_angle_to_quaternion(axis: np.ndarray, angle: float) -> np.ndarray:
@@ -449,15 +400,12 @@ def axis_angle_to_quaternion(axis: np.ndarray, angle: float) -> np.ndarray:
     axis = np.asarray(axis).flatten()
     axis = axis / np.linalg.norm(axis)
     
-    half_angle = angle / 2
-    sin_half = np.sin(half_angle)
+    # Create rotation and convert to quaternion
+    r = Rotation.from_rotvec(axis * angle)
+    q = r.as_quat()  # Returns [x, y, z, w]
     
-    w = np.cos(half_angle)
-    x = axis[0] * sin_half
-    y = axis[1] * sin_half
-    z = axis[2] * sin_half
-    
-    return np.array([w, x, y, z])
+    # Convert to [w, x, y, z] format
+    return np.array([q[3], q[0], q[1], q[2]])
 
 
 def quaternion_to_axis_angle(q: np.ndarray) -> Tuple[np.ndarray, float]:
@@ -471,22 +419,16 @@ def quaternion_to_axis_angle(q: np.ndarray) -> Tuple[np.ndarray, float]:
         Tuple of (axis, angle) where axis is 3x1 and angle is in radians
     """
     q = quaternion_normalize(q)
-    w, x, y, z = q
     
-    # Compute angle
-    angle = 2 * np.arccos(np.clip(w, -1.0, 1.0))
+    # Convert to scipy format and get rotvec
+    r = Rotation.from_quat([q[1], q[2], q[3], q[0]])
+    rotvec = r.as_rotvec()
     
-    # Compute axis
+    angle = np.linalg.norm(rotvec)
     if angle < 1e-6:
-        # Near identity, arbitrary axis
-        axis = np.array([1.0, 0.0, 0.0])
-    else:
-        sin_half = np.sin(angle / 2)
-        if abs(sin_half) < 1e-6:
-            axis = np.array([1.0, 0.0, 0.0])
-        else:
-            axis = np.array([x, y, z]) / sin_half
+        return np.array([1.0, 0.0, 0.0]), 0.0
     
+    axis = rotvec / angle
     return axis, angle
 
 
@@ -548,65 +490,53 @@ def transform_vector(R: np.ndarray, v: np.ndarray) -> np.ndarray:
 def euler_to_rotation_matrix(roll: float, pitch: float, yaw: float, 
                            order: str = 'xyz') -> np.ndarray:
     """
-    Convert Euler angles to rotation matrix.
+    Convert Euler angles to rotation matrix using scipy.
     
     Args:
         roll: Rotation around x-axis (radians)
         pitch: Rotation around y-axis (radians)
         yaw: Rotation around z-axis (radians)
-        order: Rotation order ('xyz', 'zyx', etc.)
+        order: Rotation order (e.g., 'xyz', 'XYZ' for extrinsic, 'zyx' for intrinsic)
     
     Returns:
         3x3 rotation matrix
     """
-    cx, sx = np.cos(roll), np.sin(roll)
-    cy, sy = np.cos(pitch), np.sin(pitch)
-    cz, sz = np.cos(yaw), np.sin(yaw)
+    # Map our roll/pitch/yaw to the appropriate angles based on order
+    if order.lower() == 'xyz':
+        angles = [roll, pitch, yaw]
+    elif order.lower() == 'zyx':
+        angles = [yaw, pitch, roll]
+    else:
+        # For other orders, just use the angles in sequence
+        angles = [roll, pitch, yaw]
     
-    Rx = np.array([[1, 0, 0], [0, cx, -sx], [0, sx, cx]])
-    Ry = np.array([[cy, 0, sy], [0, 1, 0], [-sy, 0, cy]])
-    Rz = np.array([[cz, -sz, 0], [sz, cz, 0], [0, 0, 1]])
-    
-    rotations = {'x': Rx, 'y': Ry, 'z': Rz}
-    
-    R = np.eye(3)
-    for axis in order.lower():
-        if axis in rotations:
-            R = R @ rotations[axis]
-    
-    return R
+    # Use scipy - uppercase for extrinsic, lowercase for intrinsic
+    r = Rotation.from_euler(order, angles)
+    return r.as_matrix()
 
 
 def rotation_matrix_to_euler(R: np.ndarray, order: str = 'xyz') -> Tuple[float, float, float]:
     """
-    Convert rotation matrix to Euler angles.
-    Note: Multiple solutions exist, returns one valid solution.
+    Convert rotation matrix to Euler angles using scipy.
     
     Args:
         R: 3x3 rotation matrix
-        order: Rotation order (currently only 'xyz' supported)
+        order: Rotation order
     
     Returns:
         Tuple of (roll, pitch, yaw) in radians
     """
+    # Use scipy for robust conversion
+    r = Rotation.from_matrix(R)
+    angles = r.as_euler(order)
+    
+    # Map back to roll/pitch/yaw based on order
     if order.lower() == 'xyz':
-        # Extract Euler angles for XYZ order
-        sy = np.sqrt(R[0, 0]**2 + R[1, 0]**2)
-        
-        singular = sy < 1e-6
-        
-        if not singular:
-            roll = np.arctan2(R[2, 1], R[2, 2])
-            pitch = np.arctan2(-R[2, 0], sy)
-            yaw = np.arctan2(R[1, 0], R[0, 0])
-        else:
-            roll = np.arctan2(-R[1, 2], R[1, 1])
-            pitch = np.arctan2(-R[2, 0], sy)
-            yaw = 0
-        
-        return roll, pitch, yaw
+        return angles[0], angles[1], angles[2]
+    elif order.lower() == 'zyx':
+        return angles[2], angles[1], angles[0]
     else:
-        raise NotImplementedError(f"Order {order} not implemented")
+        return angles[0], angles[1], angles[2]
 
 
 def interpolate_se3(T1: np.ndarray, T2: np.ndarray, t: float) -> np.ndarray:
@@ -625,13 +555,13 @@ def interpolate_se3(T1: np.ndarray, T2: np.ndarray, t: float) -> np.ndarray:
     R1, t1 = T1[:3, :3], T1[:3, 3]
     R2, t2 = T2[:3, :3], T2[:3, 3]
     
-    # Convert rotations to quaternions for slerp
-    q1 = rotation_matrix_to_quaternion(R1)
-    q2 = rotation_matrix_to_quaternion(R2)
+    # Use scipy for rotation interpolation
+    r1 = Rotation.from_matrix(R1)
+    r2 = Rotation.from_matrix(R2)
     
-    # Interpolate rotation using slerp
-    q_interp = quaternion_slerp(q1, q2, t)
-    R_interp = quaternion_to_rotation_matrix(q_interp)
+    # Interpolate rotation using scipy's slerp
+    r_interp = r1 * (r1.inv() * r2) ** t
+    R_interp = r_interp.as_matrix()
     
     # Linear interpolation for translation
     t_interp = (1 - t) * t1 + t * t2
@@ -642,3 +572,69 @@ def interpolate_se3(T1: np.ndarray, T2: np.ndarray, t: float) -> np.ndarray:
     T_interp[:3, 3] = t_interp
     
     return T_interp
+
+
+# ============================================================================
+# Additional Utility Functions
+# ============================================================================
+
+def random_rotation_matrix() -> np.ndarray:
+    """
+    Generate a random rotation matrix using scipy.
+    
+    Returns:
+        3x3 rotation matrix
+    """
+    r = Rotation.random()
+    return r.as_matrix()
+
+
+def random_quaternion() -> np.ndarray:
+    """
+    Generate a random unit quaternion.
+    
+    Returns:
+        Quaternion [w, x, y, z]
+    """
+    r = Rotation.random()
+    q = r.as_quat()  # Returns [x, y, z, w]
+    return np.array([q[3], q[0], q[1], q[2]])
+
+
+def rotation_matrix_from_vectors(v1: np.ndarray, v2: np.ndarray) -> np.ndarray:
+    """
+    Find rotation matrix that rotates v1 to v2.
+    
+    Args:
+        v1: Source vector (will be normalized)
+        v2: Target vector (will be normalized)
+    
+    Returns:
+        3x3 rotation matrix such that R @ v1 ≈ v2
+    """
+    v1 = np.asarray(v1).flatten()
+    v2 = np.asarray(v2).flatten()
+    
+    v1 = v1 / np.linalg.norm(v1)
+    v2 = v2 / np.linalg.norm(v2)
+    
+    # Check if vectors are parallel
+    cross = np.cross(v1, v2)
+    if np.linalg.norm(cross) < 1e-6:
+        if np.dot(v1, v2) > 0:
+            return np.eye(3)  # Same direction
+        else:
+            # Opposite direction - find perpendicular axis
+            # Find a vector not parallel to v1
+            if abs(v1[0]) < 0.9:
+                axis = np.cross(v1, [1, 0, 0])
+            else:
+                axis = np.cross(v1, [0, 1, 0])
+            axis = axis / np.linalg.norm(axis)
+            return Rotation.from_rotvec(axis * np.pi).as_matrix()
+    
+    # General case - use Rodriguez formula via scipy
+    axis = cross / np.linalg.norm(cross)
+    angle = np.arccos(np.clip(np.dot(v1, v2), -1, 1))
+    
+    return Rotation.from_rotvec(axis * angle).as_matrix()
