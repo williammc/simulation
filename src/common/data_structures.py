@@ -596,23 +596,57 @@ class CameraCalibration:
 
 
 @dataclass
-class IMUCalibration:
-    """IMU calibration parameters."""
-    imu_id: str
+class IMUNoiseCharacteristics:
+    """IMU noise characteristics."""
     accelerometer_noise_density: float
     accelerometer_random_walk: float
     gyroscope_noise_density: float
     gyroscope_random_walk: float
+
+@dataclass
+class IMUExtrinsics:
+    """IMU extrinsic parameters."""
+    B_T_S: np.ndarray  # 4x4 transformation from sensor to body frame
+    
+    def __post_init__(self):
+        """Validate transformation matrix."""
+        self.B_T_S = np.asarray(self.B_T_S)
+        if self.B_T_S.shape != (4, 4):
+            self.B_T_S = np.eye(4)  # Default to identity
+
+@dataclass
+class IMUCalibration:
+    """IMU calibration parameters."""
+    imu_id: str
+    accelerometer_noise_density: Optional[float] = None
+    accelerometer_random_walk: Optional[float] = None
+    gyroscope_noise_density: Optional[float] = None
+    gyroscope_random_walk: Optional[float] = None
+    noise_characteristics: Optional[IMUNoiseCharacteristics] = None
+    extrinsics: Optional[IMUExtrinsics] = None
+    gravity_magnitude: float = 9.81
     rate: float = 200.0
+    
+    def __post_init__(self):
+        """Initialize noise and extrinsics if not provided."""
+        if self.noise_characteristics is None:
+            self.noise_characteristics = IMUNoiseCharacteristics(
+                accelerometer_noise_density=self.accelerometer_noise_density or 0.001,
+                accelerometer_random_walk=self.accelerometer_random_walk or 0.0001,
+                gyroscope_noise_density=self.gyroscope_noise_density or 0.0001,
+                gyroscope_random_walk=self.gyroscope_random_walk or 0.00001
+            )
+        if self.extrinsics is None:
+            self.extrinsics = IMUExtrinsics(B_T_S=np.eye(4))
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
         return {
             "imu_id": self.imu_id,
-            "accelerometer_noise_density": self.accelerometer_noise_density,
-            "accelerometer_random_walk": self.accelerometer_random_walk,
-            "gyroscope_noise_density": self.gyroscope_noise_density,
-            "gyroscope_random_walk": self.gyroscope_random_walk,
+            "accelerometer_noise_density": self.noise_characteristics.accelerometer_noise_density,
+            "accelerometer_random_walk": self.noise_characteristics.accelerometer_random_walk,
+            "gyroscope_noise_density": self.noise_characteristics.gyroscope_noise_density,
+            "gyroscope_random_walk": self.noise_characteristics.gyroscope_random_walk,
             "rate": self.rate
         }
     
