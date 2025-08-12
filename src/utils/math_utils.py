@@ -92,6 +92,11 @@ def vee(M: np.ndarray) -> np.ndarray:
     return np.array([M[2, 1], M[0, 2], M[1, 0]])
 
 
+# Aliases for compatibility
+exp_so3 = so3_exp  # Alias for exponential map
+log_so3 = so3_log  # Alias for logarithmic map
+
+
 def is_rotation_matrix(R: np.ndarray, tol: float = 1e-6) -> bool:
     """
     Check if matrix is a valid rotation matrix (orthogonal with det=1).
