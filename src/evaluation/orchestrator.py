@@ -128,13 +128,13 @@ class EvaluationOrchestrator:
                     dataset_path = self._generate_simulated_dataset(dataset_name, dataset['config'])
                     datasets[f"sim_{dataset_name}"] = dataset_path
         
-        # Handle TUM-VI datasets
-        if 'tum_vi' in self.config['datasets']:
-            tum_config = self.config['datasets']['tum_vi']
+        # Handle TUM-VIE datasets
+        if 'tum_vie' in self.config['datasets']:
+            tum_config = self.config['datasets']['tum_vie']
             for sequence in tum_config['sequences']:
                 seq_name = sequence['name']
-                dataset_path = self._prepare_tumvi_dataset(seq_name, tum_config)
-                datasets[f"tumvi_{seq_name}"] = dataset_path
+                dataset_path = self._prepare_tumvie_dataset(seq_name, tum_config)
+                datasets[f"tumvie_{seq_name}"] = dataset_path
         
         self.logger.info(f"Prepared {len(datasets)} datasets")
         return datasets
@@ -255,39 +255,39 @@ class EvaluationOrchestrator:
             self.logger.error(f"Failed to generate dataset {name}: {e.stderr}")
             raise
     
-    def _prepare_tumvi_dataset(self, sequence: str, config: Dict) -> Path:
+    def _prepare_tumvie_dataset(self, sequence: str, config: Dict) -> Path:
         """
-        Prepare a TUM-VI dataset for evaluation.
+        Prepare a TUM-VIE dataset for evaluation.
         
         Args:
             sequence: Sequence name
-            config: TUM-VI configuration
+            config: TUM-VIE configuration
             
         Returns:
             Path to the prepared dataset
         """
         base_path = Path(config['base_path'])
         sequence_dir = base_path / sequence
-        output_file = self.output_dir / "datasets" / "tumvi" / f"{sequence}.json"
+        output_file = self.output_dir / "datasets" / "tumvie" / f"{sequence}.json"
         
         if output_file.exists() and not self.config['evaluation'].get('overwrite', False):
-            self.logger.info(f"Using existing TUM-VI dataset: {sequence}")
+            self.logger.info(f"Using existing TUM-VIE dataset: {sequence}")
             return output_file
         
-        self.logger.info(f"Converting TUM-VI dataset: {sequence}")
+        self.logger.info(f"Converting TUM-VIE dataset: {sequence}")
         output_file.parent.mkdir(parents=True, exist_ok=True)
         
         # Check if dataset exists
         if not sequence_dir.exists():
             if config.get('download_if_missing', True):
-                self._download_tumvi_dataset(sequence, base_path)
+                self._download_tumvie_dataset(sequence, base_path)
             else:
-                raise FileNotFoundError(f"TUM-VI dataset not found: {sequence_dir}")
+                raise FileNotFoundError(f"TUM-VIE dataset not found: {sequence_dir}")
         
         # Convert dataset using the new convert command
         cmd = [
             "./run.sh", "convert",
-            "tumvi",
+            "tumvie",
             str(sequence_dir),
             str(output_file)
         ]
@@ -296,18 +296,18 @@ class EvaluationOrchestrator:
             result = subprocess.run(cmd, capture_output=True, text=True, check=True)
             self.logger.info(f"Converted dataset: {output_file}")
         except subprocess.CalledProcessError as e:
-            self.logger.error(f"Failed to convert TUM-VI dataset {sequence}: {e.stderr}")
+            self.logger.error(f"Failed to convert TUM-VIE dataset {sequence}: {e.stderr}")
             raise
         
         return output_file
     
-    def _download_tumvi_dataset(self, sequence: str, base_path: Path):
-        """Download a TUM-VI dataset."""
+    def _download_tumvie_dataset(self, sequence: str, base_path: Path):
+        """Download a TUM-VIE dataset."""
         sequence_dir = base_path / sequence
         
         # Check if dataset already exists with all necessary files
         if sequence_dir.exists():
-            # Check for key TUM-VI dataset indicators
+            # Check for key TUM-VIE dataset indicators
             key_indicators = [
                 sequence_dir / "calibration_a.json",
                 sequence_dir / "calibration_b.json", 
@@ -319,10 +319,10 @@ class EvaluationOrchestrator:
             
             # If any key files/dirs exist, assume dataset is already downloaded
             if any(indicator.exists() for indicator in key_indicators):
-                self.logger.info(f"TUM-VI dataset {sequence} already exists at {sequence_dir}")
+                self.logger.info(f"TUM-VIE dataset {sequence} already exists at {sequence_dir}")
                 return
         
-        self.logger.info(f"Downloading TUM-VI dataset: {sequence}")
+        self.logger.info(f"Downloading TUM-VIE dataset: {sequence}")
         base_path.mkdir(parents=True, exist_ok=True)
         
         # Use the download command through run.sh
@@ -337,7 +337,7 @@ class EvaluationOrchestrator:
             result = subprocess.run(cmd, capture_output=True, text=True, check=True)
             self.logger.info(f"Downloaded {sequence} to {sequence_dir}")
         except subprocess.CalledProcessError as e:
-            self.logger.error(f"Failed to download TUM-VI dataset {sequence}: {e.stderr}")
+            self.logger.error(f"Failed to download TUM-VIE dataset {sequence}: {e.stderr}")
             # Fallback to placeholder creation for testing
             self.logger.warning(f"Creating placeholder dataset for {sequence}")
             sequence_dir.mkdir(parents=True, exist_ok=True)

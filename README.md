@@ -52,10 +52,10 @@ This simplification is valid for most applications as the distance between accel
 #### 2. Process TUM-VIE Dataset
 ```bash
 # Download TUM-VIE dataset
-./run.sh download tumvie --sequence room1
+./run.sh download tum-vie --sequence room1
 
 # Convert to simulation format
-./run.sh convert tumvie data/tumvie/room1 --output output/room1.json
+./run.sh convert tumvie data/TUM-VIE/room1 --output output/room1.json
 
 # Run SLAM and evaluate
 ./run.sh slam swba --input output/room1.json --output output/swba_result.json
@@ -140,25 +140,25 @@ python tools/inspect_ground_truth.py compare-noise output/simulation.json
 
 ### Dataset Conversion
 
-#### TUM-VI Dataset Conversion
-The TUM-VI converter generates synthetic visual observations from mocap ground truth:
+#### TUM-VIE Dataset Conversion
+The TUM-VIE converter generates synthetic visual observations from mocap ground truth:
 
 ```bash
-./run.sh convert tumvi INPUT_PATH OUTPUT_FILE [options]
+./run.sh convert tumvie INPUT_PATH OUTPUT_FILE [options]
   --num-landmarks INT     Number of synthetic 3D landmarks (default: 200)
   --keyframe-interval FLOAT  Time between keyframes in seconds (default: 0.1)
   --pixel-noise FLOAT     Standard deviation of pixel noise (default: 1.0)
 
 # Examples:
-# Convert TUM-VI dataset with default settings
-./run.sh convert tumvi data/tumvi/room1 output/room1.json
+# Convert TUM-VIE dataset with default settings
+./run.sh convert tumvie data/TUM-VIE/room1 output/room1.json
 
 # Generate dense observations (more landmarks, frequent keyframes)
-./run.sh convert tumvi data/tumvi/room1 output/room1_dense.json \
+./run.sh convert tumvie data/TUM-VIE/room1 output/room1_dense.json \
   --num-landmarks 500 --keyframe-interval 0.05
 
 # Generate sparse, noisy observations for challenging scenarios
-./run.sh convert tumvi data/tumvi/room1 output/room1_sparse.json \
+./run.sh convert tumvie data/TUM-VIE/room1 output/room1_sparse.json \
   --num-landmarks 100 --keyframe-interval 0.2 --pixel-noise 3.0
 ```
 
@@ -213,7 +213,7 @@ This approach ensures consistent, reproducible benchmarks without requiring actu
 
 The evaluation system:
 - Automatically generates missing simulated datasets
-- Downloads and converts TUM-VI real-world datasets
+- Downloads and converts TUM-VIE real-world datasets
 - Runs all estimators in parallel
 - Computes comprehensive metrics (ATE, RPE, runtime, memory)
 - Generates interactive dashboard with KPI comparisons

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Convert TUM-VI dataset to common JSON format for evaluation.
+Convert TUM-VIE dataset to common JSON format for evaluation.
 """
 
 import argparse
@@ -30,9 +30,9 @@ from src.common.data_structures import (
 from src.common.json_io import SimulationData
 
 
-def load_tumvi_trajectory(groundtruth_file: Path) -> Trajectory:
+def load_tumvie_trajectory(groundtruth_file: Path) -> Trajectory:
     """
-    Load ground truth trajectory from TUM-VI format.
+    Load ground truth trajectory from TUM-VIE format.
     
     Args:
         groundtruth_file: Path to groundtruth.txt file
@@ -68,9 +68,9 @@ def load_tumvi_trajectory(groundtruth_file: Path) -> Trajectory:
     return trajectory
 
 
-def load_tumvi_imu(imu_file: Path) -> IMUData:
+def load_tumvie_imu(imu_file: Path) -> IMUData:
     """
-    Load IMU data from TUM-VI format.
+    Load IMU data from TUM-VIE format.
     
     Args:
         imu_file: Path to imu.txt file
@@ -247,9 +247,9 @@ def generate_keyframes_and_observations(trajectory: Trajectory, landmarks: Map,
     return camera_data
 
 
-def load_tumvi_calibration(calib_dir: Path) -> Dict:
+def load_tumvie_calibration(calib_dir: Path) -> Dict:
     """
-    Load calibration from TUM-VI format.
+    Load calibration from TUM-VIE format.
     
     Args:
         calib_dir: Directory containing calibration files
@@ -334,21 +334,21 @@ def load_tumvi_calibration(calib_dir: Path) -> Dict:
     return calibrations
 
 
-def convert_tumvi_dataset(dataset_dir: Path, output_file: Path, 
+def convert_tumvie_dataset(dataset_dir: Path, output_file: Path, 
                          num_landmarks: int = 200,
                          keyframe_interval: float = 0.1,
                          pixel_noise_std: float = 1.0):
     """
-    Convert TUM-VI dataset to common format with synthetic observations.
+    Convert TUM-VIE dataset to common format with synthetic observations.
     
     Args:
-        dataset_dir: Path to TUM-VI dataset directory
+        dataset_dir: Path to TUM-VIE dataset directory
         output_file: Output JSON file path
         num_landmarks: Number of synthetic landmarks to generate
         keyframe_interval: Time between keyframes in seconds
         pixel_noise_std: Standard deviation of pixel measurement noise
     """
-    print(f"Converting TUM-VI dataset: {dataset_dir}")
+    print(f"Converting TUM-VIE dataset: {dataset_dir}")
     print(f"  - Generating {num_landmarks} synthetic landmarks")
     print(f"  - Keyframe interval: {keyframe_interval}s")
     print(f"  - Pixel noise std: {pixel_noise_std} pixels")
@@ -356,7 +356,7 @@ def convert_tumvi_dataset(dataset_dir: Path, output_file: Path,
     # Load ground truth trajectory from mocap
     groundtruth_file = dataset_dir / "groundtruth.txt"
     if groundtruth_file.exists():
-        trajectory = load_tumvi_trajectory(groundtruth_file)
+        trajectory = load_tumvie_trajectory(groundtruth_file)
         print(f"Loaded {len(trajectory.states)} ground truth poses from mocap")
     else:
         print("Error: No ground truth file found")
@@ -365,7 +365,7 @@ def convert_tumvi_dataset(dataset_dir: Path, output_file: Path,
     # Load IMU data
     imu_file = dataset_dir / "imu.txt"
     if imu_file.exists():
-        imu_data = load_tumvi_imu(imu_file)
+        imu_data = load_tumvie_imu(imu_file)
         print(f"Loaded {len(imu_data.measurements)} IMU measurements")
     else:
         print("Warning: No IMU file found, creating empty IMU data")
@@ -377,7 +377,7 @@ def convert_tumvi_dataset(dataset_dir: Path, output_file: Path,
     calib_dir = dataset_dir / "calibration"
     if not calib_dir.exists():
         calib_dir = dataset_dir
-    calibrations = load_tumvi_calibration(calib_dir)
+    calibrations = load_tumvie_calibration(calib_dir)
     
     # Generate synthetic 3D landmarks around the trajectory
     landmarks = generate_synthetic_landmarks(trajectory, num_landmarks)
@@ -418,7 +418,7 @@ def convert_tumvi_dataset(dataset_dir: Path, output_file: Path,
         trajectory_type='real',
         duration=trajectory.states[-1].pose.timestamp if trajectory.states else 0
     )
-    sim_data.metadata['source'] = 'TUM-VI'
+    sim_data.metadata['source'] = 'TUM-VIE'
     sim_data.metadata['dataset'] = dataset_dir.name
     sim_data.metadata['num_poses'] = len(trajectory.states)
     sim_data.metadata['num_landmarks'] = len(landmarks.landmarks)
@@ -445,8 +445,8 @@ def convert_tumvi_dataset(dataset_dir: Path, output_file: Path,
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Convert TUM-VI dataset to common format")
-    parser.add_argument("dataset_dir", type=Path, help="Path to TUM-VI dataset directory")
+    parser = argparse.ArgumentParser(description="Convert TUM-VIE dataset to common format")
+    parser.add_argument("dataset_dir", type=Path, help="Path to TUM-VIE dataset directory")
     parser.add_argument("output_file", type=Path, help="Output JSON file path")
     parser.add_argument("--num-landmarks", type=int, default=200,
                        help="Number of synthetic landmarks to generate (default: 200)")
@@ -465,7 +465,7 @@ def main():
     args.output_file.parent.mkdir(parents=True, exist_ok=True)
     
     try:
-        convert_tumvi_dataset(
+        convert_tumvie_dataset(
             args.dataset_dir, 
             args.output_file,
             num_landmarks=args.num_landmarks,

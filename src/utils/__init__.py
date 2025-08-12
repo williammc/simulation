@@ -9,8 +9,8 @@ from .math_utils import *
 __all__ = []
 
 try:
-    from .tumvi_converter import convert_tumvi_dataset
-    __all__.append('convert_tumvi_dataset')
+    from .tumvie_converter import convert_tumvie_dataset
+    __all__.append('convert_tumvie_dataset')
 except ImportError:
     # OpenCV not available, conversion utilities won't work
     pass

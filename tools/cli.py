@@ -657,7 +657,7 @@ def evaluation(
 def convert(
     dataset_type: str = typer.Argument(
         ...,
-        help="Dataset type to convert (tumvi, euroc, kitti)"
+        help="Dataset type to convert (tumvie, euroc, kitti)"
     ),
     input_path: Path = typer.Argument(
         ...,
@@ -686,7 +686,7 @@ def convert(
     """Convert external datasets to common JSON format."""
     
     # Check dataset type
-    supported_types = ["tumvi", "euroc", "kitti"]
+    supported_types = ["tumvie", "euroc", "kitti"]
     if dataset_type.lower() not in supported_types:
         console.print(f"[red]Error: Unsupported dataset type: {dataset_type}[/red]")
         console.print(f"[yellow]Supported types: {', '.join(supported_types)}[/yellow]")
@@ -701,19 +701,19 @@ def convert(
     output_file.parent.mkdir(parents=True, exist_ok=True)
     
     try:
-        if dataset_type.lower() == "tumvi":
-            console.print(f"[cyan]Converting TUM-VI dataset:[/cyan]")
+        if dataset_type.lower() == "tumvie":
+            console.print(f"[cyan]Converting TUM-VIE dataset:[/cyan]")
             console.print(f"  Input: {input_path}")
             console.print(f"  Output: {output_file}")
             console.print(f"  Landmarks: {num_landmarks}")
             console.print(f"  Keyframe interval: {keyframe_interval}s")
             console.print(f"  Pixel noise std: {pixel_noise} pixels")
             
-            from src.utils.tumvi_converter import convert_tumvi_dataset
+            from src.utils.tumvie_converter import convert_tumvie_dataset
             
             # Show progress
             with console.status("[bold green]Converting dataset...") as status:
-                convert_tumvi_dataset(
+                convert_tumvie_dataset(
                     input_path, 
                     output_file,
                     num_landmarks=num_landmarks,

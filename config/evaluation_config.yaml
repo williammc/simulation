@@ -82,8 +82,8 @@ datasets:
           landmarks:
             num_landmarks: 100
 
-  tum_vi:
-    # TUM-VI dataset configurations
+  tum_vie:
+    # TUM-VIE dataset configurations
     download_if_missing: true
     base_path: "data/TUM-VIE"
     sequences:

@@ -232,7 +232,7 @@ def download_dataset(
     console.print(f"  Size: ~{config['size_mb']} MB")
     
     # Prepare output directory
-    # Use TUM-VIE for TUM-VI datasets, otherwise use uppercase dataset name
+    # Use TUM-VIE for TUM-VIE datasets, otherwise use uppercase dataset name
     if dataset_lower == "tum-vie":
         # If output is provided, use it as base and add sequence as subdirectory
         if output:
@@ -243,16 +243,19 @@ def download_dataset(
         output_dir = output or Path(f"data/{dataset.upper()}/{sequence}")
     
     # Check if dataset already exists
-    # For TUM-VI, check for key indicators of a complete dataset
+    # For TUM-VIE, check for key indicators of a complete dataset
     if dataset_lower == "tum-vie":
-        # Check for calibration file and key directories
+        # Check for download marker or key directories
+        marker_file = output_dir / ".download_complete"
         calib_indicators = [
+            output_dir / "calibration" / "mocap-imu-calibrationA.json",
+            output_dir / "calibration" / "mocap-imu-calibrationB.json",
             output_dir / "calibration_a.json",
             output_dir / "calibration_b.json",
             output_dir / "mocap",
             output_dir / "imu"
         ]
-        if output_dir.exists() and any(indicator.exists() for indicator in calib_indicators):
+        if marker_file.exists() or (output_dir.exists() and any(indicator.exists() for indicator in calib_indicators)):
             console.print("[yellow]⚠ Dataset already exists[/yellow]")
             console.print(f"  Found existing dataset at: [cyan]{output_dir}[/cyan]")
             console.print("  Delete the directory to re-download")
@@ -277,7 +280,7 @@ def download_dataset(
     # Create placeholder structure
     create_placeholder_dataset(output_dir, dataset_lower, sequence_lower)
     
-    # Mark as complete (only for non TUM-VI datasets)
+    # Mark as complete (only for non TUM-VIE datasets)
     if dataset_lower != "tum-vie":
         marker_file = output_dir / ".download_complete"
         marker_file.touch()
@@ -379,6 +382,7 @@ def create_placeholder_dataset(output_dir: Path, dataset: str, sequence: str) ->
         (output_dir / "frames").mkdir(exist_ok=True)
         (output_dir / "imu").mkdir(exist_ok=True)
         (output_dir / "mocap").mkdir(exist_ok=True)
+        (output_dir / "calibration").mkdir(exist_ok=True)
         
         # Create calibration JSON based on type
         calib_json = output_dir / f"{calibration_type}.json"
@@ -557,6 +561,31 @@ def create_placeholder_dataset(output_dir: Path, dataset: str, sequence: str) ->
         with open(calib_json, 'w') as f:
             json.dump(calib_data, f, indent=2)
         
+        # Create mocap-IMU calibration files
+        # Calibration A is for mocap-desk, mocap-desk2, loop-floor0:3, skate-easy
+        # Calibration B is for all other sequences
+        mocap_calib_type = 'A' if sequence in ['mocap-desk', 'mocap-desk2', 'skate-easy'] else 'B'
+        
+        mocap_imu_calib = {
+            "value0": {
+                "T_imu_marker": {
+                    "px": 0.045 if mocap_calib_type == 'A' else 0.048,
+                    "py": 0.002 if mocap_calib_type == 'A' else 0.003,
+                    "pz": 0.001 if mocap_calib_type == 'A' else 0.002,
+                    "qw": 0.999,
+                    "qx": 0.001,
+                    "qy": 0.002,
+                    "qz": 0.001
+                },
+                "calibration_id": f"mocap-imu-calibration{mocap_calib_type}",
+                "timestamp": "2024-01-01T00:00:00Z"
+            }
+        }
+        
+        mocap_calib_file = output_dir / "calibration" / f"mocap-imu-calibration{mocap_calib_type}.json"
+        with open(mocap_calib_file, 'w') as f:
+            json.dump(mocap_imu_calib, f, indent=2)
+        
         # Create sample data files
         (output_dir / "events" / "left_events.h5").touch()
         (output_dir / "events" / "right_events.h5").touch()
@@ -569,6 +598,10 @@ def create_placeholder_dataset(output_dir: Path, dataset: str, sequence: str) ->
             "#timestamp [ns],p_RS_R_x [m],p_RS_R_y [m],p_RS_R_z [m],q_RS_w [],q_RS_x [],q_RS_y [],q_RS_z []\n"
         )
         
+        # Create download complete marker for TUM-VIE datasets
+        marker_file = output_dir / ".download_complete"
+        marker_file.write_text(f"TUM-VIE dataset {sequence} placeholder created\n")
+        
     elif dataset == "euroc":
         # EuRoC dataset structure
         (output_dir / "mav0").mkdir(exist_ok=True)
@@ -577,7 +610,7 @@ def create_placeholder_dataset(output_dir: Path, dataset: str, sequence: str) ->
         (output_dir / "mav0" / "imu0").mkdir(exist_ok=True)
         (output_dir / "mav0" / "state_groundtruth_estimate0").mkdir(exist_ok=True)
         
-        # Similar structure to TUM-VI
+        # Similar structure to TUM-VIE
         console.print("  Created EuRoC dataset structure")
     
     # Create README
