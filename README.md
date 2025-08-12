@@ -10,6 +10,17 @@ A comprehensive Visual-Inertial SLAM simulation and evaluation framework support
 - **Evaluation**: ATE, RPE, NEES metrics with statistical comparison
 - **Visualization**: Interactive 3D trajectories and performance dashboards
 
+## Sensor Conventions
+
+### IMU Model
+The IMU is modeled as a single integrated sensor with co-located accelerometer and gyroscope:
+- **Origin**: IMU center (unified for both accelerometer and gyroscope)
+- **No lever arm**: Accelerometer and gyroscope share the same physical origin
+- **Typical for MEMS**: Reflects modern MEMS IMUs (e.g., BMI055, ICM-20649) where both sensors are on the same chip
+- **Frame**: Body frame (B) typically coincides with IMU frame, with `B_T_S = I` (identity) by default
+
+This simplification is valid for most applications as the distance between accelerometer and gyroscope in MEMS chips is negligible (<1mm).
+
 ## Quick Start
 
 ### Setup

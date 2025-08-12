@@ -54,13 +54,15 @@ A_T_C = A_T_B @ B_T_C
 | **W** | World | Fixed inertial reference frame | Arbitrary fixed point |
 | **M** | Map | SLAM map reference frame | First pose or loop closure |
 | **B** | Body | Vehicle/robot body frame | IMU center (typically) |
-| **I** | IMU | Inertial measurement unit | IMU sensor center |
+| **I** | IMU | Inertial measurement unit | IMU sensor center¹ |
 | **C** | Camera | Generic camera frame | Optical center |
 | **C0** | Camera 0 | Primary/left camera | Left optical center |
 | **C1** | Camera 1 | Secondary/right camera | Right optical center |
 | **E** | Event | Event camera frame | Event camera center |
 | **L** | Lidar | Lidar sensor frame | Lidar center |
 | **G** | GPS | GPS antenna frame | Antenna phase center |
+
+¹ **IMU Origin Convention**: The IMU sensor center represents a unified origin for both accelerometer and gyroscope. This reflects modern MEMS IMUs where both sensors are integrated on the same chip with negligible separation (<1mm). No lever arm compensation is applied between accelerometer and gyroscope measurements.
 
 ### Practical Examples
 
@@ -152,6 +154,35 @@ Sigma_A_XX  # Covariance of X expressed in frame A
 # Example:
 Sigma_W_pp  # Position covariance in world frame
 Sigma_B_vv  # Velocity covariance in body frame
+```
+
+## IMU-Specific Conventions
+
+### IMU Sensor Model
+The IMU is modeled as a single integrated MEMS sensor unit:
+
+- **Unified Origin**: Both accelerometer and gyroscope measurements originate from the same physical point (IMU center)
+- **Measurement Frame**: All IMU measurements are expressed in the sensor frame (S), which typically aligns with the body frame (B)
+- **Extrinsics**: The transformation `B_T_S` (body-from-sensor) defaults to identity, meaning IMU and body frames are aligned
+- **No Lever Arm**: No compensation for spatial separation between accelerometer and gyroscope (assumed co-located)
+
+This model is appropriate for:
+- Modern MEMS IMUs (BMI055, ICM-20649, MPU-9250)
+- Tactical-grade IMUs with integrated sensors
+- Most robotics and drone applications
+
+For high-precision applications with physically separated accelerometer and gyroscope units, additional lever arm modeling would be required.
+
+### IMU Measurement Convention
+```python
+# IMU measurements in sensor frame
+accelerometer: np.ndarray  # [ax, ay, az] in m/s²
+gyroscope: np.ndarray      # [wx, wy, wz] in rad/s
+
+# Transform to body frame (typically identity)
+B_T_S = imu_calibration.extrinsics.B_T_S  # Usually I (identity)
+accel_body = B_T_S[:3, :3] @ accelerometer
+gyro_body = B_T_S[:3, :3] @ gyroscope
 ```
 
 ## Additional Conventions
