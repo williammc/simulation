@@ -242,6 +242,38 @@ def se3_adjoint(T: np.ndarray) -> np.ndarray:
 # Quaternion Operations - Using scipy.spatial.transform.Rotation
 # ============================================================================
 
+def quaternion_to_euler(q: np.ndarray) -> np.ndarray:
+    """
+    Convert quaternion to Euler angles (roll, pitch, yaw).
+    
+    Args:
+        q: Quaternion [qw, qx, qy, qz]
+    
+    Returns:
+        Euler angles [roll, pitch, yaw] in radians
+    """
+    qw, qx, qy, qz = q
+    
+    # Roll (x-axis rotation)
+    sinr_cosp = 2 * (qw * qx + qy * qz)
+    cosr_cosp = 1 - 2 * (qx * qx + qy * qy)
+    roll = np.arctan2(sinr_cosp, cosr_cosp)
+    
+    # Pitch (y-axis rotation)
+    sinp = 2 * (qw * qy - qz * qx)
+    if np.abs(sinp) >= 1:
+        pitch = np.copysign(np.pi / 2, sinp)  # Use 90 degrees if out of range
+    else:
+        pitch = np.arcsin(sinp)
+    
+    # Yaw (z-axis rotation)
+    siny_cosp = 2 * (qw * qz + qx * qy)
+    cosy_cosp = 1 - 2 * (qy * qy + qz * qz)
+    yaw = np.arctan2(siny_cosp, cosy_cosp)
+    
+    return np.array([roll, pitch, yaw])
+
+
 def quaternion_multiply(q1: np.ndarray, q2: np.ndarray) -> np.ndarray:
     """
     Multiply two quaternions (Hamilton product).

@@ -1,6 +1,6 @@
 """
 Dashboard command implementation.
-Generates HTML dashboard from SLAM KPI results.
+Generates HTML dashboard from SLAM KPI results or simulation data.
 """
 
 import json
@@ -13,27 +13,63 @@ from rich.table import Table
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
+# Import our new plotting module
+try:
+    from src.plotting.dashboard import create_dashboard, DashboardConfig, create_kpi_summary
+    PLOTTING_AVAILABLE = True
+except ImportError:
+    PLOTTING_AVAILABLE = False
+
 console = Console()
 
 
 def generate_dashboard(input_dir: Path, output: Path) -> int:
     """
-    Generate dashboard from SLAM KPIs.
+    Generate dashboard from SLAM KPIs or simulation data.
     
     Args:
-        input_dir: Directory containing SLAM KPI JSON files
+        input_dir: Directory containing SLAM KPI JSON files or path to simulation JSON
         output: Output HTML file path
     
     Returns:
         Exit code (0 for success, 1 for error)
     """
     if not input_dir.exists():
-        console.print(f"[red]✗ Error: Input directory not found: {input_dir}[/red]")
+        console.print(f"[red]✗ Error: Input path not found: {input_dir}[/red]")
         return 1
     
     console.print("[bold green]Generating Dashboard[/bold green]")
     console.print(f"  Input: [cyan]{input_dir}[/cyan]")
     console.print(f"  Output: [cyan]{output}[/cyan]")
+    
+    # Check if input is a simulation JSON file
+    if input_dir.is_file() and input_dir.suffix == '.json' and PLOTTING_AVAILABLE:
+        try:
+            # Detect if it's a simulation file by checking for trajectory/landmarks keys
+            with open(input_dir, 'r') as f:
+                data = json.load(f)
+                if 'groundtruth' in data and 'measurements' in data:
+                    # This is a simulation file, use new dashboard
+                    console.print("  Type: [cyan]Simulation data[/cyan]")
+                    config = DashboardConfig(
+                        title=f"SLAM Simulation Dashboard - {input_dir.stem}"
+                    )
+                    dashboard_path = create_dashboard(
+                        simulation_file=input_dir,
+                        output_file=output,
+                        config=config
+                    )
+                    console.print(f"\n[green]✓[/green] Dashboard generated: [cyan]{dashboard_path}[/cyan]")
+                    
+                    # Show KPI summary
+                    kpis = create_kpi_summary(input_dir)
+                    console.print("\n[bold]Simulation KPIs:[/bold]")
+                    for key, value in kpis['simulation'].items():
+                        console.print(f"  {key}: [cyan]{value}[/cyan]")
+                    return 0
+        except Exception as e:
+            console.print(f"[yellow]⚠ Could not parse as simulation file: {e}[/yellow]")
+            # Fall through to KPI dashboard
     
     # Load all KPI files
     kpi_files = list(input_dir.glob("*.json"))

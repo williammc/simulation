@@ -40,9 +40,16 @@ main() {
     # Always setup/activate the virtual environment
     setup_venv
     
-    # Forward all arguments to the Python CLI
-    # The CLI handles all command logic, help, etc.
-    $PYTHON -m tools.cli "$@"
+    # Check if first argument is "cmd" - execute arbitrary command in venv
+    if [ "$1" = "cmd" ]; then
+        shift  # Remove "cmd" from arguments
+        # Execute the rest of the arguments as a command
+        "$@"
+    else
+        # Forward all arguments to the Python CLI
+        # The CLI handles all command logic, help, etc.
+        $PYTHON -m tools.cli "$@"
+    fi
 }
 
 # Check if being sourced or executed

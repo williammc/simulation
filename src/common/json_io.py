@@ -383,9 +383,21 @@ def load_simulation_data(filepath: Union[str, Path]) -> Dict[str, Any]:
         - landmarks: Ground truth landmarks (if available)
         - imu_data: IMU measurements (if available)
         - camera_data: Camera measurements (if available)
+        - camera_calibrations: List of camera calibrations
+        - imu_calibrations: List of IMU calibrations
         - raw: Raw SimulationData object
     """
     sim_data = SimulationData.load(filepath)
+    
+    # Extract calibrations
+    camera_calibrations = []
+    imu_calibrations = []
+    
+    if hasattr(sim_data, 'calibration') and sim_data.calibration:
+        if hasattr(sim_data.calibration, 'cameras'):
+            camera_calibrations = sim_data.calibration.cameras
+        if hasattr(sim_data.calibration, 'imus'):
+            imu_calibrations = sim_data.calibration.imus
     
     return {
         "metadata": sim_data.metadata,
@@ -393,5 +405,7 @@ def load_simulation_data(filepath: Union[str, Path]) -> Dict[str, Any]:
         "landmarks": sim_data.get_map(),
         "imu_data": sim_data.get_imu_data(),
         "camera_data": sim_data.get_camera_data(),
+        "camera_calibrations": camera_calibrations,
+        "imu_calibrations": imu_calibrations,
         "raw": sim_data
     }
