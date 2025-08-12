@@ -127,6 +127,39 @@ python tools/inspect_ground_truth.py extract-gt output/simulation.json
 python tools/inspect_ground_truth.py compare-noise output/simulation.json
 ```
 
+### Dataset Conversion
+
+#### TUM-VI Dataset Conversion
+The TUM-VI converter generates synthetic visual observations from mocap ground truth:
+
+```bash
+./run.sh convert tumvi INPUT_PATH OUTPUT_FILE [options]
+  --num-landmarks INT     Number of synthetic 3D landmarks (default: 200)
+  --keyframe-interval FLOAT  Time between keyframes in seconds (default: 0.1)
+  --pixel-noise FLOAT     Standard deviation of pixel noise (default: 1.0)
+
+# Examples:
+# Convert TUM-VI dataset with default settings
+./run.sh convert tumvi data/tumvi/room1 output/room1.json
+
+# Generate dense observations (more landmarks, frequent keyframes)
+./run.sh convert tumvi data/tumvi/room1 output/room1_dense.json \
+  --num-landmarks 500 --keyframe-interval 0.05
+
+# Generate sparse, noisy observations for challenging scenarios
+./run.sh convert tumvi data/tumvi/room1 output/room1_sparse.json \
+  --num-landmarks 100 --keyframe-interval 0.2 --pixel-noise 3.0
+```
+
+The converter:
+1. Loads mocap ground truth trajectory and IMU measurements
+2. Generates synthetic 3D landmarks around the trajectory
+3. Creates keyframes at regular intervals
+4. Projects landmarks to camera frames using calibration
+5. Adds realistic pixel noise to observations
+
+This approach ensures consistent, reproducible benchmarks without requiring actual images.
+
 ### SLAM Estimation
 ```bash
 ./run.sh slam [ekf|swba|srif] --input FILE [options]

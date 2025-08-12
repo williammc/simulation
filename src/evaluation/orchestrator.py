@@ -155,6 +155,13 @@ class EvaluationOrchestrator:
         
         if dataset_file.exists() and not self.config['evaluation'].get('overwrite', False):
             self.logger.info(f"Using existing simulated dataset: {name}")
+            # If it's a directory, find the actual JSON file inside
+            if dataset_file.is_dir():
+                json_files = list(dataset_file.glob("*.json"))
+                if json_files:
+                    return json_files[0]
+                else:
+                    raise FileNotFoundError(f"No JSON file found in existing dataset directory: {dataset_file}")
             return dataset_file
         
         self.logger.info(f"Generating simulated dataset: {name}")
@@ -277,10 +284,10 @@ class EvaluationOrchestrator:
             else:
                 raise FileNotFoundError(f"TUM-VI dataset not found: {sequence_dir}")
         
-        # Convert dataset
+        # Convert dataset using the new convert command
         cmd = [
-            "./run.sh", "cmd",
-            f"python3 scripts/convert_tumvi.py",
+            "./run.sh", "convert",
+            "tumvi",
             str(sequence_dir),
             str(output_file)
         ]
@@ -374,7 +381,9 @@ class EvaluationOrchestrator:
                         results[dataset_name][estimator_name] = result
                         pbar.update(1)
                     except Exception as e:
+                        import traceback
                         self.logger.error(f"Failed {estimator_name} on {dataset_name}: {e}")
+                        self.logger.debug(f"Traceback: {traceback.format_exc()}")
                         pbar.update(1)
         
         return results
@@ -423,15 +432,23 @@ class EvaluationOrchestrator:
                 timeout=timeout
             )
             
-            # The slam command may create a directory with timestamped file
-            # Find the actual generated file
-            actual_output_file = output_file
-            if output_file.is_dir():
+            # The slam command creates a directory with timestamped file
+            # Check if output_file exists as file or directory
+            actual_output_file = None
+            if output_file.exists() and output_file.is_file():
+                actual_output_file = output_file
+            elif output_file.exists() and output_file.is_dir():
                 json_files = list(output_file.glob("*.json"))
                 if json_files:
                     actual_output_file = json_files[0]  # Get the first (should be only) JSON file
-                else:
-                    raise FileNotFoundError(f"No JSON file found in {output_file}")
+            elif output_file.with_suffix('').exists() and output_file.with_suffix('').is_dir():
+                # Check if directory without .json extension exists
+                json_files = list(output_file.with_suffix('').glob("*.json"))
+                if json_files:
+                    actual_output_file = json_files[0]
+            
+            if not actual_output_file:
+                raise FileNotFoundError(f"No output file found at {output_file}")
             
             # Load results
             with open(actual_output_file, 'r') as f:
@@ -463,7 +480,12 @@ class EvaluationOrchestrator:
             self.logger.error(f"Timeout: {estimator_name} on {dataset_name}")
             return {'status': 'timeout'}
         except subprocess.CalledProcessError as e:
-            self.logger.error(f"Error: {estimator_name} on {dataset_name}: {e.stderr}")
+            self.logger.error(f"Error: {estimator_name} on {dataset_name}: {e.stderr if e.stderr else e}")
+            return {'status': 'error', 'error': str(e), 'stderr': e.stderr, 'stdout': e.stdout}
+        except Exception as e:
+            self.logger.error(f"Unexpected error: {estimator_name} on {dataset_name}: {e}")
+            import traceback
+            self.logger.debug(f"Traceback: {traceback.format_exc()}")
             return {'status': 'error', 'error': str(e)}
     
     def _compute_comparisons(self, estimation_results: Dict) -> Dict:
