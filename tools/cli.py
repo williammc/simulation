@@ -9,6 +9,7 @@ from typing import Optional
 
 import typer
 from rich.console import Console
+from rich.table import Table
 
 # Import command implementations
 from tools.simulate import run_simulation
@@ -50,9 +51,19 @@ def simulate(
         "--seed", "-s",
         help="Random seed for reproducibility"
     ),
+    noise_config: Optional[Path] = typer.Option(
+        None,
+        "--noise-config", "-n",
+        help="Path to noise configuration YAML file"
+    ),
+    add_noise: bool = typer.Option(
+        False,
+        "--add-noise",
+        help="Add noise to sensor measurements"
+    ),
 ):
     """Run simulation to generate synthetic SLAM data."""
-    exit_code = run_simulation(trajectory, config, duration, output, seed)
+    exit_code = run_simulation(trajectory, config, duration, output, seed, noise_config, add_noise)
     if exit_code != 0:
         raise typer.Exit(exit_code)
 
@@ -236,7 +247,6 @@ def clean():
 @app.command()
 def info():
     """Show system information and configuration."""
-    from rich.table import Table
     
     console.print("[bold cyan]SLAM Simulation System[/bold cyan]")
     console.print()

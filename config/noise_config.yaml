@@ -1,0 +1,50 @@
+# Noise configuration for SLAM simulation
+# All noise parameters can be adjusted to test estimator robustness
+
+# IMU noise parameters
+imu:
+  # Accelerometer noise
+  accelerometer:
+    noise_density: 0.01        # m/s^2/sqrt(Hz) - white noise
+    random_walk: 0.001         # m/s^3/sqrt(Hz) - bias random walk
+    bias_stability: 0.0001     # m/s^2 - bias stability bound
+    initial_bias: [0.0, 0.0, 0.0]  # Initial bias (can be random)
+  
+  # Gyroscope noise
+  gyroscope:
+    noise_density: 0.001       # rad/s/sqrt(Hz) - white noise
+    random_walk: 0.0001        # rad/s^2/sqrt(Hz) - bias random walk
+    bias_stability: 0.0001     # rad/s - bias stability bound
+    initial_bias: [0.0, 0.0, 0.0]  # Initial bias
+  
+  # General settings
+  gravity_magnitude: 9.81      # m/s^2
+  add_noise: true              # Enable/disable noise
+
+# Camera noise parameters
+camera:
+  # Pixel measurement noise
+  pixel_noise_std: 1.0         # pixels - standard deviation
+  
+  # Outlier generation
+  outlier_probability: 0.01    # Probability of outlier (0-1)
+  outlier_std: 10.0            # pixels - outlier standard deviation
+  
+  # General settings
+  add_noise: true              # Enable/disable noise
+
+# Landmark generation parameters
+landmarks:
+  num_landmarks: 500           # Number of landmarks
+  distribution: "uniform"      # uniform, gaussian, clustered
+  min_separation: 0.1          # Minimum distance between landmarks (m)
+  
+  # For adaptive generation (near trajectory)
+  adaptive: true               # Use adaptive generation
+  density_factor: 2.0          # Concentration near trajectory
+  max_distance: 20.0           # Maximum distance from trajectory (m)
+
+# Global settings
+global:
+  seed: 42                     # Random seed for reproducibility (null for random)
+  add_all_noise: false         # Master switch for all noise

@@ -13,7 +13,15 @@ from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from src.simulation.trajectory_generator import generate_trajectory
+from src.simulation.landmark_generator import generate_landmarks, LandmarkGeneratorConfig
+from src.simulation.camera_model import PinholeCamera, generate_camera_observations
+from src.simulation.imu_model import IMUModel, IMUNoiseConfig
+from src.common.data_structures import (
+    CameraCalibration, CameraIntrinsics, CameraExtrinsics, CameraModel,
+    IMUCalibration, CameraData
+)
 from src.common.json_io import save_simulation_data
+import numpy as np
 
 console = Console()
 
@@ -24,6 +32,8 @@ def run_simulation(
     duration: float,
     output: Optional[Path],
     seed: Optional[int],
+    noise_config: Optional[Path] = None,
+    add_noise: bool = False,
 ) -> int:
     """
     Run simulation to generate synthetic SLAM data.
@@ -34,6 +44,8 @@ def run_simulation(
         duration: Simulation duration in seconds
         output: Output directory for simulation data
         seed: Random seed for reproducibility
+        noise_config: Path to noise configuration YAML file
+        add_noise: Enable noise in measurements
     
     Returns:
         Exit code (0 for success)
@@ -46,9 +58,25 @@ def run_simulation(
         console.print(f"  Config: [cyan]{config}[/cyan]")
     if seed is not None:
         console.print(f"  Seed: [cyan]{seed}[/cyan]")
+    if add_noise:
+        console.print(f"  Noise: [cyan]Enabled[/cyan]")
+        if noise_config:
+            console.print(f"  Noise config: [cyan]{noise_config}[/cyan]")
     
     output_dir = output or Path("output")
     output_dir.mkdir(exist_ok=True)
+    
+    # Load noise configuration
+    noise_params = {}
+    if noise_config and noise_config.exists():
+        with open(noise_config, 'r') as f:
+            noise_params = yaml.safe_load(f)
+    elif add_noise:
+        # Use default noise config file if it exists
+        default_noise_config = Path("config/noise_config.yaml")
+        if default_noise_config.exists():
+            with open(default_noise_config, 'r') as f:
+                noise_params = yaml.safe_load(f)
     
     # Load config or use defaults
     if config and config.exists():
@@ -100,6 +128,117 @@ def run_simulation(
             # Generate trajectory
             traj = generate_trajectory(trajectory, params)
             
+            progress.update(task, description="Generating landmarks...")
+            
+            # Generate landmarks adaptively around trajectory
+            landmark_params = noise_params.get("landmarks", {})
+            landmark_config = LandmarkGeneratorConfig(
+                num_landmarks=landmark_params.get("num_landmarks", 500),
+                distribution=landmark_params.get("distribution", "uniform"),
+                min_separation=landmark_params.get("min_separation", 0.1),
+                seed=seed
+            )
+            
+            # Use adaptive generation to place landmarks near trajectory
+            use_adaptive = landmark_params.get("adaptive", True)
+            landmarks = generate_landmarks(
+                config=landmark_config,
+                trajectory=traj,
+                adaptive=use_adaptive
+            )
+            
+            progress.update(task, description="Generating sensor measurements...")
+            
+            # Create camera calibration
+            camera_intrinsics = CameraIntrinsics(
+                model=CameraModel.PINHOLE,
+                width=640,
+                height=480,
+                fx=500.0,
+                fy=500.0,
+                cx=320.0,
+                cy=240.0,
+                distortion=np.zeros(5)
+            )
+            
+            camera_extrinsics = CameraExtrinsics(
+                B_T_C=np.eye(4)  # Camera at body center for simplicity
+            )
+            
+            camera_calib = CameraCalibration(
+                camera_id="cam0",
+                intrinsics=camera_intrinsics,
+                extrinsics=camera_extrinsics
+            )
+            
+            # Create IMU calibration
+            imu_calib = IMUCalibration(
+                imu_id="imu0",
+                accelerometer_noise_density=0.01,
+                accelerometer_random_walk=0.001,
+                gyroscope_noise_density=0.001,
+                gyroscope_random_walk=0.0001,
+                rate=200.0
+            )
+            
+            # Generate camera observations
+            from src.simulation.camera_model import CameraNoiseConfig
+            
+            camera_noise_params = noise_params.get("camera", {})
+            camera_noise_config = CameraNoiseConfig(
+                pixel_noise_std=camera_noise_params.get("pixel_noise_std", 1.0),
+                add_noise=add_noise and camera_noise_params.get("add_noise", True),
+                outlier_probability=camera_noise_params.get("outlier_probability", 0.01),
+                outlier_std=camera_noise_params.get("outlier_std", 10.0),
+                seed=seed
+            )
+            
+            camera = PinholeCamera(camera_calib, noise_config=camera_noise_config)
+            camera_data = CameraData(camera_id="cam0", rate=30.0)
+            
+            # Sample camera observations at 30 Hz
+            camera_dt = 1.0 / 30.0
+            time_range = traj.get_time_range()
+            camera_times = np.arange(time_range[0], time_range[1], camera_dt)
+            
+            for t in camera_times:
+                # Get pose at this time
+                pose = traj.get_pose_at_time(t)
+                if pose is not None:
+                    frame = generate_camera_observations(
+                        camera, landmarks, pose, t, "cam0"
+                    )
+                    if len(frame.observations) > 0:  # Only add if there are observations
+                        camera_data.add_frame(frame)
+            
+            # Generate IMU measurements
+            imu_noise_params = noise_params.get("imu", {})
+            accel_params = imu_noise_params.get("accelerometer", {})
+            gyro_params = imu_noise_params.get("gyroscope", {})
+            
+            imu_noise_config = IMUNoiseConfig(
+                accel_noise_density=accel_params.get("noise_density", 0.01),
+                accel_random_walk=accel_params.get("random_walk", 0.001),
+                accel_bias_stability=accel_params.get("bias_stability", 0.0001),
+                gyro_noise_density=gyro_params.get("noise_density", 0.001),
+                gyro_random_walk=gyro_params.get("random_walk", 0.0001),
+                gyro_bias_stability=gyro_params.get("bias_stability", 0.0001),
+                gravity_magnitude=imu_noise_params.get("gravity_magnitude", 9.81),
+                seed=seed
+            )
+            
+            imu_model = IMUModel(
+                calibration=imu_calib,
+                noise_config=imu_noise_config
+            )
+            
+            # Generate with or without noise
+            imu_add_noise = add_noise and imu_noise_params.get("add_noise", True)
+            if imu_add_noise:
+                imu_data = imu_model.generate_noisy_measurements(traj)
+            else:
+                imu_data = imu_model.generate_perfect_measurements(traj)
+            
             progress.update(task, description="Saving data...")
             
             # Generate output file
@@ -117,6 +256,11 @@ def run_simulation(
             save_simulation_data(
                 filepath=output_file,
                 trajectory=traj,
+                landmarks=landmarks,
+                imu_data=imu_data,
+                camera_data=camera_data,
+                camera_calibrations=[camera_calib],
+                imu_calibrations=[imu_calib],
                 metadata=metadata
             )
             
@@ -130,6 +274,14 @@ def run_simulation(
     console.print("\n[bold]Summary:[/bold]")
     console.print(f"  Output size: {output_file.stat().st_size:,} bytes")
     console.print(f"  Trajectory points: {len(traj.states)}")
+    console.print(f"  Landmarks: {len(landmarks.landmarks)}")
+    console.print(f"  IMU measurements: {len(imu_data.measurements)}")
+    console.print(f"  Camera frames: {len(camera_data.frames)}")
+    
+    # Count total observations
+    total_obs = sum(len(frame.observations) for frame in camera_data.frames)
+    console.print(f"  Camera observations: {total_obs}")
+    
     time_range = traj.get_time_range()
     console.print(f"  Time range: {time_range[0]:.2f}s - {time_range[1]:.2f}s")
     
