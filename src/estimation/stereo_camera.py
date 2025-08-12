@@ -14,7 +14,7 @@ from src.estimation.camera_model import (
     CameraMeasurementModel, ReprojectionError
 )
 from src.utils.math_utils import (
-    quaternion_to_rotation_matrix, skew
+    quaternion_to_rotation_matrix, skew, pose_to_matrix
 )
 
 
@@ -63,10 +63,10 @@ class StereoCalibration:
     def __post_init__(self):
         """Initialize stereo transform if not provided."""
         if self.T_RL is None:
-            # Default: right camera is baseline distance along x-axis from left camera
+            # Default: right camera is baseline distance to the right of left camera
             # T_RL transforms points from left to right camera frame
             self.T_RL = np.eye(4)
-            self.T_RL[0, 3] = -self.baseline  # Right camera sees points shifted left
+            self.T_RL[0, 3] = -self.baseline  # Transform: right camera sees points shifted by -baseline
 
 
 class StereoCameraModel:
@@ -119,22 +119,34 @@ class StereoCameraModel:
         self,
         landmark_position: np.ndarray,
         camera_pose: Pose,
+        add_noise: bool = False,
         compute_jacobian: bool = False
-    ) -> Tuple[Optional[StereoObservation], Optional[np.ndarray], Optional[np.ndarray]]:
+    ) -> Tuple[Optional[StereoObservation], Optional[float], Optional[float]]:
         """
         Project 3D landmark to both stereo cameras.
         
         Args:
             landmark_position: 3D position in world frame
             camera_pose: Left camera pose in world frame
+            add_noise: Whether to add measurement noise
             compute_jacobian: Whether to compute Jacobians
         
         Returns:
             Tuple of:
             - Stereo observation (None if not visible in both cameras)
-            - Jacobian w.r.t. camera pose (4x6) if requested
-            - Jacobian w.r.t. landmark (4x3) if requested
+            - Left camera depth
+            - Right camera depth
         """
+        # Transform landmark to left camera frame
+        T_W_C = pose_to_matrix(camera_pose)
+        T_C_W = np.linalg.inv(T_W_C)
+        landmark_cam = (T_C_W @ np.append(landmark_position, 1))[:3]
+        
+        # Check if behind camera
+        left_depth = landmark_cam[2]
+        if left_depth <= 0:
+            return None, None, None
+        
         # Project to left camera
         left_pixel, J_left_pose, J_left_lm = self.left_model.project(
             landmark_position, camera_pose, compute_jacobian
@@ -146,6 +158,15 @@ class StereoCameraModel:
         # Compute right camera pose
         right_pose = self._compute_right_pose(camera_pose)
         
+        # Transform landmark to right camera frame
+        T_W_RC = pose_to_matrix(right_pose)
+        T_RC_W = np.linalg.inv(T_W_RC)
+        landmark_right_cam = (T_RC_W @ np.append(landmark_position, 1))[:3]
+        right_depth = landmark_right_cam[2]
+        
+        if right_depth <= 0:
+            return None, None, None
+        
         # Project to right camera
         right_pixel, J_right_pose, J_right_lm = self.right_model.project(
             landmark_position, right_pose, compute_jacobian
@@ -153,6 +174,18 @@ class StereoCameraModel:
         
         if right_pixel is None:
             return None, None, None
+        
+        # Add noise if requested
+        if add_noise:
+            noise_std = 0.5  # pixels
+            left_pixel = ImagePoint(
+                u=left_pixel.u + np.random.normal(0, noise_std),
+                v=left_pixel.v + np.random.normal(0, noise_std)
+            )
+            right_pixel = ImagePoint(
+                u=right_pixel.u + np.random.normal(0, noise_std),
+                v=right_pixel.v + np.random.normal(0, noise_std)
+            )
         
         # Create stereo observation
         stereo_obs = StereoObservation(
@@ -167,14 +200,8 @@ class StereoCameraModel:
             fx = self.left_model.intrinsics.fx
             stereo_obs.depth = (self.calibration.baseline * fx) / stereo_obs.disparity
         
-        # Combine Jacobians if requested
-        if compute_jacobian:
-            # Stack Jacobians for left and right observations
-            J_pose = np.vstack([J_left_pose, J_right_pose]) if J_left_pose is not None else None
-            J_landmark = np.vstack([J_left_lm, J_right_lm]) if J_left_lm is not None else None
-            return stereo_obs, J_pose, J_landmark
-        
-        return stereo_obs, None, None
+        # Return observation and depths
+        return stereo_obs, left_depth, right_depth
     
     def triangulate(
         self,
@@ -231,7 +258,11 @@ class StereoCameraModel:
         disparity_std = 0.5  # pixels (typical stereo matching error)
         depth_std = (baseline * fx * disparity_std) / (stereo_obs.disparity ** 2)
         
-        return landmark, depth_std
+        # Create covariance matrix
+        # Uncertainty is higher in depth direction
+        uncertainty = np.diag([0.01, 0.01, depth_std**2])
+        
+        return landmark, uncertainty
     
     def _triangulate_general(
         self,
@@ -290,7 +321,9 @@ class StereoCameraModel:
                 right_reproj.v - stereo_obs.right_pixel.v
             ])
         
-        return landmark, error
+        # Convert error to covariance matrix
+        uncertainty = np.eye(3) * (error ** 2 + 0.01)
+        return landmark, uncertainty
     
     def compute_stereo_reprojection_error(
         self,
@@ -352,8 +385,10 @@ class StereoCameraModel:
         t_WL = left_pose.position
         
         # Right camera in world frame
+        # T_RL transforms from left to right camera frame
+        # For stereo: right camera is at +baseline in world x when left is at origin
         R_WR = R_WL @ self.R_RL
-        t_WR = t_WL + R_WL @ self.t_RL
+        t_WR = t_WL + R_WL @ np.array([self.calibration.baseline, 0, 0])
         
         # Convert back to quaternion
         from src.utils.math_utils import rotation_matrix_to_quaternion

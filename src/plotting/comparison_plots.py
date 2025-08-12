@@ -49,6 +49,18 @@ def create_comparison_dashboard(
     
     # Extract data
     estimators = list(comparison_result.performances.keys())
+    
+    # Handle empty results
+    if not estimators:
+        # Return empty figure with message
+        fig.add_annotation(
+            text="No estimator results to compare",
+            xref="paper", yref="paper",
+            x=0.5, y=0.5, showarrow=False,
+            font=dict(size=20)
+        )
+        return fig
+    
     colors = px.colors.qualitative.Set1[:len(estimators)]
     
     # 1. ATE comparison
@@ -57,7 +69,7 @@ def create_comparison_dashboard(
     
     fig.add_trace(
         go.Bar(name='ATE RMSE', x=estimators, y=ate_rmse, 
-               marker_color=colors[0], showlegend=False),
+               marker_color=colors[0] if colors else 'blue', showlegend=False),
         row=1, col=1
     )
     
@@ -65,7 +77,7 @@ def create_comparison_dashboard(
     runtime = [perf.runtime_ms for perf in comparison_result.performances.values()]
     fig.add_trace(
         go.Bar(name='Runtime', x=estimators, y=runtime,
-               marker_color=colors[1], showlegend=False),
+               marker_color=colors[1] if len(colors) > 1 else 'green', showlegend=False),
         row=1, col=2
     )
     
@@ -75,7 +87,7 @@ def create_comparison_dashboard(
     
     fig.add_trace(
         go.Bar(name='RPE Trans', x=estimators, y=rpe_trans,
-               marker_color=colors[2], showlegend=False),
+               marker_color=colors[2] if len(colors) > 2 else 'red', showlegend=False),
         row=2, col=1
     )
     
@@ -83,7 +95,7 @@ def create_comparison_dashboard(
     memory = [perf.peak_memory_mb for perf in comparison_result.performances.values()]
     fig.add_trace(
         go.Bar(name='Memory', x=estimators, y=memory,
-               marker_color=colors[3], showlegend=False),
+               marker_color=colors[3] if len(colors) > 3 else 'orange', showlegend=False),
         row=2, col=2
     )
     
@@ -100,7 +112,7 @@ def create_comparison_dashboard(
         est_with_nees, nees_values = zip(*valid_nees)
         fig.add_trace(
             go.Bar(name='NEES', x=est_with_nees, y=nees_values,
-                   marker_color=colors[4], showlegend=False),
+                   marker_color=colors[4] if len(colors) > 4 else 'purple', showlegend=False),
             row=3, col=1
         )
         # Add chi-squared bounds (3 DOF)

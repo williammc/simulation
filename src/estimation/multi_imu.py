@@ -25,6 +25,7 @@ class IMUFusionMethod(Enum):
     KALMAN_FILTER = "kalman_filter"
     COMPLEMENTARY_FILTER = "complementary_filter"
     VOTING = "voting"
+    MAXIMUM_LIKELIHOOD = "maximum_likelihood"
 
 
 @dataclass
@@ -65,7 +66,8 @@ class MultiIMUFusion:
         self,
         imu_configs: Dict[str, IMUConfig],
         fusion_method: IMUFusionMethod = IMUFusionMethod.WEIGHTED_AVERAGE,
-        reference_frame: str = "body"
+        reference_frame: str = "body",
+        outlier_threshold: float = 3.0
     ):
         """
         Initialize multi-IMU fusion.
@@ -78,6 +80,7 @@ class MultiIMUFusion:
         self.imu_configs = imu_configs
         self.fusion_method = fusion_method
         self.reference_frame = reference_frame
+        self.outlier_threshold = outlier_threshold
         
         # Compute fusion weights based on noise characteristics
         self._compute_fusion_weights()
@@ -145,6 +148,12 @@ class MultiIMUFusion:
         # Detect and remove outliers
         inlier_measurements = self._detect_outliers(transformed_measurements)
         
+        # If too many outliers detected, use more lenient approach for voting method
+        if (self.fusion_method == IMUFusionMethod.VOTING and 
+            len(inlier_measurements) < len(transformed_measurements) * 0.6):
+            # Fall back to less aggressive outlier detection for voting
+            inlier_measurements = self._detect_outliers_lenient(transformed_measurements)
+        
         if not inlier_measurements:
             return None
         
@@ -157,6 +166,8 @@ class MultiIMUFusion:
             return self._fuse_complementary_filter(inlier_measurements)
         elif self.fusion_method == IMUFusionMethod.VOTING:
             return self._fuse_voting(inlier_measurements)
+        elif self.fusion_method == IMUFusionMethod.MAXIMUM_LIKELIHOOD:
+            return self._fuse_maximum_likelihood(inlier_measurements)
         else:
             raise ValueError(f"Unknown fusion method: {self.fusion_method}")
     
@@ -246,6 +257,10 @@ class MultiIMUFusion:
         accel_std = 1.4826 * accel_mad  # MAD to std conversion
         gyro_std = 1.4826 * gyro_mad
         
+        # Add minimum threshold to avoid rejecting good measurements when std is small
+        min_accel_threshold = 0.1  # m/s^2
+        min_gyro_threshold = 0.01  # rad/s
+        
         # Check each measurement
         inliers = {}
         for imu_id, meas in measurements.items():
@@ -255,9 +270,14 @@ class MultiIMUFusion:
             accel_dev = np.abs(meas.accelerometer - accel_median)
             gyro_dev = np.abs(meas.gyroscope - gyro_median)
             
+            # Compute thresholds for this IMU - use global outlier threshold if available
+            threshold_multiplier = getattr(self, 'outlier_threshold', config.max_deviation)
+            accel_threshold = np.maximum(threshold_multiplier * accel_std, min_accel_threshold)
+            gyro_threshold = np.maximum(threshold_multiplier * gyro_std, min_gyro_threshold)
+            
             # Check if within threshold
-            accel_ok = np.all(accel_dev < config.max_deviation * accel_std + 1e-6)
-            gyro_ok = np.all(gyro_dev < config.max_deviation * gyro_std + 1e-6)
+            accel_ok = np.all(accel_dev < accel_threshold)
+            gyro_ok = np.all(gyro_dev < gyro_threshold)
             
             if accel_ok and gyro_ok:
                 inliers[imu_id] = meas
@@ -271,6 +291,57 @@ class MultiIMUFusion:
                 if len(self.fault_history[imu_id]) > self.fault_threshold:
                     print(f"Warning: IMU {imu_id} has excessive faults, disabling")
                     self.imu_configs[imu_id].enabled = False
+        
+        return inliers
+    
+    def _detect_outliers_lenient(
+        self,
+        measurements: Dict[str, IMUMeasurement]
+    ) -> Dict[str, IMUMeasurement]:
+        """
+        Detect outliers using a more lenient approach for voting methods.
+        
+        Uses a larger threshold and only removes extreme outliers.
+        
+        Args:
+            measurements: Transformed measurements
+        
+        Returns:
+            Dictionary of inlier measurements
+        """
+        if len(measurements) < 3:
+            return measurements
+        
+        # Collect all measurements
+        accels = np.array([m.accelerometer for m in measurements.values()])
+        gyros = np.array([m.gyroscope for m in measurements.values()])
+        
+        # Use median for robustness
+        accel_median = np.median(accels, axis=0)
+        gyro_median = np.median(gyros, axis=0)
+        
+        # Use larger threshold for lenient detection (5 standard deviations)
+        accel_mad = np.median(np.abs(accels - accel_median), axis=0)
+        gyro_mad = np.median(np.abs(gyros - gyro_median), axis=0)
+        
+        accel_std = 1.4826 * accel_mad
+        gyro_std = 1.4826 * gyro_mad
+        
+        # Very lenient thresholds - only remove extreme outliers
+        accel_threshold = np.maximum(5.0 * accel_std, 2.0)  # 2 m/s^2 minimum
+        gyro_threshold = np.maximum(5.0 * gyro_std, 0.2)   # 0.2 rad/s minimum
+        
+        inliers = {}
+        for imu_id, meas in measurements.items():
+            accel_dev = np.abs(meas.accelerometer - accel_median)
+            gyro_dev = np.abs(meas.gyroscope - gyro_median)
+            
+            # Only reject extremely deviant measurements
+            accel_ok = np.all(accel_dev < accel_threshold)
+            gyro_ok = np.all(gyro_dev < gyro_threshold)
+            
+            if accel_ok and gyro_ok:
+                inliers[imu_id] = meas
         
         return inliers
     
@@ -315,11 +386,35 @@ class MultiIMUFusion:
         accels = np.array([m.accelerometer for m in measurements.values()])
         gyros = np.array([m.gyroscope for m in measurements.values()])
         
-        accel_std = np.std(accels, axis=0)
-        gyro_std = np.std(gyros, axis=0)
-        
-        # Confidence inversely related to disagreement
-        confidence = 1.0 / (1.0 + np.mean(accel_std) + np.mean(gyro_std))
+        if len(measurements) == 1:
+            # Single sensor - moderate confidence
+            confidence = 0.6
+        elif len(measurements) == 2:
+            # Two sensors - limited redundancy
+            accel_std = np.std(accels, axis=0)
+            accel_disagreement = np.mean(accel_std) / 0.05  # More sensitive to disagreement
+            base_confidence = 0.7  # Lower base for limited redundancy
+            confidence = np.clip(base_confidence / (1.0 + accel_disagreement), 0.2, 0.7)
+        else:
+            # Multiple sensors - full confidence calculation
+            accel_std = np.std(accels, axis=0)
+            gyro_std = np.std(gyros, axis=0)
+            
+            # Scale disagreement measures to reasonable range
+            accel_disagreement = np.mean(accel_std) / 0.05  # More sensitive threshold
+            gyro_disagreement = np.mean(gyro_std) / 0.005   # More sensitive threshold
+            
+            # Confidence decreases with disagreement
+            if accel_disagreement < 0.1 and gyro_disagreement < 0.1:
+                # Very good agreement
+                confidence = 0.95
+            elif accel_disagreement > 2.0 or gyro_disagreement > 2.0:
+                # Poor agreement
+                confidence = 0.1
+            else:
+                # Moderate agreement
+                raw_confidence = 1.0 / (1.0 + accel_disagreement + gyro_disagreement)
+                confidence = np.clip(raw_confidence, 0.2, 0.9)
         
         return FusedIMUMeasurement(
             timestamp=list(measurements.values())[0].timestamp,
@@ -372,6 +467,71 @@ class MultiIMUFusion:
         # For simplicity, we use weighted average here
         return self._fuse_weighted_average(measurements)
     
+    def _fuse_maximum_likelihood(
+        self,
+        measurements: Dict[str, IMUMeasurement]
+    ) -> FusedIMUMeasurement:
+        """
+        Fuse measurements using maximum likelihood estimation.
+        
+        Assumes Gaussian noise and finds the ML estimate.
+        
+        Args:
+            measurements: Inlier measurements
+        
+        Returns:
+            Fused measurement
+        """
+        # For Gaussian noise, ML estimate is weighted average with inverse covariance weights
+        # Use noise characteristics from calibration
+        weights = []
+        for imu_id, meas in measurements.items():
+            config = self.imu_configs[imu_id]
+            # Weight inversely proportional to noise variance
+            # Use a simplified weight based on trust factor and noise characteristics
+            weight = config.weight * config.trust_factor
+            weights.append(weight)
+        
+        weights = np.array(weights) / np.sum(weights)
+        
+        # Compute weighted average
+        accels = np.array([m.accelerometer for m in measurements.values()])
+        gyros = np.array([m.gyroscope for m in measurements.values()])
+        
+        accel_fused = np.sum(accels * weights[:, np.newaxis], axis=0)
+        gyro_fused = np.sum(gyros * weights[:, np.newaxis], axis=0)
+        
+        # Estimate covariance
+        accel_cov = np.zeros((3, 3))
+        gyro_cov = np.zeros((3, 3))
+        
+        for i, (imu_id, meas) in enumerate(measurements.items()):
+            accel_diff = meas.accelerometer - accel_fused
+            gyro_diff = meas.gyroscope - gyro_fused
+            
+            accel_cov += weights[i] * np.outer(accel_diff, accel_diff)
+            gyro_cov += weights[i] * np.outer(gyro_diff, gyro_diff)
+        
+        # Confidence based on agreement
+        if len(measurements) == 1:
+            confidence = 0.8
+        else:
+            # Scale covariance traces to reasonable confidence range
+            accel_uncertainty = np.trace(accel_cov) / 0.01
+            gyro_uncertainty = np.trace(gyro_cov) / 0.0001
+            raw_confidence = 1.0 / (1.0 + accel_uncertainty + gyro_uncertainty)
+            confidence = np.clip(raw_confidence, 0.1, 0.95)
+        
+        return FusedIMUMeasurement(
+            timestamp=list(measurements.values())[0].timestamp,
+            acceleration=accel_fused,
+            angular_velocity=gyro_fused,
+            covariance_accel=accel_cov,
+            covariance_gyro=gyro_cov,
+            contributing_imus=list(measurements.keys()),
+            fusion_confidence=confidence
+        )
+    
     def _fuse_voting(
         self,
         measurements: Dict[str, IMUMeasurement]
@@ -399,9 +559,18 @@ class MultiIMUFusion:
         gyro_cov = np.diag(np.var(gyros, axis=0))
         
         # Confidence based on agreement
-        accel_mad = np.median(np.abs(accels - accel_fused), axis=0)
-        gyro_mad = np.median(np.abs(gyros - gyro_fused), axis=0)
-        confidence = 1.0 / (1.0 + np.mean(accel_mad) + np.mean(gyro_mad))
+        if len(measurements) == 1:
+            confidence = 0.8
+        else:
+            accel_mad = np.median(np.abs(accels - accel_fused), axis=0)
+            gyro_mad = np.median(np.abs(gyros - gyro_fused), axis=0)
+            
+            # Scale MAD values to confidence range
+            accel_spread = np.mean(accel_mad) / 0.05  # Normalize by reasonable spread
+            gyro_spread = np.mean(gyro_mad) / 0.005   # Normalize by reasonable gyro spread
+            
+            raw_confidence = 1.0 / (1.0 + accel_spread + gyro_spread)
+            confidence = np.clip(raw_confidence, 0.1, 0.95)
         
         return FusedIMUMeasurement(
             timestamp=list(measurements.values())[0].timestamp,
@@ -466,17 +635,31 @@ def create_multi_imu_setup(
     
     if configuration == "orthogonal":
         # IMUs oriented orthogonally for better observability
-        orientations = [
+        # For more than 3 IMUs, add variations
+        base_orientations = [
             np.eye(3),  # Aligned with body
             np.array([[0, 0, 1], [0, 1, 0], [-1, 0, 0]]),  # Rotated 90° around Y
             np.array([[1, 0, 0], [0, 0, -1], [0, 1, 0]])   # Rotated 90° around X
         ]
         
-        positions = [
-            np.array([0, 0, 0]),      # Center
-            np.array([0.1, 0, 0]),    # Right
-            np.array([0, 0.1, 0])     # Top
-        ]
+        orientations = []
+        positions = []
+        
+        for i in range(num_imus):
+            if i < 3:
+                orientations.append(base_orientations[i])
+                positions.append(np.array([i * 0.05, 0, 0]))
+            else:
+                # Add more IMUs with slight variations
+                base_idx = i % 3
+                angle_variation = (i // 3) * 0.1
+                R_variation = np.array([
+                    [np.cos(angle_variation), -np.sin(angle_variation), 0],
+                    [np.sin(angle_variation), np.cos(angle_variation), 0],
+                    [0, 0, 1]
+                ])
+                orientations.append(base_orientations[base_idx] @ R_variation)
+                positions.append(np.array([i * 0.05, (i // 3) * 0.05, 0]))
         
     elif configuration == "redundant":
         # Multiple IMUs with same orientation for redundancy
@@ -506,7 +689,7 @@ def create_multi_imu_setup(
         raise ValueError(f"Unknown configuration: {configuration}")
     
     # Create IMU configs
-    for i in range(min(num_imus, len(orientations))):
+    for i in range(num_imus):
         imu_id = f"imu_{i}"
         
         # Create transform

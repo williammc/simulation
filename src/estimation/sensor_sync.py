@@ -31,6 +31,28 @@ class SensorTiming:
     jitter: float  # seconds (std dev)
     clock_offset: float = 0.0  # Offset from master clock
     drift_rate: float = 0.0  # Clock drift in ppm
+    
+    def __post_init__(self):
+        """Validate parameters after initialization."""
+        if self.frequency <= 0:
+            raise ValueError(f"Frequency must be positive, got {self.frequency}")
+        if self.latency < 0:
+            raise ValueError(f"Latency must be non-negative, got {self.latency}")
+        if self.jitter < 0:
+            raise ValueError(f"Jitter must be non-negative, got {self.jitter}")
+    
+    @property
+    def period(self) -> float:
+        """Get the period (1/frequency) in seconds."""
+        return 1.0 / self.frequency if self.frequency > 0 else float('inf')
+    
+    def is_valid(self) -> bool:
+        """Check if timing parameters are valid."""
+        return (
+            self.frequency > 0 and
+            self.latency >= 0 and
+            self.jitter >= 0
+        )
 
 
 @dataclass
@@ -61,7 +83,7 @@ class SensorSynchronizer:
         sensor_timings: Dict[str, SensorTiming],
         master_clock: str = "imu",
         buffer_size: int = 1000,
-        sync_method: SyncMethod = SyncMethod.LINEAR_INTERPOLATION
+        sync_method: SyncMethod = SyncMethod.NEAREST
     ):
         """
         Initialize sensor synchronizer.
@@ -96,6 +118,20 @@ class SensorSynchronizer:
             "interpolation_count": 0,
             "dropped_measurements": 0
         }
+    
+    @property
+    def max_buffer_size(self):
+        """Get maximum buffer size."""
+        return self.buffer_size
+    
+    @max_buffer_size.setter
+    def max_buffer_size(self, value: int):
+        """Set maximum buffer size and resize buffers."""
+        self.buffer_size = value
+        # Recreate buffers with new size
+        for sensor_id in self.buffers.keys():
+            old_buffer = list(self.buffers[sensor_id])
+            self.buffers[sensor_id] = deque(old_buffer, maxlen=value)
     
     def add_measurement(
         self,
@@ -358,7 +394,7 @@ class SensorSynchronizer:
         correction = self.clock_corrections[sensor_id]
         
         # Apply static offset and latency
-        corrected = timestamp + timing.clock_offset - timing.latency
+        corrected = timestamp + timing.clock_offset + timing.latency
         
         # Apply estimated drift correction
         if correction.drift_estimate is not None:
@@ -457,7 +493,8 @@ class HardwareTrigger:
         self,
         trigger_rate: float = 30.0,  # Hz
         camera_delay: float = 0.005,  # Camera exposure delay
-        imu_delay: float = 0.001  # IMU sampling delay
+        imu_delay: float = 0.001,  # IMU sampling delay
+        jitter: float = 0.0  # Trigger jitter (std dev in seconds)
     ):
         """
         Initialize hardware trigger.
@@ -466,11 +503,13 @@ class HardwareTrigger:
             trigger_rate: Trigger frequency in Hz
             camera_delay: Camera trigger to exposure delay
             imu_delay: IMU trigger to sample delay
+            jitter: Standard deviation of trigger timing jitter
         """
         self.trigger_rate = trigger_rate
         self.trigger_period = 1.0 / trigger_rate
         self.camera_delay = camera_delay
         self.imu_delay = imu_delay
+        self.jitter = jitter
         
         self.last_trigger = 0.0
     
@@ -492,21 +531,27 @@ class HardwareTrigger:
         
         return next_trigger
     
-    def trigger(self, timestamp: float) -> Dict[str, float]:
+    def trigger(self, timestamp: float, add_jitter: bool = False) -> Dict[str, float]:
         """
         Generate trigger signal.
         
         Args:
             timestamp: Trigger timestamp
+            add_jitter: Whether to add timing jitter
         
         Returns:
             Dictionary of sensor timestamps after delays
         """
         self.last_trigger = timestamp
         
+        # Add jitter if requested
+        jitter_offset = 0.0
+        if add_jitter and self.jitter > 0:
+            jitter_offset = np.random.normal(0, self.jitter)
+        
         return {
-            "camera": timestamp + self.camera_delay,
-            "imu": timestamp + self.imu_delay
+            "camera": timestamp + self.camera_delay + jitter_offset,
+            "imu": timestamp + self.imu_delay + jitter_offset
         }
     
     def align_to_trigger(self, timestamp: float) -> float:

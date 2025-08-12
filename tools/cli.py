@@ -287,6 +287,119 @@ def compare(
 
 
 @app.command()
+def plot(
+    input_file: Path = typer.Argument(..., help="Input JSON file (simulation or SLAM result)"),
+    compare_file: Optional[Path] = typer.Option(None, "--compare", help="Second file for comparison"),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Output HTML file"),
+    show_trajectory: bool = typer.Option(True, "--trajectory/--no-trajectory", help="Show 3D trajectory"),
+    show_measurements: bool = typer.Option(True, "--measurements/--no-measurements", help="Show 2D measurements"),
+    show_imu: bool = typer.Option(True, "--imu/--no-imu", help="Show IMU data"),
+    keyframes: Optional[int] = typer.Option(None, "--keyframes", "-k", help="Number of keyframes to show"),
+    open_browser: bool = typer.Option(True, "--browser/--no-browser", help="Open in browser")
+):
+    """Generate interactive plots from simulation or SLAM results."""
+    from src.plotting.enhanced_plots import create_full_visualization
+    from src.common.json_io import load_simulation_data, SimulationData
+    
+    console.print("[bold cyan]Generating plots...[/bold cyan]")
+    
+    # Load primary data
+    try:
+        data_dict = load_simulation_data(str(input_file))
+        # Always create a simple object with the expected attributes
+        # (The raw SimulationData doesn't have the right attribute names)
+        class SimData:
+            pass
+        primary_data = SimData()
+        # Map the loaded data to expected attributes
+        primary_data.ground_truth_trajectory = data_dict.get('trajectory')
+        primary_data.landmarks = data_dict.get('landmarks')
+        primary_data.imu_measurements = None
+        primary_data.camera_measurements = None
+        
+        # Handle IMU data
+        if data_dict.get('imu_data'):
+            imu_data = data_dict['imu_data']
+            if hasattr(imu_data, 'measurements'):
+                primary_data.imu_measurements = imu_data.measurements
+        
+        # Handle camera data
+        if data_dict.get('camera_data'):
+            cam_data = data_dict['camera_data']
+            if hasattr(cam_data, 'frames'):
+                primary_data.camera_measurements = cam_data.frames
+        
+        primary_data.camera_calibrations = data_dict.get('camera_calibrations')
+        primary_data.metadata = data_dict.get('metadata', {})
+        console.print(f"✓ Loaded: {input_file.name}")
+    except Exception as e:
+        console.print(f"[red]Error loading {input_file}: {e}[/red]")
+        raise typer.Exit(1)
+    
+    # Load comparison data if provided
+    compare_data = None
+    if compare_file:
+        try:
+            comp_dict = load_simulation_data(str(compare_file))
+            # Always create a simple object with the expected attributes
+            class SimData:
+                pass
+            compare_data = SimData()
+            compare_data.ground_truth_trajectory = comp_dict.get('trajectory')
+            compare_data.landmarks = comp_dict.get('landmarks')
+            compare_data.imu_measurements = None
+            compare_data.camera_measurements = None
+            
+            if comp_dict.get('imu_data'):
+                imu_data = comp_dict['imu_data']
+                if hasattr(imu_data, 'measurements'):
+                    compare_data.imu_measurements = imu_data.measurements
+            
+            if comp_dict.get('camera_data'):
+                cam_data = comp_dict['camera_data']
+                if hasattr(cam_data, 'frames'):
+                    compare_data.camera_measurements = cam_data.frames
+            
+            compare_data.camera_calibrations = comp_dict.get('camera_calibrations')
+            compare_data.metadata = comp_dict.get('metadata', {})
+            console.print(f"✓ Loaded comparison: {compare_file.name}")
+        except Exception as e:
+            console.print(f"[yellow]Warning: Could not load {compare_file}: {e}[/yellow]")
+    
+    # Generate output filename
+    if output is None:
+        output = Path("output") / f"{input_file.stem}_plots.html"
+        output.parent.mkdir(exist_ok=True)
+    
+    # Create visualization
+    try:
+        html_content = create_full_visualization(
+            primary_data,
+            compare_data=compare_data,
+            show_trajectory=show_trajectory,
+            show_measurements=show_measurements,
+            show_imu=show_imu,
+            max_keyframes=keyframes
+        )
+        
+        # Save HTML
+        with open(output, 'w') as f:
+            f.write(html_content)
+        
+        console.print(f"[green]✓ Plots saved to: {output}[/green]")
+        
+        # Open in browser
+        if open_browser:
+            import webbrowser
+            webbrowser.open(f"file://{output.absolute()}")
+            console.print("[cyan]Opening in browser...[/cyan]")
+        
+    except Exception as e:
+        console.print(f"[red]Error creating plots: {e}[/red]")
+        raise typer.Exit(1)
+
+
+@app.command()
 def clean():
     """Clean generated files and caches."""
     import shutil

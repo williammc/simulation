@@ -675,3 +675,19 @@ def rotation_matrix_from_vectors(v1: np.ndarray, v2: np.ndarray) -> np.ndarray:
     angle = np.arccos(np.clip(np.dot(v1, v2), -1, 1))
     
     return Rotation.from_rotvec(axis * angle).as_matrix()
+
+
+def pose_to_matrix(pose) -> np.ndarray:
+    """
+    Convert pose to 4x4 transformation matrix.
+    
+    Args:
+        pose: Pose object with position and quaternion
+    
+    Returns:
+        4x4 transformation matrix
+    """
+    T = np.eye(4)
+    T[:3, :3] = quaternion_to_rotation_matrix(pose.quaternion)
+    T[:3, 3] = pose.position
+    return T
