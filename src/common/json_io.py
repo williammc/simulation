@@ -18,6 +18,20 @@ from src.common.data_structures import (
 )
 
 
+class NumpyJSONEncoder(json.JSONEncoder):
+    """JSON encoder that handles numpy arrays."""
+    
+    def default(self, obj):
+        """Convert numpy arrays to lists."""
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        if isinstance(obj, (np.float32, np.float64)):
+            return float(obj)
+        if isinstance(obj, (np.int32, np.int64)):
+            return int(obj)
+        return super().default(obj)
+
+
 class SimulationData:
     """Complete simulation data container matching JSON schema."""
     
