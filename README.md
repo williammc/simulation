@@ -4,6 +4,10 @@ A comprehensive simulation system for evaluating SLAM estimators (EKF, Sliding W
 
 ## Phase 1 Complete ✓
 
+Phase 1 features are fully implemented and tested.
+
+## Phase 2 Complete ✓
+
 ### Features Implemented
 
 #### 1. Project Structure
@@ -164,12 +168,63 @@ q_random = random_quaternion()       # Generate random quaternion
 R = rotation_matrix_from_vectors(v1, v2)  # Find R such that R @ v1 ≈ v2
 ```
 
-## Next Steps (Phase 2)
+#### 6. Data Structures (Phase 2)
+- ✓ **IMU Data**: IMUMeasurement, IMUData with chronological ordering
+- ✓ **Camera Data**: ImagePoint, CameraObservation, CameraFrame, CameraData
+- ✓ **Trajectory**: Pose (SE3), TrajectoryState with velocities, Trajectory with interpolation
+- ✓ **Landmarks**: Landmark with covariance, Map collection
+- ✓ **Calibration**: Camera intrinsics/extrinsics, IMU calibration
 
-- [ ] Implement data structures (IMU, Camera, Trajectory)
-- [ ] Create JSON I/O with schema validation
-- [ ] Build simple trajectory generator
-- [ ] Add TUM-VIE dataset reader
+#### 7. JSON I/O
+- ✓ **SimulationData class**: Complete container matching JSON schema
+- ✓ **Serialization**: to_dict/from_dict for all data structures
+- ✓ **Save/Load functions**: Convenience functions for complete simulation data
+- ✓ **JSON Schema compliance**: Follows technical specifications
+
+#### 8. Trajectory Generators
+- ✓ **Circle trajectory**: Constant angular velocity, configurable radius/height
+- ✓ **Figure-8 trajectory**: Lemniscate parametrization
+- ✓ **Spiral trajectory**: Expanding radius with vertical motion
+- ✓ **Line trajectory**: Constant velocity motion
+- ✓ **Velocity computation**: Analytical velocities and angular velocities
+- ✓ **Uniform sampling**: Configurable rate (Hz) with exact timestamps
+
+#### 9. TUM-VIE Dataset Reader
+- ✓ **Calibration loading**: Support for calibration_a.json and calibration_b.json
+- ✓ **IMU data loading**: Parse CSV with nanosecond timestamps
+- ✓ **Camera data loading**: Frame timestamps and image paths
+- ✓ **Ground truth loading**: Mocap trajectory data
+- ✓ **Export to SimulationData**: Convert to common format
+
+## Quick Start
+
+### Generate Trajectory
+```bash
+# Generate circle trajectory (5 seconds, 100Hz)
+./run.sh simulate circle --duration 5
+
+# Generate figure-8 trajectory
+./run.sh simulate figure8 --duration 10
+
+# Generate spiral trajectory
+./run.sh simulate spiral --duration 15
+
+# Generate line trajectory
+./run.sh simulate line --duration 8
+```
+
+### Output Format
+Generated files are saved to `output/` directory as JSON with:
+- Complete trajectory with poses and velocities
+- Timestamps at specified sampling rate
+- Metadata including trajectory type and parameters
+
+## Next Steps (Phase 3)
+
+- [ ] Implement landmark generation with visibility checking
+- [ ] Add camera projection models
+- [ ] Implement IMU measurement generation
+- [ ] Add configurable noise models
 
 ## Project Structure
 ```

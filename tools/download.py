@@ -133,6 +133,62 @@ DATASET_CONFIGS = {
 }
 
 
+def download_mocap_calibration(output_dir: Path) -> int:
+    """
+    Download TUM-VIE mocap-IMU calibration files.
+    
+    Args:
+        output_dir: Directory to save calibration files
+    
+    Returns:
+        Exit code (0 for success)
+    """
+    import json as json_module
+    
+    urls = {
+        "A": "https://tumevent-vi.vision.in.tum.de/mocap-imu-calibrationA.json",
+        "B": "https://tumevent-vi.vision.in.tum.de/mocap-imu-calibrationB.json"
+    }
+    
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    console.print("[bold green]Downloading TUM-VIE Mocap-IMU Calibrations[/bold green]\n")
+    
+    for calib_type, url in urls.items():
+        output_file = output_dir / f"mocap-imu-calibration{calib_type}.json"
+        
+        console.print(f"Downloading calibration {calib_type}...")
+        console.print(f"  URL: [cyan]{url}[/cyan]")
+        console.print(f"  Output: [cyan]{output_file}[/cyan]")
+        
+        try:
+            # Download the file
+            urllib.request.urlretrieve(url, output_file)
+            
+            # Verify it's valid JSON and contains expected data
+            with open(output_file, 'r') as f:
+                data = json_module.load(f)
+                # Check for TUM-VIE format with value0
+                if "value0" in data and "T_imu_marker" in data["value0"]:
+                    console.print(f"[green]✓[/green] Downloaded calibration{calib_type} successfully")
+                    # Show transformation info
+                    t_imu = data["value0"]["T_imu_marker"]
+                    console.print(f"    T_imu_marker: p=[{t_imu['px']:.3f}, {t_imu['py']:.3f}, {t_imu['pz']:.3f}]")
+                else:
+                    console.print(f"[yellow]⚠[/yellow] Calibration{calib_type} format unexpected")
+        except Exception as e:
+            console.print(f"[red]✗[/red] Failed to download calibration{calib_type}: {e}")
+            return 1
+    
+    console.print("\n[bold]Usage Instructions:[/bold]")
+    console.print("• CalibrationA: loop-floor0:3, mocap-desk, mocap-desk2, skate-easy")
+    console.print("• CalibrationB: all other sequences")
+    console.print("\nUse with TUM-VIE reader:")
+    console.print(f"  mocap_calib_path = Path('{output_dir}/mocap-imu-calibrationA.json')  # or B")
+    
+    return 0
+
+
 def download_dataset(
     dataset: str,
     sequence: str,
@@ -142,13 +198,17 @@ def download_dataset(
     Download public dataset for SLAM evaluation.
     
     Args:
-        dataset: Dataset name (e.g., 'tum-vie', 'euroc')
-        sequence: Sequence name (e.g., 'mocap-desk', 'mh-01')
+        dataset: Dataset name (e.g., 'tum-vie', 'euroc', 'tum-vie-calib')
+        sequence: Sequence name (e.g., 'mocap-desk', 'mh-01', or 'mocap' for calibration)
         output: Output directory for downloaded data
     
     Returns:
         Exit code (0 for success, 1 for error)
     """
+    # Special case for mocap calibration download
+    if dataset.lower() == "tum-vie-calib" or (dataset.lower() == "tum-vie" and sequence.lower() == "mocap-calib"):
+        output_dir = output or Path("data/TUM-VIE/calibration")
+        return download_mocap_calibration(output_dir)
     # Validate dataset and sequence
     dataset_lower = dataset.lower()
     sequence_lower = sequence.lower()

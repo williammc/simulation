@@ -23,12 +23,14 @@ from src.common.json_io import SimulationData
 class TUMVIEReader:
     """Reader for TUM Visual-Inertial-Event datasets."""
     
-    def __init__(self, dataset_path: Path):
+    def __init__(self, dataset_path: Path, mocap_calib_path: Optional[Path] = None):
         """
         Initialize TUM-VIE reader.
         
         Args:
             dataset_path: Path to dataset root directory
+            mocap_calib_path: Path to mocap-imu-calibrationA.json or mocap-imu-calibrationB.json
+                             If None, will try to find it in dataset or parent directory
         """
         self.dataset_path = Path(dataset_path)
         if not self.dataset_path.exists():
@@ -56,11 +58,74 @@ class TUMVIEReader:
         
         # Load calibration
         self.calibration = self._load_calibration()
+        
+        # Load mocap-IMU calibration if available
+        self.mocap_calib_path = mocap_calib_path
+        self.mocap_calibration = self._load_mocap_calibration()
     
     def _load_calibration(self) -> Dict[str, Any]:
         """Load calibration data from JSON file."""
         with open(self.calib_path, 'r') as f:
             return json.load(f)
+    
+    def _load_mocap_calibration(self) -> Optional[Dict[str, Any]]:
+        """
+        Load mocap-IMU calibration if available.
+        
+        Returns:
+            Mocap calibration dict with T_imu_marker transformation, or None
+        """
+        if self.mocap_calib_path and self.mocap_calib_path.exists():
+            with open(self.mocap_calib_path, 'r') as f:
+                return json.load(f)
+        
+        # Try to find it in common locations
+        possible_paths = [
+            self.dataset_path / "mocap-imu-calibration.json",
+            self.dataset_path / f"mocap-imu-calibration{self.calibration_type.upper()}.json",
+            self.dataset_path.parent / f"mocap-imu-calibration{self.calibration_type.upper()}.json",
+        ]
+        
+        for path in possible_paths:
+            if path.exists():
+                with open(path, 'r') as f:
+                    return json.load(f)
+        
+        # Warn but don't fail - mocap calibration might not be needed
+        print(f"Warning: No mocap-IMU calibration found. Ground truth will be in mocap frame.")
+        return None
+    
+    def get_mocap_to_imu_transform(self) -> Optional[np.ndarray]:
+        """
+        Get transformation from mocap marker frame to IMU frame.
+        
+        Returns:
+            4x4 transformation matrix T_imu_marker, or None if not available
+        """
+        if not self.mocap_calibration:
+            return None
+        
+        # TUM-VIE format has "value0" with position/quaternion format
+        if "value0" in self.mocap_calibration:
+            calib = self.mocap_calibration["value0"]
+            if "T_imu_marker" in calib:
+                t_data = calib["T_imu_marker"]
+                # Convert position and quaternion to 4x4 matrix
+                position = np.array([t_data["px"], t_data["py"], t_data["pz"]])
+                # Note: TUM-VIE uses qx, qy, qz, qw order
+                quaternion = np.array([t_data["qw"], t_data["qx"], t_data["qy"], t_data["qz"]])
+                
+                from src.utils.math_utils import quaternion_to_rotation_matrix
+                T_imu_marker = np.eye(4)
+                T_imu_marker[:3, :3] = quaternion_to_rotation_matrix(quaternion)
+                T_imu_marker[:3, 3] = position
+                return T_imu_marker
+        
+        # Try direct format if available
+        if "T_imu_marker" in self.mocap_calibration:
+            return np.array(self.mocap_calibration["T_imu_marker"])
+        
+        return None
     
     def get_camera_calibration(self, camera_id: str = "cam0") -> CameraCalibration:
         """
@@ -229,18 +294,24 @@ class TUMVIEReader:
         
         return camera_data
     
-    def load_ground_truth(self, max_poses: Optional[int] = None) -> Trajectory:
+    def load_ground_truth(self, max_poses: Optional[int] = None, apply_mocap_calib: bool = True) -> Trajectory:
         """
         Load ground truth trajectory from mocap data.
         
         Args:
             max_poses: Maximum number of poses to load
+            apply_mocap_calib: If True, transform from mocap marker frame to IMU frame
         
         Returns:
-            Trajectory object with ground truth poses
+            Trajectory object with ground truth poses (in IMU frame if calibration available)
         """
         if not self.mocap_path.exists():
             raise FileNotFoundError(f"Mocap data not found: {self.mocap_path}")
+        
+        # Get mocap to IMU transformation if available
+        T_imu_marker = None
+        if apply_mocap_calib:
+            T_imu_marker = self.get_mocap_to_imu_transform()
         
         trajectory = Trajectory(frame_id="world")
         
@@ -255,8 +326,32 @@ class TUMVIEReader:
                 
                 # Format: timestamp, px, py, pz, qw, qx, qy, qz
                 timestamp = float(row[0]) / 1e9  # Convert ns to seconds
-                position = np.array([float(row[1]), float(row[2]), float(row[3])])
-                quaternion = np.array([float(row[4]), float(row[5]), float(row[6]), float(row[7])])
+                position_marker = np.array([float(row[1]), float(row[2]), float(row[3])])
+                quaternion_marker = np.array([float(row[4]), float(row[5]), float(row[6]), float(row[7])])
+                
+                if T_imu_marker is not None:
+                    # Transform from mocap marker frame to IMU frame
+                    # First create the marker pose as a 4x4 matrix
+                    from src.utils.math_utils import quaternion_to_rotation_matrix
+                    
+                    T_world_marker = np.eye(4)
+                    T_world_marker[:3, :3] = quaternion_to_rotation_matrix(quaternion_marker)
+                    T_world_marker[:3, 3] = position_marker
+                    
+                    # Transform to IMU frame: T_world_imu = T_world_marker @ T_marker_imu
+                    # Since we have T_imu_marker, we need its inverse
+                    T_marker_imu = np.linalg.inv(T_imu_marker)
+                    T_world_imu = T_world_marker @ T_marker_imu
+                    
+                    # Extract position and quaternion in IMU frame
+                    position = T_world_imu[:3, 3]
+                    
+                    from src.utils.math_utils import rotation_matrix_to_quaternion
+                    quaternion = rotation_matrix_to_quaternion(T_world_imu[:3, :3])
+                else:
+                    # Use mocap data as-is (marker frame)
+                    position = position_marker
+                    quaternion = quaternion_marker
                 
                 pose = Pose(
                     timestamp=timestamp,
@@ -336,6 +431,7 @@ class TUMVIEReader:
 def load_tum_vie_dataset(
     dataset_path: Path,
     output_path: Optional[Path] = None,
+    mocap_calib_path: Optional[Path] = None,
     max_samples: Optional[int] = None
 ) -> SimulationData:
     """
@@ -344,12 +440,17 @@ def load_tum_vie_dataset(
     Args:
         dataset_path: Path to dataset root
         output_path: Optional path to save as JSON
+        mocap_calib_path: Path to mocap-imu-calibrationA.json or mocap-imu-calibrationB.json
         max_samples: Limit number of samples per sensor
     
     Returns:
         SimulationData object
+    
+    Note:
+        For calibrationA datasets (loop-floor0:3, mocap-desk, mocap-desk2, skate-easy),
+        use mocap-imu-calibrationA.json. For all other sequences, use calibrationB.
     """
-    reader = TUMVIEReader(dataset_path)
+    reader = TUMVIEReader(dataset_path, mocap_calib_path)
     sim_data = reader.to_simulation_data(
         max_imu_samples=max_samples,
         max_camera_frames=max_samples,
