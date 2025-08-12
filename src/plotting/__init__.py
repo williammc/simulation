@@ -12,7 +12,7 @@ from .sensor_plot import (
     plot_camera_tracks,
     plot_landmarks_3d
 )
-from .dashboard import (
+from .simulation_dashboard import (
     create_dashboard,
     DashboardConfig
 )

@@ -1,0 +1,229 @@
+# Global Evaluation Configuration
+# This config orchestrates the full evaluation pipeline across all datasets and estimators
+
+evaluation:
+  name: "SLAM Evaluation Pipeline"
+  output_dir: "output/evaluation"
+  parallel_jobs: 4  # Number of parallel estimation jobs
+  overwrite: false  # Whether to regenerate existing data
+  
+  # Key Performance Indicators to track
+  kpis:
+    - ate_rmse
+    - rpe_translation_rmse
+    - runtime_ms
+    - peak_memory_mb
+    - convergence_rate
+    - nees_consistency
+
+# Datasets configuration
+datasets:
+  simulated:
+    # Generate synthetic datasets if they don't exist
+    generate_if_missing: true
+    types:
+      - name: "circle"
+        config:
+          trajectory:
+            type: "circle"
+            radius: 10.0
+            duration: 60.0
+            rate: 200.0
+          noise:
+            add_noise: true
+            imu_noise_level: 0.1
+            camera_noise_level: 1.0
+          landmarks:
+            num_landmarks: 200
+            distribution: "uniform"
+            
+      - name: "figure8"
+        config:
+          trajectory:
+            type: "figure8"
+            scale_x: 5.0
+            scale_y: 3.0
+            duration: 60.0
+            rate: 200.0
+          noise:
+            add_noise: true
+            imu_noise_level: 0.1
+            camera_noise_level: 1.0
+          landmarks:
+            num_landmarks: 150
+            
+      - name: "spiral"
+        config:
+          trajectory:
+            type: "spiral"
+            initial_radius: 1.0
+            final_radius: 5.0
+            duration: 45.0
+            rate: 200.0
+          noise:
+            add_noise: true
+            imu_noise_level: 0.15
+            camera_noise_level: 1.5
+          landmarks:
+            num_landmarks: 250
+            
+      - name: "line"
+        config:
+          trajectory:
+            type: "line"
+            start: [0, 0, 0]
+            end: [20, 0, 0]
+            duration: 30.0
+            rate: 200.0
+          noise:
+            add_noise: true
+            imu_noise_level: 0.1
+            camera_noise_level: 1.0
+          landmarks:
+            num_landmarks: 100
+
+  tum_vi:
+    # TUM-VI dataset configurations
+    download_if_missing: true
+    base_path: "data/tum_vi"
+    sequences:
+      - name: "mocap-desk"
+        type: "room"
+        has_ground_truth: true
+        
+      - name: "mocap-desk2"
+        type: "room"
+        has_ground_truth: true
+        
+      - name: "running-easy"
+        type: "outdoor"
+        has_ground_truth: true
+        
+      - name: "running-hard"
+        type: "outdoor"
+        has_ground_truth: true
+
+# Estimator configurations
+estimators:
+  ekf:
+    enabled: true
+    config:
+      process_noise:
+        position: 0.01
+        orientation: 0.001
+        velocity: 0.1
+        bias_accel: 0.001
+        bias_gyro: 0.0001
+      measurement_noise:
+        camera: 1.0
+        range: 0.1
+      max_iterations: 100
+      convergence_threshold: 1e-4
+      
+  swba:
+    enabled: true
+    config:
+      window_size: 10
+      marginalization_strategy: "oldest"
+      solver:
+        type: "gauss_newton"
+        max_iterations: 10
+        lambda_init: 1e-4
+      regularization:
+        enabled: true
+        weight: 1e-6
+        
+  srif:
+    enabled: true
+    config:
+      qr_threshold: 1e-10
+      measurement_chunking: true
+      chunk_size: 10
+      adaptive_threshold: true
+      
+  batch:
+    enabled: false  # Optional batch optimization
+    config:
+      solver:
+        type: "levenberg_marquardt"
+        max_iterations: 50
+        lambda_init: 1e-3
+      outlier_rejection:
+        enabled: true
+        chi2_threshold: 5.991
+
+# Evaluation settings
+evaluation_settings:
+  metrics:
+    compute_ate: true
+    compute_rpe: true
+    compute_consistency: true
+    compute_timing: true
+    
+  alignment:
+    method: "umeyama"  # or "horn" or "none"
+    scale_correction: true
+    
+  visualization:
+    generate_plots: true
+    generate_videos: false
+    plot_frequency: 10  # Every N-th frame
+    
+  comparison:
+    statistical_tests: true
+    confidence_level: 0.95
+    
+# Dashboard configuration
+dashboard:
+  title: "SLAM Evaluation Dashboard"
+  layout: "grid"  # or "tabs"
+  
+  sections:
+    - name: "Overview"
+      type: "summary_table"
+      metrics: ["ate_rmse", "runtime_ms", "success_rate"]
+      
+    - name: "Trajectory Comparison"
+      type: "3d_plot"
+      datasets: "all"
+      
+    - name: "Error Evolution"
+      type: "time_series"
+      metrics: ["position_error", "orientation_error"]
+      
+    - name: "Performance Matrix"
+      type: "heatmap"
+      x_axis: "datasets"
+      y_axis: "estimators"
+      metric: "ate_rmse"
+      
+    - name: "Timing Analysis"
+      type: "bar_chart"
+      metric: "runtime_ms"
+      group_by: "estimator"
+      
+    - name: "Memory Usage"
+      type: "bar_chart"
+      metric: "peak_memory_mb"
+      group_by: "dataset"
+      
+    - name: "Consistency Check"
+      type: "nees_plot"
+      show_bounds: true
+      
+    - name: "Best Performer"
+      type: "ranking_table"
+      criteria: ["ate_rmse", "runtime_ms", "memory_mb"]
+      weights: [0.5, 0.3, 0.2]
+
+# Logging configuration
+logging:
+  level: "INFO"
+  file: "evaluation.log"
+  console: true
+  
+# Resource management
+resources:
+  max_memory_gb: 8
+  timeout_minutes: 30  # Per estimation run
+  checkpoint_interval: 100  # Save progress every N frames
