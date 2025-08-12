@@ -29,6 +29,14 @@ datasets:
           landmarks:
             num_landmarks: 50  # Fewer landmarks for speed
 
+  tum_vi:
+    download_if_missing: true
+    base_path: "data/TUM-VIE"  # Correct path for TUM-VI datasets
+    sequences:
+      - name: "mocap-desk"
+        type: "room"
+        has_ground_truth: true
+
 estimators:
   ekf:
     enabled: true

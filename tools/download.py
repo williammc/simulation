@@ -232,16 +232,42 @@ def download_dataset(
     console.print(f"  Size: ~{config['size_mb']} MB")
     
     # Prepare output directory
-    output_dir = output or Path(f"data/{dataset.upper()}/{sequence}")
+    # Use TUM-VIE for TUM-VI datasets, otherwise use uppercase dataset name
+    if dataset_lower == "tum-vie":
+        # If output is provided, use it as base and add sequence as subdirectory
+        if output:
+            output_dir = output / sequence
+        else:
+            output_dir = Path(f"data/TUM-VIE/{sequence}")
+    else:
+        output_dir = output or Path(f"data/{dataset.upper()}/{sequence}")
+    
+    # Check if dataset already exists
+    # For TUM-VI, check for key indicators of a complete dataset
+    if dataset_lower == "tum-vie":
+        # Check for calibration file and key directories
+        calib_indicators = [
+            output_dir / "calibration_a.json",
+            output_dir / "calibration_b.json",
+            output_dir / "mocap",
+            output_dir / "imu"
+        ]
+        if output_dir.exists() and any(indicator.exists() for indicator in calib_indicators):
+            console.print("[yellow]⚠ Dataset already exists[/yellow]")
+            console.print(f"  Found existing dataset at: [cyan]{output_dir}[/cyan]")
+            console.print("  Delete the directory to re-download")
+            return 0
+    else:
+        # For other datasets, use marker file
+        marker_file = output_dir / ".download_complete"
+        if marker_file.exists():
+            console.print("[yellow]⚠ Dataset already downloaded[/yellow]")
+            console.print(f"  Found marker at: [cyan]{marker_file}[/cyan]")
+            console.print("  Delete the directory to re-download")
+            return 0
+    
     output_dir.mkdir(parents=True, exist_ok=True)
     console.print(f"  Output: [cyan]{output_dir}[/cyan]")
-    
-    # Check if already downloaded
-    marker_file = output_dir / ".download_complete"
-    if marker_file.exists():
-        console.print("[yellow]⚠ Dataset already downloaded[/yellow]")
-        console.print("  Delete the directory to re-download")
-        return 0
     
     # For now, create placeholder files
     # TODO: Implement actual download with proper error handling
@@ -251,8 +277,10 @@ def download_dataset(
     # Create placeholder structure
     create_placeholder_dataset(output_dir, dataset_lower, sequence_lower)
     
-    # Mark as complete
-    marker_file.touch()
+    # Mark as complete (only for non TUM-VI datasets)
+    if dataset_lower != "tum-vie":
+        marker_file = output_dir / ".download_complete"
+        marker_file.touch()
     
     console.print(f"\n[green]✓[/green] Dataset prepared: [cyan]{output_dir}[/cyan]")
     display_dataset_info(output_dir)
