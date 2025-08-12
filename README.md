@@ -51,16 +51,19 @@ A comprehensive Visual-Inertial SLAM simulation and evaluation framework support
 ./run.sh evaluate --result output/swba_result.json --ground-truth output/room1.json
 ```
 
-#### 3. Batch Evaluation
+#### 3. Comprehensive Evaluation Pipeline
 ```bash
-# Run all estimators on multiple trajectories
-for traj in circle figure8 spiral; do
-    ./run.sh simulate $traj --duration 30 --output output/${traj}_sim.json
-    ./run.sh compare --input output/${traj}_sim.json --output output/${traj}_comparison.json
-done
+# Run full evaluation across all datasets and estimators
+./run.sh evaluation
 
-# Generate comparison report
-./run.sh report output/*_comparison.json --output report.html
+# Use custom evaluation config
+./run.sh evaluation config/evaluation_test.yaml
+
+# Run on specific datasets/estimators
+./run.sh evaluation --datasets circle,figure8 --estimators ekf,swba
+
+# Dry run to preview execution plan
+./run.sh evaluation --dry-run
 ```
 
 #### 4. Custom Configuration
@@ -140,6 +143,37 @@ python tools/inspect_ground_truth.py compare-noise output/simulation.json
   --output FILE       Comparison results JSON
 ```
 
+### Evaluation
+
+#### Comprehensive Benchmarking
+```bash
+./run.sh evaluation [CONFIG_FILE] [options]
+  --datasets LIST     Comma-separated list of datasets (default: all)
+  --estimators LIST   Comma-separated list of estimators (default: all enabled)
+  --parallel INT      Number of parallel jobs (default: from config)
+  --output DIR        Override output directory from config
+  --skip-generation   Skip dataset generation even if missing
+  --skip-dashboard    Skip dashboard generation
+  --dry-run          Show execution plan without running
+
+# Examples:
+# Full evaluation with default config
+./run.sh evaluation
+
+# Quick test with minimal config
+./run.sh evaluation config/evaluation_test.yaml
+
+# Benchmark specific combinations
+./run.sh evaluation --datasets circle,spiral --estimators ekf,swba --parallel 4
+```
+
+The evaluation system:
+- Automatically generates missing simulated datasets
+- Downloads and converts TUM-VI real-world datasets
+- Runs all estimators in parallel
+- Computes comprehensive metrics (ATE, RPE, runtime, memory)
+- Generates interactive dashboard with KPI comparisons
+
 ### Visualization
 
 #### Interactive Plots
@@ -173,6 +207,65 @@ python tools/inspect_ground_truth.py compare-noise output/simulation.json
 ```
 
 ## Configuration Files
+
+### Evaluation Config
+```yaml
+# config/evaluation_config.yaml
+evaluation:
+  name: "SLAM Evaluation Pipeline"
+  output_dir: "output/evaluation"
+  parallel_jobs: 4
+  kpis: [ate_rmse, rpe_translation_rmse, runtime_ms, memory_mb]
+
+datasets:
+  simulated:
+    generate_if_missing: true
+    types:
+      - name: "circle"
+        config:
+          trajectory:
+            type: "circle"
+            radius: 10.0
+            duration: 60.0
+          noise:
+            add_noise: true
+            imu_noise_level: 0.1
+          landmarks:
+            num_landmarks: 200
+            
+  tum_vi:
+    download_if_missing: true
+    sequences:
+      - name: "mocap-desk"
+        has_ground_truth: true
+
+estimators:
+  ekf:
+    enabled: true
+    config:
+      process_noise:
+        position: 0.01
+        
+  swba:
+    enabled: true
+    config:
+      window_size: 10
+      
+  srif:
+    enabled: true
+    config:
+      qr_threshold: 1e-10
+
+dashboard:
+  title: "SLAM Evaluation Dashboard"
+  sections:
+    - name: "Performance Matrix"
+      type: "heatmap"
+      metric: "ate_rmse"
+    - name: "Timing Analysis"
+      type: "bar_chart"
+      metric: "runtime_ms"
+```
 
 ### Simulation Config
 ```yaml

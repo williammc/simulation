@@ -1,0 +1,68 @@
+# Minimal Evaluation Configuration for Testing
+# This config runs only one quick test
+
+evaluation:
+  name: "Minimal Test"
+  output_dir: "output/evaluation_minimal"
+  parallel_jobs: 1
+  overwrite: true
+  
+  kpis:
+    - ate_rmse
+
+datasets:
+  simulated:
+    generate_if_missing: true
+    types:
+      - name: "circle"
+        config:
+          trajectory:
+            type: "circle"
+            radius: 2.0
+            duration: 5.0  # Very short for testing
+            rate: 100.0
+          noise:
+            add_noise: true
+            imu_noise_level: 0.1
+            camera_noise_level: 1.0
+          landmarks:
+            num_landmarks: 20  # Few landmarks for speed
+
+estimators:
+  ekf:
+    enabled: true
+    config:
+      process_noise:
+        position: 0.01
+        orientation: 0.001
+      measurement_noise:
+        camera: 1.0
+      max_iterations: 5
+      
+  swba:
+    enabled: false  # Disable for quick test
+    
+  srif:
+    enabled: false  # Disable for quick test
+
+evaluation_settings:
+  metrics:
+    compute_ate: true
+    compute_rpe: false
+    compute_consistency: false
+    compute_timing: true
+    
+  visualization:
+    generate_plots: false  # Skip for speed
+
+dashboard:
+  title: "Minimal Test Dashboard"
+  sections: []  # No dashboard for minimal test
+
+logging:
+  level: "DEBUG"
+  console: true
+  
+resources:
+  max_memory_gb: 2
+  timeout_minutes: 2

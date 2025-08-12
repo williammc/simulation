@@ -160,58 +160,93 @@ class EvaluationOrchestrator:
         self.logger.info(f"Generating simulated dataset: {name}")
         dataset_dir.mkdir(parents=True, exist_ok=True)
         
-        # Build simulation command
+        # Create a simulation config file
         traj_config = config['trajectory']
         noise_config = config.get('noise', {})
         landmark_config = config.get('landmarks', {})
         
-        cmd = [
-            "./run.sh", "simulate",
-            traj_config['type'],
-            "--duration", str(traj_config.get('duration', 60)),
-            "--rate", str(traj_config.get('rate', 200)),
-            "--num-landmarks", str(landmark_config.get('num_landmarks', 200)),
-            "--output", str(dataset_file)
-        ]
+        # Build simulation config
+        sim_config = {
+            'trajectory': {
+                'type': traj_config['type'],
+                'duration': traj_config.get('duration', 60),
+                'params': {}
+            },
+            'sensors': {
+                'imu': {
+                    'rate': traj_config.get('rate', 200.0),
+                    'noise': {
+                        'enabled': noise_config.get('add_noise', False),
+                        'accel_noise_density': noise_config.get('imu_noise_level', 0.01),
+                        'gyro_noise_density': noise_config.get('imu_noise_level', 0.001) * 0.1
+                    }
+                },
+                'camera': {
+                    'rate': 30.0,
+                    'noise': {
+                        'enabled': noise_config.get('add_noise', False),
+                        'pixel_std': noise_config.get('camera_noise_level', 1.0)
+                    }
+                }
+            },
+            'landmarks': {
+                'count': landmark_config.get('num_landmarks', 200),
+                'distribution': landmark_config.get('distribution', 'uniform')
+            }
+        }
         
         # Add trajectory-specific parameters
         if traj_config['type'] == 'circle':
-            cmd.extend(["--radius", str(traj_config.get('radius', 10))])
+            sim_config['trajectory']['params']['radius'] = traj_config.get('radius', 10.0)
         elif traj_config['type'] == 'figure8':
-            cmd.extend([
-                "--scale-x", str(traj_config.get('scale_x', 5)),
-                "--scale-y", str(traj_config.get('scale_y', 3))
-            ])
+            sim_config['trajectory']['params']['scale_x'] = traj_config.get('scale_x', 5.0)
+            sim_config['trajectory']['params']['scale_y'] = traj_config.get('scale_y', 3.0)
         elif traj_config['type'] == 'spiral':
-            cmd.extend([
-                "--initial-radius", str(traj_config.get('initial_radius', 1)),
-                "--final-radius", str(traj_config.get('final_radius', 5))
-            ])
+            sim_config['trajectory']['params']['initial_radius'] = traj_config.get('initial_radius', 1.0)
+            sim_config['trajectory']['params']['final_radius'] = traj_config.get('final_radius', 5.0)
         elif traj_config['type'] == 'line':
-            start = traj_config.get('start', [0, 0, 0])
-            end = traj_config.get('end', [20, 0, 0])
-            cmd.extend([
-                "--start", f"{start[0]},{start[1]},{start[2]}",
-                "--end", f"{end[0]},{end[1]},{end[2]}"
-            ])
+            sim_config['trajectory']['params']['start'] = traj_config.get('start', [0, 0, 0])
+            sim_config['trajectory']['params']['end'] = traj_config.get('end', [20, 0, 0])
         
-        # Add noise if configured
+        # Save config to temp file
+        config_file = dataset_dir / f"sim_config_{name}.yaml"
+        with open(config_file, 'w') as f:
+            yaml.dump(sim_config, f)
+        
+        # Build simulation command
+        cmd = [
+            "./run.sh", "simulate",
+            traj_config['type'],
+            "--config", str(config_file),
+            "--duration", str(traj_config.get('duration', 60)),
+            "--output", str(dataset_file)
+        ]
+        
+        # Add noise flag if configured
         if noise_config.get('add_noise', False):
             cmd.append("--add-noise")
-            if 'imu_noise_level' in noise_config:
-                cmd.extend(["--imu-noise", str(noise_config['imu_noise_level'])])
-            if 'camera_noise_level' in noise_config:
-                cmd.extend(["--camera-noise", str(noise_config['camera_noise_level'])])
         
         # Run simulation
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-            self.logger.info(f"Generated dataset: {dataset_file}")
+            
+            # The simulate command creates a directory with timestamped file
+            # Find the actual generated file
+            if dataset_file.is_dir():
+                json_files = list(dataset_file.glob("*.json"))
+                if json_files:
+                    actual_file = json_files[0]  # Get the first (should be only) JSON file
+                    self.logger.info(f"Generated dataset: {actual_file}")
+                    return actual_file
+                else:
+                    raise FileNotFoundError(f"No JSON file found in {dataset_file}")
+            else:
+                self.logger.info(f"Generated dataset: {dataset_file}")
+                return dataset_file
+                
         except subprocess.CalledProcessError as e:
             self.logger.error(f"Failed to generate dataset {name}: {e.stderr}")
             raise
-        
-        return dataset_file
     
     def _prepare_tumvi_dataset(self, sequence: str, config: Dict) -> Path:
         """
@@ -364,9 +399,9 @@ class EvaluationOrchestrator:
         
         # Build estimation command
         cmd = [
-            "./run.sh", "estimate",
+            "./run.sh", "slam",
             estimator_name,
-            str(dataset_path),
+            "--input", str(dataset_path),
             "--output", str(output_file)
         ]
         
@@ -388,9 +423,39 @@ class EvaluationOrchestrator:
                 timeout=timeout
             )
             
+            # The slam command may create a directory with timestamped file
+            # Find the actual generated file
+            actual_output_file = output_file
+            if output_file.is_dir():
+                json_files = list(output_file.glob("*.json"))
+                if json_files:
+                    actual_output_file = json_files[0]  # Get the first (should be only) JSON file
+                else:
+                    raise FileNotFoundError(f"No JSON file found in {output_file}")
+            
             # Load results
-            with open(output_file, 'r') as f:
+            with open(actual_output_file, 'r') as f:
                 estimation_result = json.load(f)
+            
+            # Add performance metrics from stdout if available
+            if "ATE RMSE" in result.stdout:
+                # Parse metrics from output
+                import re
+                ate_match = re.search(r'ATE RMSE\s+│\s+([\d.]+)', result.stdout)
+                rpe_match = re.search(r'RPE RMSE\s+│\s+([\d.]+)', result.stdout)
+                time_match = re.search(r'Total Time\s+│\s+([\d.]+)', result.stdout)
+                
+                if 'metrics' not in estimation_result:
+                    estimation_result['metrics'] = {}
+                
+                if ate_match:
+                    estimation_result['metrics']['ate_rmse'] = float(ate_match.group(1))
+                if rpe_match:
+                    estimation_result['metrics']['rpe_trans_rmse'] = float(rpe_match.group(1))
+                if time_match:
+                    estimation_result['runtime_ms'] = float(time_match.group(1)) * 1000
+                    
+                estimation_result['converged'] = 'Converged' in result.stdout
             
             return estimation_result
             
@@ -559,7 +624,27 @@ class EvaluationOrchestrator:
             if comparison:
                 result_file = self.output_dir / "comparisons" / f"{dataset_name}.json"
                 result_file.parent.mkdir(parents=True, exist_ok=True)
-                comparison.save(str(result_file))
+                
+                # Convert comparison to dict for saving
+                comparison_dict = {
+                    'best_estimator': comparison.best_estimator,
+                    'performances': {}
+                }
+                
+                for est_name, perf in comparison.performances.items():
+                    comparison_dict['performances'][est_name] = {
+                        'estimator_type': perf.estimator_type.name,
+                        'runtime_ms': perf.runtime_ms,
+                        'peak_memory_mb': perf.peak_memory_mb,
+                        'converged': perf.converged,
+                        'num_iterations': perf.num_iterations,
+                        'ate_rmse': perf.trajectory_metrics.ate_rmse if perf.trajectory_metrics else 0,
+                        'ate_mean': perf.trajectory_metrics.ate_mean if perf.trajectory_metrics else 0,
+                        'rpe_trans_rmse': perf.trajectory_metrics.rpe_trans_rmse if perf.trajectory_metrics else 0
+                    }
+                
+                with open(result_file, 'w') as f:
+                    json.dump(comparison_dict, f, indent=2)
         
         # Create CSV summary for easy analysis
         self._create_csv_summary(comparison_results, kpis)
