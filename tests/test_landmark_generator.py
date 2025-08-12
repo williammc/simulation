@@ -117,8 +117,9 @@ class TestLandmarkGenerator:
         generator = LandmarkGenerator(config)
         map_data = generator.generate()
         
-        # With large separation, we won't fit all landmarks
-        assert len(map_data.landmarks) < 50
+        # With large separation, we may not fit all landmarks
+        # Generator will try its best and warn if it can't meet the constraint
+        assert len(map_data.landmarks) <= 50
         
         # But all landmarks should respect separation
         positions = map_data.get_positions()

@@ -264,7 +264,8 @@ class TestIMUModel:
         
         # But should be bounded
         assert np.all(np.abs(accels) < 100)  # Reasonable bounds
-        assert np.all(np.abs(gyros) < 10)
+        # For circle trajectory with 0.5s period, angular velocity is ~12.6 rad/s
+        assert np.all(np.abs(gyros) < 20)  # Allow for fast rotations
     
     def test_measurement_rate(self):
         """Test that IMU generates at correct rate."""
