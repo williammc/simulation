@@ -83,7 +83,7 @@ class CameraMeasurementModel:
             - Jacobian w.r.t. landmark (2x3) if requested
         """
         # Transform landmark to camera frame
-        R_WB = quaternion_to_rotation_matrix(camera_pose.quaternion)
+        R_WB = camera_pose.rotation_matrix
         t_WB = camera_pose.position
         
         # World to body transformation
@@ -155,7 +155,7 @@ class CameraMeasurementModel:
         p_B = self.R_BC @ p_C + self.t_BC
         
         # Transform to world frame
-        R_WB = quaternion_to_rotation_matrix(camera_pose.quaternion)
+        R_WB = camera_pose.rotation_matrix
         t_WB = camera_pose.position
         p_W = R_WB @ p_B + t_WB
         

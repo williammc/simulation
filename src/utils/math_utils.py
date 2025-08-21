@@ -244,102 +244,78 @@ def se3_adjoint(T: np.ndarray) -> np.ndarray:
 
 
 # ============================================================================
-# Quaternion Operations - Using scipy.spatial.transform.Rotation
+# SO3 Helper Functions
 # ============================================================================
 
-def quaternion_to_euler(q: np.ndarray) -> np.ndarray:
+def project_to_so3(R: np.ndarray) -> np.ndarray:
     """
-    Convert quaternion to Euler angles (roll, pitch, yaw).
+    Project a matrix to the SO3 manifold using SVD.
+    Ensures the result is a valid rotation matrix.
     
     Args:
-        q: Quaternion [qw, qx, qy, qz]
+        R: 3x3 matrix (possibly not orthogonal)
     
     Returns:
-        Euler angles [roll, pitch, yaw] in radians
+        3x3 rotation matrix on SO3 manifold
     """
-    qw, qx, qy, qz = q
+    R = np.asarray(R).reshape(3, 3)
     
-    # Roll (x-axis rotation)
-    sinr_cosp = 2 * (qw * qx + qy * qz)
-    cosr_cosp = 1 - 2 * (qx * qx + qy * qy)
-    roll = np.arctan2(sinr_cosp, cosr_cosp)
+    # Use SVD to find closest rotation matrix
+    U, _, Vt = np.linalg.svd(R)
+    R_projected = U @ Vt
     
-    # Pitch (y-axis rotation)
-    sinp = 2 * (qw * qy - qz * qx)
-    if np.abs(sinp) >= 1:
-        pitch = np.copysign(np.pi / 2, sinp)  # Use 90 degrees if out of range
-    else:
-        pitch = np.arcsin(sinp)
+    # Ensure determinant is +1 (not -1)
+    if np.linalg.det(R_projected) < 0:
+        Vt[-1, :] *= -1
+        R_projected = U @ Vt
     
-    # Yaw (z-axis rotation)
-    siny_cosp = 2 * (qw * qz + qx * qy)
-    cosy_cosp = 1 - 2 * (qy * qy + qz * qz)
-    yaw = np.arctan2(siny_cosp, cosy_cosp)
-    
-    return np.array([roll, pitch, yaw])
+    return R_projected
 
 
-def quaternion_multiply(q1: np.ndarray, q2: np.ndarray) -> np.ndarray:
+def so3_interpolate(R1: np.ndarray, R2: np.ndarray, t: float) -> np.ndarray:
     """
-    Multiply two quaternions (Hamilton product).
-    Convention: q = [w, x, y, z] where w is scalar part.
+    Geodesic interpolation between two rotation matrices on SO3.
     
     Args:
-        q1: First quaternion [w, x, y, z]
-        q2: Second quaternion [w, x, y, z]
+        R1: First rotation matrix (3x3)
+        R2: Second rotation matrix (3x3) 
+        t: Interpolation parameter [0, 1]
     
     Returns:
-        Product quaternion q1 * q2
+        Interpolated rotation matrix
     """
-    q1 = np.asarray(q1).flatten()
-    q2 = np.asarray(q2).flatten()
+    R1 = np.asarray(R1).reshape(3, 3)
+    R2 = np.asarray(R2).reshape(3, 3)
     
-    # Convert to scipy format [x, y, z, w]
-    r1 = Rotation.from_quat([q1[1], q1[2], q1[3], q1[0]])
-    r2 = Rotation.from_quat([q2[1], q2[2], q2[3], q2[0]])
+    # Compute relative rotation
+    R_rel = R1.T @ R2
     
-    # Multiply rotations
-    r_result = r1 * r2
+    # Convert to axis-angle
+    omega = so3_log(R_rel)
     
-    # Convert back to [w, x, y, z] format
-    q_result = r_result.as_quat()  # Returns [x, y, z, w]
-    return np.array([q_result[3], q_result[0], q_result[1], q_result[2]])
+    # Scale by interpolation parameter
+    omega_t = t * omega
+    
+    # Convert back to rotation matrix
+    R_t = so3_exp(omega_t)
+    
+    # Apply to initial rotation
+    return R1 @ R_t
 
+# ============================================================================
+# Legacy Quaternion Operations (TO BE REMOVED IN TASK 3)
+# These are temporarily kept for estimators that still use quaternions internally
+# ============================================================================
 
-def quaternion_conjugate(q: np.ndarray) -> np.ndarray:
-    """
-    Compute quaternion conjugate.
-    
-    Args:
-        q: Quaternion [w, x, y, z]
-    
-    Returns:
-        Conjugate quaternion [w, -x, -y, -z]
-    """
-    q = np.asarray(q).flatten()
-    return np.array([q[0], -q[1], -q[2], -q[3]])
+def rotation_matrix_to_quaternion(R: np.ndarray) -> np.ndarray:
+    """Convert rotation matrix to quaternion [w, x, y, z].
+    Temporarily kept for backward compatibility."""
+    R = np.asarray(R)
+    r = Rotation.from_matrix(R)
+    q = r.as_quat()  # Returns [x, y, z, w]
+    return np.array([q[3], q[0], q[1], q[2]])
 
-
-def quaternion_inverse(q: np.ndarray) -> np.ndarray:
-    """
-    Compute quaternion inverse.
-    
-    Args:
-        q: Quaternion [w, x, y, z]
-    
-    Returns:
-        Inverse quaternion
-    """
-    q = np.asarray(q).flatten()
-    
-    # Convert to scipy format and invert
-    r = Rotation.from_quat([q[1], q[2], q[3], q[0]])
-    r_inv = r.inv()
-    
-    # Convert back to [w, x, y, z] format
-    q_inv = r_inv.as_quat()  # Returns [x, y, z, w]
-    return np.array([q_inv[3], q_inv[0], q_inv[1], q_inv[2]])
-
+# quaternion_multiply removed - use SO3 rotation matrix multiplication instead
 
 def quaternion_normalize(q: np.ndarray) -> np.ndarray:
     """
@@ -374,104 +350,6 @@ def quaternion_to_rotation_matrix(q: np.ndarray) -> np.ndarray:
     r = Rotation.from_quat([q[1], q[2], q[3], q[0]])
     return r.as_matrix()
 
-
-def rotation_matrix_to_quaternion(R: np.ndarray) -> np.ndarray:
-    """
-    Convert rotation matrix to quaternion.
-    
-    Args:
-        R: 3x3 rotation matrix
-    
-    Returns:
-        Quaternion [w, x, y, z]
-    """
-    R = np.asarray(R)
-    
-    # Use scipy for robust conversion
-    r = Rotation.from_matrix(R)
-    q = r.as_quat()  # Returns [x, y, z, w]
-    
-    # Convert to [w, x, y, z] format
-    return np.array([q[3], q[0], q[1], q[2]])
-
-
-def quaternion_slerp(q1: np.ndarray, q2: np.ndarray, t: float) -> np.ndarray:
-    """
-    Spherical linear interpolation between two quaternions.
-    
-    Args:
-        q1: Start quaternion [w, x, y, z]
-        q2: End quaternion [w, x, y, z]
-        t: Interpolation parameter [0, 1]
-    
-    Returns:
-        Interpolated quaternion
-    """
-    q1 = quaternion_normalize(q1)
-    q2 = quaternion_normalize(q2)
-    
-    # Convert to scipy format
-    r1 = Rotation.from_quat([q1[1], q1[2], q1[3], q1[0]])
-    r2 = Rotation.from_quat([q2[1], q2[2], q2[3], q2[0]])
-    
-    # Create a path and interpolate
-    rotations = Rotation.concatenate([r1, r2])
-    slerp = rotations[0] * (rotations[0].inv() * rotations[1]) ** t
-    
-    # Convert back to [w, x, y, z] format
-    q_result = slerp.as_quat()  # Returns [x, y, z, w]
-    return np.array([q_result[3], q_result[0], q_result[1], q_result[2]])
-
-
-def axis_angle_to_quaternion(axis: np.ndarray, angle: float) -> np.ndarray:
-    """
-    Convert axis-angle representation to quaternion.
-    
-    Args:
-        axis: 3x1 rotation axis (will be normalized)
-        angle: Rotation angle in radians
-    
-    Returns:
-        Quaternion [w, x, y, z]
-    """
-    axis = np.asarray(axis).flatten()
-    axis = axis / np.linalg.norm(axis)
-    
-    # Create rotation and convert to quaternion
-    r = Rotation.from_rotvec(axis * angle)
-    q = r.as_quat()  # Returns [x, y, z, w]
-    
-    # Convert to [w, x, y, z] format
-    return np.array([q[3], q[0], q[1], q[2]])
-
-
-def quaternion_to_axis_angle(q: np.ndarray) -> Tuple[np.ndarray, float]:
-    """
-    Convert quaternion to axis-angle representation.
-    
-    Args:
-        q: Quaternion [w, x, y, z]
-    
-    Returns:
-        Tuple of (axis, angle) where axis is 3x1 and angle is in radians
-    """
-    q = quaternion_normalize(q)
-    
-    # Convert to scipy format and get rotvec
-    r = Rotation.from_quat([q[1], q[2], q[3], q[0]])
-    rotvec = r.as_rotvec()
-    
-    angle = np.linalg.norm(rotvec)
-    if angle < 1e-6:
-        return np.array([1.0, 0.0, 0.0]), 0.0
-    
-    axis = rotvec / angle
-    return axis, angle
-
-
-# ============================================================================
-# Coordinate Frame Transformations
-# ============================================================================
 
 def transform_point(T: np.ndarray, p: np.ndarray) -> np.ndarray:
     """
@@ -682,12 +560,12 @@ def pose_to_matrix(pose) -> np.ndarray:
     Convert pose to 4x4 transformation matrix.
     
     Args:
-        pose: Pose object with position and quaternion
+        pose: Pose object with position and rotation_matrix
     
     Returns:
         4x4 transformation matrix
     """
     T = np.eye(4)
-    T[:3, :3] = quaternion_to_rotation_matrix(pose.quaternion)
+    T[:3, :3] = pose.rotation_matrix
     T[:3, 3] = pose.position
     return T

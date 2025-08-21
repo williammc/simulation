@@ -14,7 +14,6 @@ from src.estimation.imu_integration import IMUIntegrator, IntegrationMethod, IMU
 from src.utils.math_utils import (
     quaternion_to_rotation_matrix,
     rotation_matrix_to_quaternion,
-    quaternion_multiply,
     skew
 )
 

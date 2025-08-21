@@ -25,8 +25,7 @@ from src.common.data_structures import (
     CameraCalibration, IMUCalibration
 )
 from src.utils.math_utils import (
-    quaternion_to_rotation_matrix, rotation_matrix_to_quaternion,
-    quaternion_multiply, skew
+    skew
 )
 
 logger = logging.getLogger(__name__)
@@ -44,7 +43,7 @@ class SRIFState:
     Attributes:
         position: Robot position [x, y, z]
         velocity: Robot velocity [vx, vy, vz]
-        quaternion: Robot orientation [qw, qx, qy, qz]
+        rotation_matrix: Robot orientation as 3x3 SO3 matrix
         accel_bias: Accelerometer bias [bax, bay, baz]
         gyro_bias: Gyroscope bias [bgx, bgy, bgz]
         timestamp: State timestamp
@@ -53,7 +52,7 @@ class SRIFState:
     """
     position: np.ndarray
     velocity: np.ndarray
-    quaternion: np.ndarray
+    rotation_matrix: np.ndarray  # 3x3 SO3 matrix
     accel_bias: np.ndarray
     gyro_bias: np.ndarray
     timestamp: float
@@ -65,7 +64,7 @@ class SRIFState:
         return IMUState(
             position=self.position.copy(),
             velocity=self.velocity.copy(),
-            quaternion=self.quaternion.copy(),
+            rotation_matrix=self.rotation_matrix.copy(),
             accel_bias=self.accel_bias.copy(),
             gyro_bias=self.gyro_bias.copy(),
             timestamp=self.timestamp
@@ -75,7 +74,7 @@ class SRIFState:
         """Update from IMU state."""
         self.position = imu_state.position.copy()
         self.velocity = imu_state.velocity.copy()
-        self.quaternion = imu_state.quaternion.copy()
+        self.rotation_matrix = imu_state.rotation_matrix.copy()
         self.accel_bias = imu_state.accel_bias.copy()
         self.gyro_bias = imu_state.gyro_bias.copy()
         self.timestamp = imu_state.timestamp
@@ -127,23 +126,23 @@ class SRIFState:
     
     def _pack_state_vector(self) -> np.ndarray:
         """Pack state into vector form."""
+        from src.utils.math_utils import so3_log
         x = np.zeros(15)
         x[0:3] = self.position
         x[3:6] = self.velocity
-        x[6:10] = self.quaternion
-        x[10:13] = self.accel_bias
-        x[13:15] = self.gyro_bias[:2]  # Only 2 components for 15-dim state
+        x[6:9] = so3_log(self.rotation_matrix)  # SO3 log map
+        x[9:12] = self.accel_bias
+        x[12:15] = self.gyro_bias
         return x
     
     def _unpack_state_vector(self, x: np.ndarray) -> None:
         """Unpack state from vector form."""
+        from src.utils.math_utils import so3_exp
         self.position = x[0:3].copy()
         self.velocity = x[3:6].copy()
-        self.quaternion = x[6:10].copy()
-        self.quaternion /= np.linalg.norm(self.quaternion)  # Normalize
-        self.accel_bias = x[10:13].copy()
-        self.gyro_bias = np.zeros(3)
-        self.gyro_bias[:2] = x[13:15]
+        self.rotation_matrix = so3_exp(x[6:9])  # SO3 exp map
+        self.accel_bias = x[9:12].copy()
+        self.gyro_bias = x[12:15].copy()
 
 
 @dataclass
@@ -248,7 +247,7 @@ class SRIFSlam(BaseEstimator):
         self.state = SRIFState(
             position=initial_pose.position.copy(),
             velocity=np.zeros(3),
-            quaternion=initial_pose.quaternion.copy(),
+            rotation_matrix=initial_pose.rotation_matrix.copy(),
             accel_bias=np.zeros(3),
             gyro_bias=np.zeros(3),
             timestamp=initial_pose.timestamp
@@ -390,7 +389,7 @@ class SRIFSlam(BaseEstimator):
         pose = Pose(
             timestamp=self.state.timestamp,
             position=self.state.position,
-            quaternion=self.state.quaternion
+            rotation_matrix=self.state.rotation_matrix
         )
         
         # Compute measurement residual and Jacobian
@@ -408,9 +407,8 @@ class SRIFSlam(BaseEstimator):
         # Expand H to full state dimension (2x15)
         H_full = np.zeros((2, 15))
         H_full[:, 0:3] = H[:, 3:6]  # Position
-        # Map rotation to quaternion (simplified)
-        R = quaternion_to_rotation_matrix(self.state.quaternion)
-        H_full[:, 6:10] = np.zeros((2, 4))  # Simplified quaternion Jacobian
+        # Map rotation Jacobian (simplified)
+        H_full[:, 6:9] = np.zeros((2, 3))  # Simplified SO3 Jacobian
         
         # Measurement noise
         R_meas = np.eye(2) * self.config.pixel_noise_std**2
@@ -510,7 +508,7 @@ class SRIFSlam(BaseEstimator):
             robot_pose=Pose(
                 timestamp=self.state.timestamp,
                 position=self.state.position.copy(),
-                quaternion=self.state.quaternion.copy()
+                rotation_matrix=self.state.rotation_matrix.copy()
             ),
             robot_velocity=self.state.velocity.copy(),
             landmarks=Map() if not self.landmarks else None,  # Return empty map if no landmarks
@@ -526,7 +524,7 @@ class SRIFSlam(BaseEstimator):
                 pose=Pose(
                     timestamp=self.state.timestamp,
                     position=self.state.position.copy(),
-                    quaternion=self.state.quaternion.copy()
+                    rotation_matrix=self.state.rotation_matrix.copy()
                 ),
                 velocity=self.state.velocity.copy()
             )

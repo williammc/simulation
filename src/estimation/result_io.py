@@ -159,13 +159,14 @@ class EstimatorResultStorage:
     @staticmethod
     def _trajectory_to_dict(trajectory: Trajectory) -> Dict[str, Any]:
         """Convert trajectory to dictionary format."""
+        from src.utils.math_utils import rotation_matrix_to_quaternion
         return {
             "frame_id": trajectory.frame_id,
             "poses": [
                 {
                     "timestamp": state.pose.timestamp,
                     "position": state.pose.position.tolist(),
-                    "quaternion": state.pose.quaternion.tolist(),
+                    "quaternion": rotation_matrix_to_quaternion(state.pose.rotation_matrix).tolist(),
                     "velocity": state.velocity.tolist() if state.velocity is not None else None
                 }
                 for state in trajectory.states
@@ -175,13 +176,15 @@ class EstimatorResultStorage:
     @staticmethod
     def _dict_to_trajectory(data: Dict[str, Any]) -> Trajectory:
         """Convert dictionary to trajectory."""
+        from src.utils.math_utils import quaternion_to_rotation_matrix
         trajectory = Trajectory(frame_id=data.get("frame_id", "world"))
         
         for pose_dict in data.get("poses", []):
+            quaternion = np.array(pose_dict["quaternion"])
             pose = Pose(
                 timestamp=pose_dict["timestamp"],
                 position=np.array(pose_dict["position"]),
-                quaternion=np.array(pose_dict["quaternion"])
+                rotation_matrix=quaternion_to_rotation_matrix(quaternion)
             )
             
             from src.common.data_structures import TrajectoryState

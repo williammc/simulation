@@ -133,7 +133,7 @@ class TestPinholeCamera:
         pose = Pose(
             timestamp=0.0,
             position=np.array([0, 0, 0]),
-            quaternion=np.array([1, 0, 0, 0])
+            rotation_matrix=np.eye(3)
         )
         
         # Generate observations
@@ -181,7 +181,7 @@ class TestIMUModel:
             pose = Pose(
                 timestamp=t,
                 position=np.array([0, 0, 0]),
-                quaternion=np.array([1, 0, 0, 0])  # Identity
+                rotation_matrix=np.eye(3)  # Identity
             )
             state = TrajectoryState(
                 pose=pose,
@@ -220,13 +220,10 @@ class TestIMUModel:
                 [0, 0, 1]
             ])
             
-            from src.utils.math_utils import rotation_matrix_to_quaternion
-            quat = rotation_matrix_to_quaternion(R)
-            
             pose = Pose(
                 timestamp=t,
                 position=np.array([0, 0, 0]),
-                quaternion=quat
+                rotation_matrix=R
             )
             state = TrajectoryState(
                 pose=pose,
@@ -275,7 +272,7 @@ class TestIMUModel:
             pose = Pose(
                 timestamp=t,
                 position=np.array([t, 0, 0]),
-                quaternion=np.array([1, 0, 0, 0])
+                rotation_matrix=np.eye(3)
             )
             state = TrajectoryState(pose=pose)
             trajectory.add_state(state)

@@ -28,7 +28,7 @@ class TestSRIFState:
         state = SRIFState(
             position=np.array([1, 2, 3]),
             velocity=np.array([0.1, 0.2, 0.3]),
-            quaternion=np.array([1, 0, 0, 0]),
+            rotation_matrix=np.eye(3),
             accel_bias=np.zeros(3),
             gyro_bias=np.zeros(3),
             timestamp=1.0
@@ -44,7 +44,7 @@ class TestSRIFState:
         state = SRIFState(
             position=np.zeros(3),
             velocity=np.zeros(3),
-            quaternion=np.array([1, 0, 0, 0]),
+            rotation_matrix=np.eye(3),
             accel_bias=np.zeros(3),
             gyro_bias=np.zeros(3),
             timestamp=0.0
@@ -66,7 +66,7 @@ class TestSRIFState:
         state = SRIFState(
             position=np.array([1, 2, 3]),
             velocity=np.array([4, 5, 6]),
-            quaternion=np.array([0.707, 0, 0, 0.707]),
+            quaternion=np.array([0.707, 0, 0, 0.707]),  # SRIF still uses quaternions internally
             accel_bias=np.array([0.1, 0.2, 0.3]),
             gyro_bias=np.array([0.01, 0.02, 0.03]),
             timestamp=1.0
@@ -159,7 +159,7 @@ class TestSRIFSlam:
         initial_pose = Pose(
             timestamp=0.0,
             position=np.zeros(3),
-            quaternion=np.array([1, 0, 0, 0])
+            rotation_matrix=np.eye(3)
         )
         
         srif.initialize(initial_pose)
@@ -181,7 +181,7 @@ class TestSRIFSlam:
         initial_pose = Pose(
             timestamp=0.0,
             position=np.zeros(3),
-            quaternion=np.array([1, 0, 0, 0])
+            rotation_matrix=np.eye(3)
         )
         srif.initialize(initial_pose)
         
@@ -201,7 +201,7 @@ class TestSRIFSlam:
         initial_pose = Pose(
             timestamp=0.0,
             position=np.zeros(3),
-            quaternion=np.array([1, 0, 0, 0])
+            rotation_matrix=np.eye(3)
         )
         srif.initialize(initial_pose)
         
@@ -249,7 +249,7 @@ class TestSRIFSlam:
         initial_pose = Pose(
             timestamp=0.0,
             position=np.zeros(3),
-            quaternion=np.array([1, 0, 0, 0])
+            rotation_matrix=np.eye(3)
         )
         srif.initialize(initial_pose)
         
@@ -315,7 +315,7 @@ class TestSRIFNumericalStability:
         initial_pose = Pose(
             timestamp=0.0,
             position=np.zeros(3),
-            quaternion=np.array([1, 0, 0, 0])
+            rotation_matrix=np.eye(3)
         )
         
         # Initialize with ill-conditioned covariance
@@ -335,7 +335,7 @@ class TestSRIFNumericalStability:
         initial_pose = Pose(
             timestamp=0.0,
             position=np.zeros(3),
-            quaternion=np.array([1, 0, 0, 0])
+            rotation_matrix=np.eye(3)
         )
         srif.initialize(initial_pose)
         
@@ -444,7 +444,7 @@ class TestSRIFEKFEquivalence:
         initial_pose = Pose(
             timestamp=0.0,
             position=np.zeros(3),
-            quaternion=np.array([1, 0, 0, 0])
+            rotation_matrix=np.eye(3)
         )
         ekf.initialize(initial_pose)
         srif.initialize(initial_pose)

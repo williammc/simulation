@@ -12,11 +12,9 @@ from src.utils.math_utils import (
     so3_exp, so3_log, skew, vee, is_rotation_matrix,
     # SE3 operations
     se3_exp, se3_log, se3_inverse, se3_adjoint,
-    # Quaternion operations
-    quaternion_multiply, quaternion_conjugate, quaternion_inverse,
+    # Temporarily available quaternion operations (for backward compatibility)
     quaternion_normalize, quaternion_to_rotation_matrix,
-    rotation_matrix_to_quaternion, quaternion_slerp,
-    axis_angle_to_quaternion, quaternion_to_axis_angle,
+    rotation_matrix_to_quaternion,
     # Coordinate transformations
     transform_point, transform_vector,
     euler_to_rotation_matrix, rotation_matrix_to_euler,
@@ -151,29 +149,15 @@ class TestQuaternionOperations:
         q_norm = quaternion_normalize(q)
         assert abs(np.linalg.norm(q_norm) - 1.0) < 1e-10
     
+    @pytest.mark.skip(reason="quaternion_multiply removed - use SO3 operations")
     def test_quaternion_multiply_identity(self):
         """Test quaternion multiplication with identity."""
-        q_identity = np.array([1, 0, 0, 0])
-        q = np.array([np.sqrt(2)/2, np.sqrt(2)/2, 0, 0])  # 90 deg around x (normalized)
-        
-        q_result = quaternion_multiply(q, q_identity)
-        assert_array_almost_equal(q_result, q)
-        
-        q_result = quaternion_multiply(q_identity, q)
-        assert_array_almost_equal(q_result, q)
+        pass  # Function removed
     
+    @pytest.mark.skip(reason="quaternion conjugate/inverse removed - use SO3 operations")
     def test_quaternion_conjugate_inverse(self):
         """Test quaternion conjugate and inverse."""
-        q = quaternion_normalize(np.array([1, 2, 3, 4]))
-        q_conj = quaternion_conjugate(q)
-        q_inv = quaternion_inverse(q)
-        
-        # For unit quaternion, conjugate = inverse
-        assert_array_almost_equal(q_conj, q_inv)
-        
-        # q * q_inv = identity
-        q_identity = quaternion_multiply(q, q_inv)
-        assert_array_almost_equal(q_identity, [1, 0, 0, 0])
+        pass  # Functions removed
     
     def test_quaternion_rotation_conversion(self):
         """Test conversion between quaternion and rotation matrix."""
@@ -190,34 +174,15 @@ class TestQuaternionOperations:
             
             assert_array_almost_equal(q, q_recovered, decimal=10)
     
+    @pytest.mark.skip(reason="quaternion_slerp removed - use SO3 interpolation")
     def test_quaternion_slerp(self):
         """Test spherical linear interpolation."""
-        q1 = np.array([1, 0, 0, 0])  # Identity
-        q2 = np.array([np.sqrt(2)/2, np.sqrt(2)/2, 0, 0])  # 90 deg around x (normalized)
-        
-        # At t=0, should get q1
-        q_interp = quaternion_slerp(q1, q2, 0.0)
-        assert_array_almost_equal(q_interp, q1)
-        
-        # At t=1, should get q2
-        q_interp = quaternion_slerp(q1, q2, 1.0)
-        assert_array_almost_equal(q_interp, q2, decimal=5)  # Allow small numerical error
-        
-        # At t=0.5, should get 45 deg rotation
-        q_interp = quaternion_slerp(q1, q2, 0.5)
-        angle = 2 * np.arccos(q_interp[0])
-        assert abs(angle - np.pi/4) < 1e-5
+        pass  # Function removed
     
+    @pytest.mark.skip(reason="axis_angle functions removed - use SO3 operations")
     def test_axis_angle_quaternion_conversion(self):
         """Test conversion between axis-angle and quaternion."""
-        axis = np.array([1, 0, 0])  # X-axis
-        angle = np.pi / 2  # 90 degrees
-        
-        q = axis_angle_to_quaternion(axis, angle)
-        axis_recovered, angle_recovered = quaternion_to_axis_angle(q)
-        
-        assert abs(angle - angle_recovered) < 1e-10
-        assert_array_almost_equal(axis, axis_recovered)
+        pass  # Functions removed
 
 
 class TestCoordinateTransformations:

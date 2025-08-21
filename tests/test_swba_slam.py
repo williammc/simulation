@@ -28,7 +28,7 @@ class TestKeyframe:
         state = IMUState(
             position=np.array([1, 2, 3]),
             velocity=np.array([0.1, 0.2, 0.3]),
-            quaternion=np.array([1, 0, 0, 0]),
+            rotation_matrix=np.eye(3),
             accel_bias=np.zeros(3),
             gyro_bias=np.zeros(3),
             timestamp=1.0
@@ -47,10 +47,15 @@ class TestKeyframe:
     
     def test_keyframe_get_pose(self):
         """Test getting pose from keyframe."""
+        # 90-degree rotation around z-axis
+        from src.utils.math_utils import quaternion_to_rotation_matrix
+        q = np.array([0.707, 0, 0, 0.707])
+        R = quaternion_to_rotation_matrix(q)
+        
         state = IMUState(
             position=np.array([1, 2, 3]),
             velocity=np.zeros(3),
-            quaternion=np.array([0.707, 0, 0, 0.707]),
+            rotation_matrix=R,
             accel_bias=np.zeros(3),
             gyro_bias=np.zeros(3),
             timestamp=1.0
@@ -135,7 +140,7 @@ class TestSlidingWindowBA:
         initial_pose = Pose(
             timestamp=0.0,
             position=np.zeros(3),
-            quaternion=np.array([1, 0, 0, 0])
+            rotation_matrix=np.eye(3)
         )
         
         swba.initialize(initial_pose)
@@ -153,7 +158,7 @@ class TestSlidingWindowBA:
         initial_pose = Pose(
             timestamp=0.0,
             position=np.zeros(3),
-            quaternion=np.array([1, 0, 0, 0])
+            rotation_matrix=np.eye(3)
         )
         swba.initialize(initial_pose)
         
@@ -190,7 +195,7 @@ class TestSlidingWindowBA:
         initial_pose = Pose(
             timestamp=0.0,
             position=np.zeros(3),
-            quaternion=np.array([1, 0, 0, 0])
+            rotation_matrix=np.eye(3)
         )
         swba.initialize(initial_pose)
         
@@ -209,7 +214,7 @@ class TestSlidingWindowBA:
         initial_pose = Pose(
             timestamp=0.0,
             position=np.zeros(3),
-            quaternion=np.array([1, 0, 0, 0])
+            rotation_matrix=np.eye(3)
         )
         swba.initialize(initial_pose)
         
@@ -239,7 +244,7 @@ class TestSlidingWindowBA:
         initial_pose = Pose(
             timestamp=0.0,
             position=np.zeros(3),
-            quaternion=np.array([1, 0, 0, 0])
+            rotation_matrix=np.eye(3)
         )
         swba.initialize(initial_pose)
         
@@ -287,7 +292,7 @@ class TestSlidingWindowBA:
         initial_pose = Pose(
             timestamp=0.0,
             position=np.zeros(3),
-            quaternion=np.array([1, 0, 0, 0])
+            rotation_matrix=np.eye(3)
         )
         swba.initialize(initial_pose)
         
@@ -355,7 +360,7 @@ class TestSlidingWindowBA:
         initial_pose = Pose(
             timestamp=0.0,
             position=np.zeros(3),
-            quaternion=np.array([1, 0, 0, 0])
+            rotation_matrix=np.eye(3)
         )
         swba.initialize(initial_pose)
         
@@ -363,7 +368,7 @@ class TestSlidingWindowBA:
         state2 = IMUState(
             position=np.array([1, 0, 0]),
             velocity=np.zeros(3),
-            quaternion=np.array([1, 0, 0, 0]),
+            rotation_matrix=np.eye(3),
             accel_bias=np.zeros(3),
             gyro_bias=np.zeros(3),
             timestamp=1.0
@@ -396,7 +401,7 @@ class TestSlidingWindowBA:
         initial_pose = Pose(
             timestamp=0.0,
             position=np.zeros(3),
-            quaternion=np.array([1, 0, 0, 0])
+            rotation_matrix=np.eye(3)
         )
         swba.initialize(initial_pose)
         
@@ -409,7 +414,7 @@ class TestSlidingWindowBA:
         state2 = IMUState(
             position=np.array([1, 0, 0]),
             velocity=np.zeros(3),
-            quaternion=np.array([1, 0, 0, 0]),
+            rotation_matrix=np.eye(3),
             accel_bias=np.zeros(3),
             gyro_bias=np.zeros(3),
             timestamp=1.0
@@ -484,7 +489,7 @@ class TestSWBAIntegration:
             pose = Pose(
                 timestamp=t,
                 position=np.array([t, 0, 0]),
-                quaternion=np.array([1, 0, 0, 0])
+                rotation_matrix=np.eye(3)
             )
             state = TrajectoryState(
                 pose=pose,
@@ -567,7 +572,7 @@ class TestSWBAIntegration:
         initial_pose = Pose(
             timestamp=0.0,
             position=np.zeros(3),
-            quaternion=np.array([1, 0, 0, 0])
+            rotation_matrix=np.eye(3)
         )
         swba.initialize(initial_pose)
         
@@ -581,7 +586,7 @@ class TestSWBAIntegration:
         state2 = IMUState(
             position=np.array([1.1, 0.1, 0]),  # Slightly off
             velocity=np.zeros(3),
-            quaternion=np.array([1, 0, 0, 0]),
+            rotation_matrix=np.eye(3),
             accel_bias=np.zeros(3),
             gyro_bias=np.zeros(3),
             timestamp=1.0
@@ -619,7 +624,7 @@ class TestSWBAIntegration:
         initial_pose = Pose(
             timestamp=0.0,
             position=np.zeros(3),
-            quaternion=np.array([1, 0, 0, 0])
+            rotation_matrix=np.eye(3)
         )
         swba.initialize(initial_pose)
         

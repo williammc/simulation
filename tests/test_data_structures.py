@@ -142,24 +142,26 @@ class TestTrajectoryDataStructures:
     """Test trajectory-related data structures."""
     
     def test_pose_creation(self):
-        """Test pose creation and quaternion normalization."""
+        """Test pose creation and rotation matrix validation."""
         pose = Pose(
             timestamp=1.0,
             position=np.array([1, 2, 3]),
-            quaternion=np.array([2, 0, 0, 0])  # Will be normalized
+            rotation_matrix=np.eye(3)  # Identity rotation
         )
         
         assert pose.timestamp == 1.0
         assert np.allclose(pose.position, [1, 2, 3])
-        assert np.allclose(pose.quaternion, [1, 0, 0, 0])  # Normalized
-        assert np.allclose(np.linalg.norm(pose.quaternion), 1.0)
+        assert np.allclose(pose.rotation_matrix, np.eye(3))
+        # Check SO3 properties
+        assert np.allclose(np.linalg.det(pose.rotation_matrix), 1.0)
+        assert np.allclose(pose.rotation_matrix @ pose.rotation_matrix.T, np.eye(3))
     
     def test_pose_to_matrix(self):
         """Test pose to transformation matrix conversion."""
         pose = Pose(
             timestamp=1.0,
             position=np.array([1, 2, 3]),
-            quaternion=np.array([1, 0, 0, 0])  # Identity rotation
+            rotation_matrix=np.eye(3)  # Identity rotation
         )
         
         T = pose.to_matrix()
@@ -174,7 +176,7 @@ class TestTrajectoryDataStructures:
         pose = Pose(
             timestamp=1.0,
             position=np.array([1, 2, 3]),
-            quaternion=np.array([1, 0, 0, 0])
+            rotation_matrix=np.eye(3)
         )
         
         state = TrajectoryState(
@@ -196,7 +198,7 @@ class TestTrajectoryDataStructures:
             pose = Pose(
                 timestamp=t,
                 position=np.array([t, 0, 0]),
-                quaternion=np.array([1, 0, 0, 0])
+                rotation_matrix=np.eye(3)
             )
             state = TrajectoryState(pose=pose)
             trajectory.add_state(state)
@@ -324,10 +326,16 @@ class TestSerialization:
     
     def test_pose_serialization(self):
         """Test pose serialization."""
+        # Create pose with 45-degree rotation around z-axis
+        R = np.array([
+            [0.7071, -0.7071, 0],
+            [0.7071, 0.7071, 0],
+            [0, 0, 1]
+        ])
         pose = Pose(
             timestamp=1.0,
             position=np.array([1, 2, 3]),
-            quaternion=np.array([0.7071, 0, 0, 0.7071])
+            rotation_matrix=R
         )
         
         data = pose.to_dict()
@@ -335,7 +343,7 @@ class TestSerialization:
         
         assert pose2.timestamp == pose.timestamp
         assert np.allclose(pose2.position, pose.position)
-        assert np.allclose(pose2.quaternion, pose.quaternion, atol=1e-4)
+        assert np.allclose(pose2.rotation_matrix, pose.rotation_matrix, atol=1e-4)
     
     def test_landmark_serialization(self):
         """Test landmark serialization."""

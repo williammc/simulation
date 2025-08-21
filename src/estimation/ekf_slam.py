@@ -29,7 +29,7 @@ from src.common.data_structures import (
 )
 from src.utils.math_utils import (
     quaternion_to_rotation_matrix, rotation_matrix_to_quaternion,
-    skew, quaternion_multiply
+    skew, so3_exp, so3_log, project_to_so3
 )
 
 logger = logging.getLogger(__name__)
@@ -37,22 +37,22 @@ logger = logging.getLogger(__name__)
 
 class EKFState:
     """
-    EKF state vector representation.
+    EKF state vector representation using SO3.
     
-    State vector: [position(3), velocity(3), quaternion(4), accel_bias(3), gyro_bias(3)]
-    Total dimension: 16
+    Nominal state: [position(3), velocity(3), rotation_matrix(3x3), accel_bias(3), gyro_bias(3)]
     
     Error state: [position(3), velocity(3), rotation(3), accel_bias(3), gyro_bias(3)]
-    Total dimension: 15 (using minimal rotation representation)
+    Total dimension: 15 (using SO3 tangent space for rotation)
     """
     
     def __init__(
         self,
         position: np.ndarray,
         velocity: np.ndarray,
-        quaternion: np.ndarray,
-        accel_bias: np.ndarray,
-        gyro_bias: np.ndarray,
+        rotation_matrix: Optional[np.ndarray] = None,
+        quaternion: Optional[np.ndarray] = None,  # For backward compatibility
+        accel_bias: np.ndarray = None,
+        gyro_bias: np.ndarray = None,
         covariance: Optional[np.ndarray] = None,
         timestamp: float = 0.0
     ):
@@ -62,7 +62,8 @@ class EKFState:
         Args:
             position: 3D position in world frame
             velocity: 3D velocity in world frame
-            quaternion: Orientation quaternion [w, x, y, z]
+            rotation_matrix: SO3 rotation matrix (3x3)
+            quaternion: Legacy quaternion support (will be converted)
             accel_bias: Accelerometer bias
             gyro_bias: Gyroscope bias
             covariance: State covariance matrix (15x15)
@@ -70,9 +71,18 @@ class EKFState:
         """
         self.position = position.copy()
         self.velocity = velocity.copy()
-        self.quaternion = quaternion.copy() / np.linalg.norm(quaternion)
-        self.accel_bias = accel_bias.copy()
-        self.gyro_bias = gyro_bias.copy()
+        
+        # Handle rotation representation
+        if rotation_matrix is not None:
+            self.rotation_matrix = project_to_so3(rotation_matrix)
+        elif quaternion is not None:
+            # Legacy support: convert quaternion to rotation matrix
+            self.rotation_matrix = quaternion_to_rotation_matrix(quaternion)
+        else:
+            self.rotation_matrix = np.eye(3)
+        
+        self.accel_bias = accel_bias.copy() if accel_bias is not None else np.zeros(3)
+        self.gyro_bias = gyro_bias.copy() if gyro_bias is not None else np.zeros(3)
         self.timestamp = timestamp
         
         # Error state covariance (15x15)
@@ -81,12 +91,17 @@ class EKFState:
         else:
             self.covariance = covariance.copy()
     
+    @property
+    def quaternion(self):
+        """Legacy quaternion access (for backward compatibility)."""
+        return rotation_matrix_to_quaternion(self.rotation_matrix)
+    
     def to_imu_state(self) -> IMUState:
         """Convert to IMU state for integration."""
         return IMUState(
             position=self.position,
             velocity=self.velocity,
-            quaternion=self.quaternion,
+            rotation_matrix=self.rotation_matrix,
             accel_bias=self.accel_bias,
             gyro_bias=self.gyro_bias,
             timestamp=self.timestamp
@@ -96,7 +111,7 @@ class EKFState:
         """Update from IMU state."""
         self.position = imu_state.position.copy()
         self.velocity = imu_state.velocity.copy()
-        self.quaternion = imu_state.quaternion.copy()
+        self.rotation_matrix = imu_state.rotation_matrix.copy()
         self.accel_bias = imu_state.accel_bias.copy()
         self.gyro_bias = imu_state.gyro_bias.copy()
         self.timestamp = imu_state.timestamp
@@ -106,7 +121,7 @@ class EKFState:
         return EKFState(
             position=self.position,
             velocity=self.velocity,
-            quaternion=self.quaternion,
+            rotation_matrix=self.rotation_matrix,
             accel_bias=self.accel_bias,
             gyro_bias=self.gyro_bias,
             covariance=self.covariance,
@@ -118,7 +133,7 @@ class EKFState:
         return Pose(
             timestamp=self.timestamp,
             position=self.position.copy(),
-            quaternion=self.quaternion.copy()
+            rotation_matrix=self.rotation_matrix.copy()
         )
 
 
@@ -230,7 +245,7 @@ class EKFSlam(BaseEstimator):
         self.state = EKFState(
             position=initial_pose.position,
             velocity=np.zeros(3),  # Start with zero velocity
-            quaternion=initial_pose.quaternion,
+            rotation_matrix=initial_pose.rotation_matrix,
             accel_bias=np.zeros(3),
             gyro_bias=np.zeros(3),
             timestamp=initial_pose.timestamp
@@ -401,24 +416,15 @@ class EKFSlam(BaseEstimator):
         self.state.position += dx[0:3]
         self.state.velocity += dx[3:6]
         
-        # Rotation correction (small angle approximation)
-        dtheta = dx[6:9]
-        theta_norm = np.linalg.norm(dtheta)
-        if theta_norm > 0:
-            axis = dtheta / theta_norm
-            angle = theta_norm
-            
-            # Create quaternion from axis-angle
-            dq = np.array([
-                np.cos(angle/2),
-                axis[0] * np.sin(angle/2),
-                axis[1] * np.sin(angle/2),
-                axis[2] * np.sin(angle/2)
-            ])
-            
-            # Apply rotation correction
-            self.state.quaternion = quaternion_multiply(dq, self.state.quaternion)
-            self.state.quaternion /= np.linalg.norm(self.state.quaternion)
+        # Rotation correction using SO3 exponential map
+        dtheta = dx[6:9]  # Rotation error in tangent space
+        
+        # Apply rotation correction: R_new = R @ exp(dtheta)
+        delta_R = so3_exp(dtheta)
+        self.state.rotation_matrix = self.state.rotation_matrix @ delta_R
+        
+        # Ensure rotation matrix stays on SO3 manifold
+        self.state.rotation_matrix = project_to_so3(self.state.rotation_matrix)
         
         # Bias corrections
         self.state.accel_bias += dx[9:12]

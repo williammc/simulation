@@ -99,7 +99,7 @@ class TestSimulationDataIO:
             pose = Pose(
                 timestamp=t,
                 position=np.array([t, 0, 0]),
-                quaternion=np.array([1, 0, 0, 0])
+                rotation_matrix=np.eye(3)
             )
             state = TrajectoryState(
                 pose=pose,
@@ -195,7 +195,7 @@ class TestSimulationDataIO:
             pose = Pose(
                 timestamp=t,
                 position=np.array([t, t*2, 0]),
-                quaternion=np.array([1, 0, 0, 0])
+                rotation_matrix=np.eye(3)
             )
             state = TrajectoryState(pose=pose)
             trajectory.add_state(state)
@@ -225,7 +225,7 @@ class TestSimulationDataIO:
             pose = Pose(
                 timestamp=t,
                 position=np.array([t, 0, 0]),
-                quaternion=np.array([1, 0, 0, 0])
+                rotation_matrix=np.eye(3)
             )
             state = TrajectoryState(
                 pose=pose,
@@ -254,7 +254,7 @@ class TestConvenienceFunctions:
         pose = Pose(
             timestamp=0.0,
             position=np.array([0, 0, 0]),
-            quaternion=np.array([1, 0, 0, 0])
+            rotation_matrix=np.eye(3)
         )
         state = TrajectoryState(pose=pose)
         trajectory.add_state(state)
@@ -302,7 +302,7 @@ class TestConvenienceFunctions:
         pose = Pose(
             timestamp=0.0,
             position=np.array([1, 2, 3]),
-            quaternion=np.array([1, 0, 0, 0])
+            rotation_matrix=np.eye(3)
         )
         state = TrajectoryState(pose=pose)
         trajectory.add_state(state)

@@ -170,7 +170,7 @@ def plot_trajectory_and_landmarks(
                 pose = primary_data.ground_truth_trajectory.states[pose_idx].pose
                 
                 # Draw camera frustum
-                frustum = create_camera_frustum(pose.position, pose.quaternion, scale=0.2)
+                frustum = create_camera_frustum(pose.position, pose.rotation_matrix, scale=0.2)
                 fig.add_trace(go.Mesh3d(
                     x=frustum['x'].tolist() if isinstance(frustum['x'], np.ndarray) else frustum['x'],
                     y=frustum['y'].tolist() if isinstance(frustum['y'], np.ndarray) else frustum['y'],
@@ -473,7 +473,7 @@ def plot_imu_data_enhanced(
 
 def create_camera_frustum(
     position: np.ndarray,
-    quaternion: np.ndarray,
+    rotation_matrix: np.ndarray,
     scale: float = 1.0,
     aspect: float = 1.33,
     fov: float = 60.0
@@ -483,7 +483,7 @@ def create_camera_frustum(
     
     Args:
         position: Camera position
-        quaternion: Camera orientation
+        rotation_matrix: Camera orientation as SO3 matrix
         scale: Frustum scale
         aspect: Aspect ratio
         fov: Field of view in degrees
@@ -491,8 +491,6 @@ def create_camera_frustum(
     Returns:
         Dictionary with mesh vertices and faces
     """
-    from src.utils.math_utils import quaternion_to_rotation_matrix
-    
     # Create frustum in camera frame
     fov_rad = np.radians(fov)
     h = scale * np.tan(fov_rad / 2)
@@ -508,7 +506,7 @@ def create_camera_frustum(
     ])
     
     # Transform to world frame
-    R = quaternion_to_rotation_matrix(quaternion)
+    R = rotation_matrix
     vertices_world = (R @ vertices_cam.T).T + position
     
     # Define triangular faces

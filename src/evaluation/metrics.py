@@ -182,16 +182,14 @@ def align_trajectories(
         aligned_pos = (T @ pos_hom)[:3]
         
         # Transform rotation (only apply R, not scale)
-        from src.utils.math_utils import quaternion_to_rotation_matrix, rotation_matrix_to_quaternion
-        R_est = quaternion_to_rotation_matrix(state.pose.quaternion)
+        R_est = state.pose.rotation_matrix
         R_aligned = R @ R_est
-        q_aligned = rotation_matrix_to_quaternion(R_aligned)
         
         # Create aligned pose
         aligned_pose = Pose(
             timestamp=state.pose.timestamp,
             position=aligned_pos,
-            quaternion=q_aligned
+            rotation_matrix=R_aligned
         )
         
         # Create aligned state

@@ -29,7 +29,7 @@ class TestLegacyPlotting:
             pose = Pose(
                 timestamp=t,
                 position=np.array([np.cos(t), np.sin(t), 0.5]),
-                quaternion=np.array([1, 0, 0, 0])
+                rotation_matrix=np.eye(3)
             )
             state = TrajectoryState(
                 pose=pose,

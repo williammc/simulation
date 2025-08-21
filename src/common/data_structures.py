@@ -214,34 +214,27 @@ class CameraData:
 
 @dataclass
 class Pose:
-    """6DOF pose with position and orientation."""
+    """6DOF pose with position and orientation using SO3."""
     timestamp: float  # Time in seconds
     position: np.ndarray  # 3x1 position vector [x, y, z]
-    quaternion: np.ndarray  # 4x1 quaternion [w, x, y, z]
+    rotation_matrix: np.ndarray  # 3x3 SO3 rotation matrix
     
     def __post_init__(self):
-        """Validate and normalize quaternion."""
+        """Validate position and rotation matrix."""
         self.position = np.asarray(self.position).flatten()
-        self.quaternion = np.asarray(self.quaternion).flatten()
+        self.rotation_matrix = np.asarray(self.rotation_matrix).reshape(3, 3)
         
         if len(self.position) != 3:
             raise ValueError(f"Position must be 3D, got {len(self.position)}")
-        if len(self.quaternion) != 4:
-            raise ValueError(f"Quaternion must be 4D, got {len(self.quaternion)}")
         
-        # Normalize quaternion
-        norm = np.linalg.norm(self.quaternion)
-        if norm > 1e-6:
-            self.quaternion = self.quaternion / norm
-        else:
-            self.quaternion = np.array([1.0, 0.0, 0.0, 0.0])
+        # Ensure rotation matrix is on SO3 manifold
+        from src.utils.math_utils import project_to_so3
+        self.rotation_matrix = project_to_so3(self.rotation_matrix)
     
     def to_matrix(self) -> np.ndarray:
-        """Convert to 4x4 transformation matrix."""
-        from src.utils.math_utils import quaternion_to_rotation_matrix
-        
+        """Convert to 4x4 SE3 transformation matrix."""
         T = np.eye(4)
-        T[:3, :3] = quaternion_to_rotation_matrix(self.quaternion)
+        T[:3, :3] = self.rotation_matrix
         T[:3, 3] = self.position
         return T
     
@@ -250,27 +243,32 @@ class Pose:
         return {
             "timestamp": self.timestamp,
             "position": self.position.tolist(),
-            "quaternion": self.quaternion.tolist()
+            "rotation_matrix": self.rotation_matrix.tolist()
         }
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'Pose':
         """Create from dictionary."""
+        # Support legacy quaternion format for backward compatibility
+        if "quaternion" in data:
+            from src.utils.math_utils import quaternion_to_rotation_matrix
+            rotation_matrix = quaternion_to_rotation_matrix(np.array(data["quaternion"]))
+        else:
+            rotation_matrix = np.array(data["rotation_matrix"])
+        
         return cls(
             timestamp=data["timestamp"],
             position=np.array(data["position"]),
-            quaternion=np.array(data["quaternion"])
+            rotation_matrix=rotation_matrix
         )
     
     @classmethod
     def from_matrix(cls, T: np.ndarray, timestamp: float = 0.0) -> 'Pose':
-        """Create from 4x4 transformation matrix."""
-        from src.utils.math_utils import rotation_matrix_to_quaternion
-        
+        """Create from 4x4 SE3 transformation matrix."""
         return cls(
             timestamp=timestamp,
-            position=T[:3, 3],
-            quaternion=rotation_matrix_to_quaternion(T[:3, :3])
+            position=T[:3, 3].copy(),
+            rotation_matrix=T[:3, :3].copy()
         )
 
 
@@ -358,13 +356,13 @@ class Trajectory:
                 pos2 = self.states[i+1].pose.position
                 position = (1 - alpha) * pos1 + alpha * pos2
                 
-                # SLERP for orientation
-                from src.utils.math_utils import quaternion_slerp
-                q1 = self.states[i].pose.quaternion
-                q2 = self.states[i+1].pose.quaternion
-                quaternion = quaternion_slerp(q1, q2, alpha)
+                # SO3 geodesic interpolation for rotation
+                from src.utils.math_utils import so3_interpolate
+                R1 = self.states[i].pose.rotation_matrix
+                R2 = self.states[i+1].pose.rotation_matrix
+                rotation_matrix = so3_interpolate(R1, R2, alpha)
                 
-                return Pose(timestamp=timestamp, position=position, quaternion=quaternion)
+                return Pose(timestamp=timestamp, position=position, rotation_matrix=rotation_matrix)
         
         return None
     

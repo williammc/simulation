@@ -381,7 +381,7 @@ class StereoCameraModel:
             Right camera pose in world frame
         """
         # Transform from left to right camera
-        R_WL = quaternion_to_rotation_matrix(left_pose.quaternion)
+        R_WL = left_pose.rotation_matrix
         t_WL = left_pose.position
         
         # Right camera in world frame
@@ -390,14 +390,10 @@ class StereoCameraModel:
         R_WR = R_WL @ self.R_RL
         t_WR = t_WL + R_WL @ np.array([self.calibration.baseline, 0, 0])
         
-        # Convert back to quaternion
-        from src.utils.math_utils import rotation_matrix_to_quaternion
-        q_WR = rotation_matrix_to_quaternion(R_WR)
-        
         return Pose(
             timestamp=left_pose.timestamp,
             position=t_WR,
-            quaternion=q_WR
+            rotation_matrix=R_WR
         )
     
     def _get_projection_matrix(
@@ -416,7 +412,7 @@ class StereoCameraModel:
             3x4 projection matrix
         """
         # World to camera transform
-        R_WC = quaternion_to_rotation_matrix(pose.quaternion)
+        R_WC = pose.rotation_matrix
         t_WC = pose.position
         
         # Camera to world transform (inverse)

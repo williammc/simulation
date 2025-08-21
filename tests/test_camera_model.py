@@ -49,7 +49,7 @@ class TestCameraMeasurementModel:
         return Pose(
             timestamp=0.0,
             position=np.zeros(3),
-            quaternion=np.array([1, 0, 0, 0])
+            rotation_matrix=np.eye(3)
         )
     
     def test_projection_simple(self, simple_calibration, camera_pose):
@@ -75,7 +75,7 @@ class TestCameraMeasurementModel:
         camera_pose = Pose(
             timestamp=0.0,
             position=np.array([0, 0, 0]),
-            quaternion=np.array([1, 0, 0, 0])
+            rotation_matrix=np.eye(3)
         )
         
         # Landmark to the right and in front
@@ -163,7 +163,7 @@ class TestCameraMeasurementModel:
         pose = Pose(
             timestamp=0.0,
             position=np.array([0, 0, 0]),  # Camera at origin
-            quaternion=np.array([1, 0, 0, 0])  # No rotation
+            rotation_matrix=np.eye(3)  # No rotation
         )
         
         # Analytical Jacobians
@@ -313,7 +313,7 @@ class TestBatchOperations:
         camera_pose = Pose(
             timestamp=0.0,
             position=np.zeros(3),
-            quaternion=np.array([1, 0, 0, 0])
+            rotation_matrix=np.eye(3)
         )
         
         # Create multiple observations and landmarks
@@ -375,7 +375,7 @@ class TestBatchOperations:
         camera_pose = Pose(
             timestamp=0.0,
             position=np.zeros(3),
-            quaternion=np.array([1, 0, 0, 0])
+            rotation_matrix=np.eye(3)
         )
         
         # Create observations with one outlier

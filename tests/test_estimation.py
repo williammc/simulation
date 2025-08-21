@@ -28,7 +28,7 @@ class TestEstimatorState:
         pose = Pose(
             timestamp=1.0,
             position=np.array([1, 2, 3]),
-            quaternion=np.array([1, 0, 0, 0])
+            rotation_matrix=np.eye(3)
         )
         
         state = EstimatorState(
@@ -46,7 +46,7 @@ class TestEstimatorState:
         pose = Pose(
             timestamp=1.0, 
             position=np.array([1, 2, 3]),
-            quaternion=np.array([1, 0, 0, 0])
+            rotation_matrix=np.eye(3)
         )
         state = EstimatorState(timestamp=1.0, robot_pose=pose)
         
@@ -134,7 +134,7 @@ class TestTrajectoryMetrics:
             pose = Pose(
                 timestamp=i * 0.1,
                 position=np.array([i * 0.1, 0, 0]),
-                quaternion=np.array([1, 0, 0, 0])
+                rotation_matrix=np.eye(3)
             )
             state = TrajectoryState(pose=pose)
             gt_traj.add_state(state)
@@ -145,7 +145,7 @@ class TestTrajectoryMetrics:
             pose = Pose(
                 timestamp=i * 0.1,
                 position=np.array([i * 0.1, 0.01, 0]),  # 1cm error in y
-                quaternion=np.array([1, 0, 0, 0])
+                rotation_matrix=np.eye(3)
             )
             state = TrajectoryState(pose=pose)
             est_traj.add_state(state)
@@ -199,7 +199,7 @@ class TestConsistencyMetrics:
             pose = Pose(
                 timestamp=i * 0.1,
                 position=np.array([i * 0.1, 0.01, 0]),
-                quaternion=np.array([1, 0, 0, 0])
+                rotation_matrix=np.eye(3)
             )
             state = EstimatorState(
                 timestamp=i * 0.1,
@@ -214,7 +214,7 @@ class TestConsistencyMetrics:
             pose = Pose(
                 timestamp=i * 0.1,
                 position=np.array([i * 0.1, 0, 0]),
-                quaternion=np.array([1, 0, 0, 0])
+                rotation_matrix=np.eye(3)
             )
             state = TrajectoryState(pose=pose)
             gt_traj.add_state(state)
@@ -236,7 +236,7 @@ class TestResultStorage:
         pose = Pose(
             timestamp=0.0,
             position=np.array([1, 2, 3]),
-            quaternion=np.array([1, 0, 0, 0])
+            rotation_matrix=np.eye(3)
         )
         state = TrajectoryState(pose=pose)
         trajectory.add_state(state)

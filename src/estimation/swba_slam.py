@@ -28,7 +28,7 @@ from src.common.data_structures import (
     CameraCalibration, IMUCalibration
 )
 from src.utils.math_utils import (
-    quaternion_to_rotation_matrix, rotation_matrix_to_quaternion,
+    rotation_matrix_to_quaternion,
     skew, so3_exp, so3_log
 )
 
@@ -68,7 +68,7 @@ class Keyframe:
         return Pose(
             timestamp=self.timestamp,
             position=self.state.position.copy(),
-            quaternion=self.state.quaternion.copy()
+            rotation_matrix=self.state.rotation_matrix.copy()
         )
 
 
@@ -204,7 +204,7 @@ class SlidingWindowBA(BaseEstimator):
         initial_state = IMUState(
             position=initial_pose.position,
             velocity=np.zeros(3),
-            quaternion=initial_pose.quaternion,
+            rotation_matrix=initial_pose.rotation_matrix,
             accel_bias=np.zeros(3),
             gyro_bias=np.zeros(3),
             timestamp=initial_pose.timestamp
@@ -314,8 +314,8 @@ class SlidingWindowBA(BaseEstimator):
         
         # Rotation threshold
         if self.current_state:
-            R_last = quaternion_to_rotation_matrix(last_kf.state.quaternion)
-            R_curr = quaternion_to_rotation_matrix(self.current_state.quaternion)
+            R_last = last_kf.state.rotation_matrix
+            R_curr = self.current_state.rotation_matrix
             R_diff = R_last.T @ R_curr
             angle_diff = np.linalg.norm(so3_log(R_diff))
             if angle_diff > self.config.keyframe_rotation_threshold:
@@ -408,7 +408,7 @@ class SlidingWindowBA(BaseEstimator):
             state_vector[kf_idx:kf_idx+3] = kf.state.position
             state_vector[kf_idx+3:kf_idx+6] = kf.state.velocity
             state_vector[kf_idx+6:kf_idx+9] = so3_log(
-                quaternion_to_rotation_matrix(kf.state.quaternion)
+                kf.state.rotation_matrix
             )
             state_vector[kf_idx+9:kf_idx+12] = kf.state.accel_bias
             state_vector[kf_idx+12:kf_idx+15] = kf.state.gyro_bias
@@ -577,6 +577,8 @@ class SlidingWindowBA(BaseEstimator):
         r_v = R_i.T @ (v_j - v_i - g * dt) - preint.delta_velocity
         
         # Rotation residual
+        # Convert preintegration delta_rotation from quaternion to rotation matrix
+        from src.utils.math_utils import quaternion_to_rotation_matrix
         delta_R = quaternion_to_rotation_matrix(preint.delta_rotation)
         r_R = so3_log(delta_R.T @ R_i.T @ R_j)
         
@@ -737,7 +739,7 @@ class SlidingWindowBA(BaseEstimator):
             state_i = x[i*15:(i+1)*15]
             kf.state.position = state_i[0:3].copy()
             kf.state.velocity = state_i[3:6].copy()
-            kf.state.quaternion = rotation_matrix_to_quaternion(so3_exp(state_i[6:9]))
+            kf.state.rotation_matrix = so3_exp(state_i[6:9])
             kf.state.accel_bias = state_i[9:12].copy()
             kf.state.gyro_bias = state_i[12:15].copy()
         
@@ -784,7 +786,7 @@ class SlidingWindowBA(BaseEstimator):
         return Pose(
             timestamp=0.0,  # Not used in optimization
             position=state[0:3].copy(),
-            quaternion=rotation_matrix_to_quaternion(so3_exp(state[6:9]))
+            rotation_matrix=so3_exp(state[6:9])
         )
     
     def _marginalize_oldest_keyframe(self) -> None:
@@ -877,12 +879,14 @@ class SlidingWindowBA(BaseEstimator):
             return np.array([])
         
         # Build state vector from keyframes
+        # Convert rotation matrices to quaternions for backward compatibility
+        from src.utils.math_utils import rotation_matrix_to_quaternion
         states = []
         for kf in self.keyframes:
             states.extend([
                 kf.state.position,
                 kf.state.velocity,
-                kf.state.quaternion,
+                rotation_matrix_to_quaternion(kf.state.rotation_matrix),
                 kf.state.accel_bias,
                 kf.state.gyro_bias
             ])

@@ -218,10 +218,10 @@ class IMUModel:
                 alpha = (timestamp - t0) / (t1 - t0) if t1 > t0 else 0.0
                 
                 # Interpolate pose
-                from src.utils.math_utils import quaternion_slerp
+                from src.utils.math_utils import so3_interpolate
                 
                 pos = (1 - alpha) * states[i].pose.position + alpha * states[i+1].pose.position
-                quat = quaternion_slerp(states[i].pose.quaternion, states[i+1].pose.quaternion, alpha)
+                R = so3_interpolate(states[i].pose.rotation_matrix, states[i+1].pose.rotation_matrix, alpha)
                 
                 # Interpolate velocities if available
                 vel = None
@@ -234,7 +234,7 @@ class IMUModel:
                     ang_vel = (1 - alpha) * states[i].angular_velocity + alpha * states[i+1].angular_velocity
                 
                 from src.common.data_structures import Pose
-                pose = Pose(timestamp=timestamp, position=pos, quaternion=quat)
+                pose = Pose(timestamp=timestamp, position=pos, rotation_matrix=R)
                 
                 return TrajectoryState(
                     pose=pose,
@@ -258,7 +258,7 @@ class IMUModel:
             (accelerometer, gyroscope) measurements in body frame
         """
         # Get rotation from world to body
-        R_WB = quaternion_to_rotation_matrix(state.pose.quaternion)
+        R_WB = state.pose.rotation_matrix
         R_BW = R_WB.T
         
         # Angular velocity is already in body frame
@@ -370,15 +370,11 @@ class IMUPreintegrator:
         v_j = v_i + gravity * self.delta_t + R_i @ self.delta_v
         p_j = p_i + v_i * self.delta_t + 0.5 * gravity * self.delta_t**2 + R_i @ self.delta_p
         
-        # Convert back to quaternion
-        from src.utils.math_utils import rotation_matrix_to_quaternion
-        q_j = rotation_matrix_to_quaternion(R_j)
-        
         from src.common.data_structures import Pose
         pose_j = Pose(
             timestamp=state_i.pose.timestamp + self.delta_t,
             position=p_j,
-            quaternion=q_j
+            rotation_matrix=R_j
         )
         
         return TrajectoryState(

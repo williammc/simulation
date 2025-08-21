@@ -22,7 +22,7 @@ class TestIMUState:
         state = IMUState(
             position=np.array([1, 2, 3]),
             velocity=np.array([0.1, 0.2, 0.3]),
-            quaternion=np.array([1, 0, 0, 0]),
+            rotation_matrix=np.eye(3),
             accel_bias=np.zeros(3),
             gyro_bias=np.zeros(3),
             timestamp=1.0
@@ -37,7 +37,7 @@ class TestIMUState:
         state = IMUState(
             position=np.array([1, 2, 3]),
             velocity=np.array([0.1, 0.2, 0.3]),
-            quaternion=np.array([1, 0, 0, 0]),
+            rotation_matrix=np.eye(3),
             accel_bias=np.zeros(3),
             gyro_bias=np.zeros(3),
             timestamp=1.0
@@ -60,7 +60,7 @@ class TestIMUIntegrator:
         return IMUState(
             position=np.zeros(3),
             velocity=np.zeros(3),
-            quaternion=np.array([1, 0, 0, 0]),
+            rotation_matrix=np.eye(3),
             accel_bias=np.zeros(3),
             gyro_bias=np.zeros(3),
             timestamp=0.0
@@ -125,9 +125,8 @@ class TestIMUIntegrator:
             state = integrator.integrate(state, measurement, dt)
         
         # After 1 second of rotation at pi/2 rad/s, should have rotated 90 degrees
-        # Check that quaternion represents 90-degree rotation around z
-        from src.utils.math_utils import quaternion_to_rotation_matrix
-        R = quaternion_to_rotation_matrix(state.quaternion)
+        # Check that rotation matrix represents 90-degree rotation around z
+        R = state.rotation_matrix
         
         # For 90-degree rotation around z:
         # x-axis should map to y-axis
@@ -140,7 +139,7 @@ class TestIMUIntegrator:
         state = IMUState(
             position=np.array([0, 0, 10]),
             velocity=np.zeros(3),
-            quaternion=np.array([1, 0, 0, 0]),
+            rotation_matrix=np.eye(3),
             accel_bias=np.zeros(3),
             gyro_bias=np.zeros(3),
             timestamp=0.0
@@ -293,7 +292,7 @@ class TestIMUPreintegrator:
         state_i = IMUState(
             position=np.zeros(3),
             velocity=np.zeros(3),
-            quaternion=np.array([1, 0, 0, 0]),
+            rotation_matrix=np.eye(3),
             accel_bias=np.zeros(3),
             gyro_bias=np.zeros(3),
             timestamp=0.0
@@ -340,7 +339,7 @@ class TestIMUJacobian:
         state = IMUState(
             position=np.zeros(3),
             velocity=np.zeros(3),
-            quaternion=np.array([1, 0, 0, 0]),
+            rotation_matrix=np.eye(3),
             accel_bias=np.zeros(3),
             gyro_bias=np.zeros(3),
             timestamp=0.0
@@ -365,7 +364,7 @@ class TestIMUJacobian:
         state = IMUState(
             position=np.zeros(3),
             velocity=np.zeros(3),
-            quaternion=np.array([1, 0, 0, 0]),
+            rotation_matrix=np.eye(3),
             accel_bias=np.zeros(3),
             gyro_bias=np.zeros(3),
             timestamp=0.0
@@ -399,7 +398,7 @@ class TestAnalyticalSolutions:
         state = IMUState(
             position=np.array([R, 0, 0]),
             velocity=np.array([0, R * omega, 0]),  # Tangential velocity
-            quaternion=np.array([1, 0, 0, 0]),
+            rotation_matrix=np.eye(3),
             accel_bias=np.zeros(3),
             gyro_bias=np.zeros(3),
             timestamp=0.0
@@ -441,10 +440,15 @@ class TestAnalyticalSolutions:
         omega = np.sqrt(g / L)  # Natural frequency
         
         # Initial state
+        # Rotation about y-axis by theta0
+        from src.utils.math_utils import quaternion_to_rotation_matrix
+        q = np.array([np.cos(theta0/2), 0, np.sin(theta0/2), 0])
+        R = quaternion_to_rotation_matrix(q)
+        
         state = IMUState(
             position=np.array([L * np.sin(theta0), 0, -L * np.cos(theta0)]),
             velocity=np.zeros(3),
-            quaternion=np.array([np.cos(theta0/2), 0, np.sin(theta0/2), 0]),
+            rotation_matrix=R,
             accel_bias=np.zeros(3),
             gyro_bias=np.zeros(3),
             timestamp=0.0

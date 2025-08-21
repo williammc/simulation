@@ -103,7 +103,7 @@ class TestStereoProjection:
         pose = Pose(
             timestamp=0.0,
             position=np.array([0, 0, 0]),
-            quaternion=np.array([1, 0, 0, 0])  # Identity
+            rotation_matrix=np.eye(3)  # Identity
         )
         
         stereo_obs, left_depth, right_depth = stereo_model.project_stereo(
@@ -133,7 +133,7 @@ class TestStereoProjection:
         pose = Pose(
             timestamp=0.0,
             position=np.array([0, 0, 0]),
-            quaternion=np.array([1, 0, 0, 0])
+            rotation_matrix=np.eye(3)
         )
         
         stereo_obs, _, _ = stereo_model.project_stereo(
@@ -156,7 +156,7 @@ class TestStereoProjection:
         pose = Pose(
             timestamp=0.0,
             position=np.array([0, 0, 0]),
-            quaternion=np.array([1, 0, 0, 0])
+            rotation_matrix=np.eye(3)
         )
         
         stereo_obs, _, _ = stereo_model.project_stereo(
@@ -173,7 +173,7 @@ class TestStereoProjection:
         pose = Pose(
             timestamp=0.0,
             position=np.array([1, 0, 0]),
-            quaternion=np.array([1, 0, 0, 0])  # Identity rotation
+            rotation_matrix=np.eye(3)  # Identity rotation
         )
         
         stereo_obs, _, _ = stereo_model.project_stereo(
@@ -189,7 +189,7 @@ class TestStereoProjection:
         pose = Pose(
             timestamp=0.0,
             position=np.array([0, 0, 0]),
-            quaternion=np.array([1, 0, 0, 0])
+            rotation_matrix=np.eye(3)
         )
         
         # Project multiple times with noise
@@ -238,7 +238,7 @@ class TestStereoTriangulation:
         pose = Pose(
             timestamp=0.0,
             position=np.array([0, 0, 0]),
-            quaternion=np.array([1, 0, 0, 0])
+            rotation_matrix=np.eye(3)
         )
         
         # Triangulate
@@ -267,7 +267,7 @@ class TestStereoTriangulation:
         pose = Pose(
             timestamp=0.0,
             position=np.array([0, 0, 0]),
-            quaternion=np.array([1, 0, 0, 0])
+            rotation_matrix=np.eye(3)
         )
         
         point_3d, _ = stereo_model.triangulate(stereo_obs, pose)
@@ -293,7 +293,7 @@ class TestStereoTriangulation:
         pose = Pose(
             timestamp=0.0,
             position=np.array([1, 2, 3]),
-            quaternion=np.array([1, 0, 0, 0])  # Identity rotation for simplicity
+            rotation_matrix=np.eye(3)  # Identity rotation for simplicity
         )
         
         point_3d, _ = stereo_model.triangulate(stereo_obs, pose)
@@ -309,7 +309,7 @@ class TestStereoTriangulation:
         pose = Pose(
             timestamp=0.0,
             position=np.array([0, 0, 0]),
-            quaternion=np.array([1, 0, 0, 0])
+            rotation_matrix=np.eye(3)
         )
         
         # Near point (large disparity)
@@ -361,7 +361,7 @@ class TestStereoReprojectionError:
         pose = Pose(
             timestamp=0.0,
             position=np.array([0, 0, 0]),
-            quaternion=np.array([1, 0, 0, 0])
+            rotation_matrix=np.eye(3)
         )
         
         # Project the landmark to get perfect observation
@@ -399,7 +399,7 @@ class TestStereoReprojectionError:
         pose = Pose(
             timestamp=0.0,
             position=np.array([0, 0, 0]),
-            quaternion=np.array([1, 0, 0, 0])
+            rotation_matrix=np.eye(3)
         )
         
         left_error, right_error = stereo_model.compute_stereo_reprojection_error(
@@ -430,7 +430,7 @@ class TestStereoReprojectionError:
         pose = Pose(
             timestamp=0.0,
             position=np.array([0, 0, 0]),
-            quaternion=np.array([1, 0, 0, 0])
+            rotation_matrix=np.eye(3)
         )
         
         left_error, right_error = stereo_model.compute_stereo_reprojection_error(

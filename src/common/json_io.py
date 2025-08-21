@@ -110,12 +110,15 @@ class SimulationData:
     
     def set_groundtruth_trajectory(self, trajectory: Trajectory):
         """Set ground truth trajectory."""
+        from src.utils.math_utils import rotation_matrix_to_quaternion
         traj_data = []
         for state in trajectory.states:
+            # Convert rotation matrix to quaternion for JSON storage
+            quaternion = rotation_matrix_to_quaternion(state.pose.rotation_matrix)
             state_dict = {
                 "timestamp": state.pose.timestamp,
                 "position": state.pose.position.tolist(),
-                "quaternion": state.pose.quaternion.tolist()
+                "quaternion": quaternion.tolist()
             }
             if state.velocity is not None:
                 state_dict["velocity"] = state.velocity.tolist()
@@ -208,12 +211,15 @@ class SimulationData:
         if not self.groundtruth.get("trajectory"):
             return None
         
+        from src.utils.math_utils import quaternion_to_rotation_matrix
         trajectory = Trajectory()
         for state_dict in self.groundtruth["trajectory"]:
+            # Convert quaternion from JSON to rotation matrix
+            quaternion = np.array(state_dict["quaternion"])
             pose = Pose(
                 timestamp=state_dict["timestamp"],
                 position=np.array(state_dict["position"]),
-                quaternion=np.array(state_dict["quaternion"])
+                rotation_matrix=quaternion_to_rotation_matrix(quaternion)
             )
             
             velocity = None

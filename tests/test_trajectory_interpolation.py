@@ -31,7 +31,7 @@ class TestSplineInterpolation:
             pose = Pose(
                 timestamp=t,
                 position=np.array(pos),
-                quaternion=np.array([1, 0, 0, 0])
+                rotation_matrix=np.eye(3)
             )
             trajectory.add_state(TrajectoryState(pose=pose))
         
@@ -60,7 +60,7 @@ class TestSplineInterpolation:
             pose = Pose(
                 timestamp=t,
                 position=np.array(pos),
-                quaternion=np.array([1, 0, 0, 0])
+                rotation_matrix=np.eye(3)
             )
             trajectory.add_state(TrajectoryState(pose=pose))
         
@@ -88,7 +88,7 @@ class TestSplineInterpolation:
             pose = Pose(
                 timestamp=float(i),
                 position=np.array([i, (-1)**i, 0]),  # Zigzag pattern
-                quaternion=np.array([1, 0, 0, 0])
+                rotation_matrix=np.eye(3)
             )
             trajectory.add_state(TrajectoryState(pose=pose))
         
@@ -112,7 +112,7 @@ class TestSplineInterpolation:
             pose = Pose(
                 timestamp=float(i),
                 position=np.array([i, np.sin(i), 0]),
-                quaternion=np.array([1, 0, 0, 0])
+                rotation_matrix=np.eye(3)
             )
             trajectory.add_state(TrajectoryState(pose=pose))
         
@@ -250,7 +250,7 @@ class TestTrajectorySmoothing:
             pose = Pose(
                 timestamp=ti,
                 position=np.array([x, y, 0]),
-                quaternion=np.array([1, 0, 0, 0])
+                rotation_matrix=np.eye(3)
             )
             trajectory.add_state(TrajectoryState(pose=pose))
         
@@ -276,7 +276,7 @@ class TestTrajectorySmoothing:
             pose = Pose(
                 timestamp=ti,
                 position=np.array([ti, 0.2 * np.random.randn(), 0]),
-                quaternion=np.array([1, 0, 0, 0])
+                rotation_matrix=np.eye(3)
             )
             trajectory.add_state(TrajectoryState(pose=pose))
         
@@ -308,7 +308,7 @@ class TestTrajectorySmoothing:
             pose = Pose(
                 timestamp=ti,
                 position=np.array([ti, np.sin(ti), 0]),
-                quaternion=np.array([1, 0, 0, 0])
+                rotation_matrix=np.eye(3)
             )
             trajectory.add_state(TrajectoryState(pose=pose))
         
@@ -338,7 +338,7 @@ class TestTrajectorySmoothing:
             pose = Pose(
                 timestamp=float(i),
                 position=np.array([i, 0, 0]),
-                quaternion=np.array([1, 0, 0, 0])
+                rotation_matrix=np.eye(3)
             )
             short_traj.add_state(TrajectoryState(pose=pose))
         

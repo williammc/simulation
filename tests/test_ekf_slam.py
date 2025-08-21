@@ -135,7 +135,7 @@ class TestEKFSlam:
         initial_pose = Pose(
             timestamp=0.0,
             position=np.zeros(3),
-            quaternion=np.array([1, 0, 0, 0])
+            rotation_matrix=np.eye(3)
         )
         
         ekf.initialize(initial_pose)
@@ -153,7 +153,7 @@ class TestEKFSlam:
         initial_pose = Pose(
             timestamp=0.0,
             position=np.zeros(3),
-            quaternion=np.array([1, 0, 0, 0])
+            rotation_matrix=np.eye(3)
         )
         ekf.initialize(initial_pose)
         
@@ -184,7 +184,7 @@ class TestEKFSlam:
         initial_pose = Pose(
             timestamp=0.0,
             position=np.zeros(3),
-            quaternion=np.array([1, 0, 0, 0])
+            rotation_matrix=np.eye(3)
         )
         ekf.initialize(initial_pose)
         
@@ -227,7 +227,7 @@ class TestEKFSlam:
         initial_pose = Pose(
             timestamp=0.0,
             position=np.zeros(3),
-            quaternion=np.array([1, 0, 0, 0])
+            rotation_matrix=np.eye(3)
         )
         ekf.initialize(initial_pose)
         
@@ -440,7 +440,7 @@ class TestEKFIntegration:
             pose = Pose(
                 timestamp=t,
                 position=np.array([t, 0, 0]),
-                quaternion=np.array([1, 0, 0, 0])
+                rotation_matrix=np.eye(3)
             )
             state = TrajectoryState(
                 pose=pose,
@@ -507,7 +507,7 @@ class TestEKFIntegration:
         initial_pose = Pose(
             timestamp=0.0,
             position=np.zeros(3),
-            quaternion=np.array([1, 0, 0, 0])
+            rotation_matrix=np.eye(3)
         )
         ekf.initialize(initial_pose)
         

@@ -48,7 +48,7 @@ class TestEnhancedPlots:
             pose = Pose(
                 timestamp=t,
                 position=np.array([np.cos(t), np.sin(t), 0.5 * t]),
-                quaternion=np.array([1, 0, 0, 0])  # Identity quaternion
+                rotation_matrix=np.eye(3)  # Identity quaternion
             )
             state = TrajectoryState(
                 pose=pose,
@@ -245,10 +245,10 @@ class TestEnhancedPlots:
     def test_create_camera_frustum(self):
         """Test camera frustum creation."""
         position = np.array([1, 2, 3])
-        quaternion = np.array([1, 0, 0, 0])
+        rotation_matrix = np.eye(3)  # Identity rotation
         
         frustum = create_camera_frustum(
-            position, quaternion,
+            position, rotation_matrix,
             scale=0.5, aspect=1.33, fov=60.0
         )
         
@@ -399,7 +399,7 @@ class TestComparisonPlots:
                     np.sin(t) + np.random.randn() * noise_level,
                     0.5 * t + np.random.randn() * noise_level * 0.5
                 ]),
-                quaternion=np.array([1, 0, 0, 0])
+                rotation_matrix=np.eye(3)
             )
             traj.add_state(TrajectoryState(pose=pose))
         return traj
@@ -603,7 +603,7 @@ class TestVisualizationIntegration:
             pose = Pose(
                 timestamp=t,
                 position=np.array([t, t*2, t*3]),
-                quaternion=np.array([1, 0, 0, 0])
+                rotation_matrix=np.eye(3)
             )
             traj.add_state(TrajectoryState(pose=pose))
         
@@ -664,7 +664,7 @@ class TestVisualizationIntegration:
         
         # Add minimal data if needed
         if show_trajectory and TestData.ground_truth_trajectory:
-            pose = Pose(0, np.zeros(3), np.array([1,0,0,0]))
+            pose = Pose(0, np.zeros(3), np.eye(3))  # Identity rotation matrix
             TestData.ground_truth_trajectory.add_state(TrajectoryState(pose=pose))
         
         html = create_full_visualization(

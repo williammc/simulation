@@ -138,7 +138,7 @@ class TestTrajectoryInterpolation:
             pose = Pose(
                 timestamp=t,
                 position=np.array(pos),
-                quaternion=np.array([1, 0, 0, 0])
+                rotation_matrix=np.eye(3)
             )
             trajectory.add_state(TrajectoryState(pose=pose))
         
@@ -206,7 +206,7 @@ class TestTrajectoryInterpolation:
             pose = Pose(
                 timestamp=ti,
                 position=np.array([x, y, 0]),
-                quaternion=np.array([1, 0, 0, 0])
+                rotation_matrix=np.eye(3)
             )
             trajectory.add_state(TrajectoryState(pose=pose))
         
@@ -255,7 +255,7 @@ class TestStereoCamera:
         pose = Pose(
             timestamp=0.0,
             position=np.array([0, 0, 0]),
-            quaternion=np.array([1, 0, 0, 0])
+            rotation_matrix=np.eye(3)
         )
         
         stereo_obs, _, _ = model.project_stereo(landmark, pose, False)
@@ -282,7 +282,7 @@ class TestStereoCamera:
         pose = Pose(
             timestamp=0.0,
             position=np.array([0, 0, 0]),
-            quaternion=np.array([1, 0, 0, 0])
+            rotation_matrix=np.eye(3)
         )
         
         # Triangulate
@@ -310,7 +310,7 @@ class TestStereoCamera:
         pose = Pose(
             timestamp=0.0,
             position=np.array([0, 0, 0]),
-            quaternion=np.array([1, 0, 0, 0])
+            rotation_matrix=np.eye(3)
         )
         
         # Compute errors

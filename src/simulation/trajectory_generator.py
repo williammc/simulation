@@ -7,11 +7,7 @@ from typing import Optional, Dict, Any, List
 from dataclasses import dataclass
 
 from src.common.data_structures import Trajectory, TrajectoryState, Pose
-from src.utils.math_utils import (
-    quaternion_multiply,
-    rotation_matrix_to_quaternion,
-    so3_exp
-)
+from src.utils.math_utils import so3_exp
 
 
 @dataclass
@@ -94,8 +90,6 @@ class CircleTrajectory:
                 [np.sin(yaw), np.cos(yaw), 0],
                 [0, 0, 1]
             ])
-            quaternion = rotation_matrix_to_quaternion(R)
-            
             # Angular velocity (only yaw rate)
             angular_velocity = np.array([0, 0, self.angular_velocity])
             
@@ -103,7 +97,7 @@ class CircleTrajectory:
             pose = Pose(
                 timestamp=t,
                 position=position,
-                quaternion=quaternion
+                rotation_matrix=R
             )
             
             state = TrajectoryState(
@@ -149,15 +143,13 @@ class CircleTrajectory:
             [np.sin(yaw), np.cos(yaw), 0],
             [0, 0, 1]
         ])
-        quaternion = rotation_matrix_to_quaternion(R)
-        
         # Angular velocity
         angular_velocity = np.array([0, 0, self.angular_velocity])
         
         pose = Pose(
             timestamp=t,
             position=position,
-            quaternion=quaternion
+            rotation_matrix=R
         )
         
         return TrajectoryState(
@@ -237,8 +229,6 @@ class Figure8Trajectory:
                 [np.sin(yaw), np.cos(yaw), 0],
                 [0, 0, 1]
             ])
-            quaternion = rotation_matrix_to_quaternion(R)
-            
             # Angular velocity (yaw rate)
             # Compute numerically as difference in yaw
             if len(trajectory.states) > 0:
@@ -262,7 +252,7 @@ class Figure8Trajectory:
             pose = Pose(
                 timestamp=t,
                 position=position,
-                quaternion=quaternion
+                rotation_matrix=R
             )
             
             state = TrajectoryState(
@@ -373,8 +363,6 @@ class SpiralTrajectory:
             ])
             
             R = R_yaw @ R_pitch
-            quaternion = rotation_matrix_to_quaternion(R)
-            
             # Angular velocity
             angular_velocity = np.array([0, 0, self.omega])
             
@@ -382,7 +370,7 @@ class SpiralTrajectory:
             pose = Pose(
                 timestamp=t,
                 position=position,
-                quaternion=quaternion
+                rotation_matrix=R
             )
             
             state = TrajectoryState(
@@ -452,8 +440,6 @@ class LineTrajectory:
         ])
         
         R = R_yaw @ R_pitch
-        quaternion = rotation_matrix_to_quaternion(R)
-        
         # Generate timestamps
         dt = 1.0 / self.params.rate
         timestamps = np.arange(
@@ -471,7 +457,7 @@ class LineTrajectory:
             pose = Pose(
                 timestamp=t,
                 position=position,
-                quaternion=quaternion
+                rotation_matrix=R
             )
             
             state = TrajectoryState(

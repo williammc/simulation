@@ -113,9 +113,8 @@ def plot_trajectory_3d(
             state = trajectory.states[idx]
             pos = state.pose.position
             
-            # Get rotation matrix from quaternion
-            from src.utils.math_utils import quaternion_to_rotation_matrix
-            R = quaternion_to_rotation_matrix(state.pose.quaternion)
+            # Get rotation matrix
+            R = state.pose.rotation_matrix
             
             # Extract forward direction (x-axis in body frame)
             forward = R[:, 0] * orientation_scale
@@ -398,9 +397,9 @@ def plot_trajectory_components(
     velocities = np.array([state.velocity if state.velocity is not None else np.zeros(3) 
                           for state in trajectory.states])
     
-    # Extract Euler angles from quaternions
-    from src.utils.math_utils import quaternion_to_euler
-    euler_angles = np.array([quaternion_to_euler(state.pose.quaternion) 
+    # Extract Euler angles from rotation matrices
+    from src.utils.math_utils import rotation_matrix_to_euler
+    euler_angles = np.array([rotation_matrix_to_euler(state.pose.rotation_matrix) 
                              for state in trajectory.states])
     
     # Create subplots

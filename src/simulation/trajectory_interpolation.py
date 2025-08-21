@@ -9,7 +9,7 @@ from typing import List, Optional, Tuple
 from dataclasses import dataclass
 
 from src.common.data_structures import Trajectory, TrajectoryState, Pose
-from src.utils.math_utils import quaternion_to_rotation_matrix, rotation_matrix_to_quaternion
+from src.utils.math_utils import quaternion_to_rotation_matrix
 
 
 @dataclass
@@ -53,7 +53,10 @@ class TrajectoryInterpolator:
         # Extract data
         self.time_points = np.array([state.pose.timestamp for state in trajectory.states])
         positions = np.array([state.pose.position for state in trajectory.states])
-        quaternions = np.array([state.pose.quaternion for state in trajectory.states])
+        # Convert rotation matrices to quaternions for interpolation
+        from src.utils.math_utils import rotation_matrix_to_quaternion
+        quaternions = np.array([rotation_matrix_to_quaternion(state.pose.rotation_matrix) 
+                               for state in trajectory.states])
         
         # Fit position spline
         if self.config.boundary_condition == "periodic":
@@ -138,6 +141,7 @@ class TrajectoryInterpolator:
             # Interpolate orientation
             rotation = self.orientation_slerp(t_clamped)
             quaternion = rotation.as_quat()
+            rotation_matrix = quaternion_to_rotation_matrix(quaternion)
             
             # Compute velocity from spline derivative if requested
             velocity = None
@@ -150,9 +154,8 @@ class TrajectoryInterpolator:
                 dt = t - trajectory.states[-1].pose.timestamp
                 if dt > 0:
                     # Compute relative rotation
-                    q_prev = trajectory.states[-1].pose.quaternion
-                    R_prev = quaternion_to_rotation_matrix(q_prev)
-                    R_curr = quaternion_to_rotation_matrix(quaternion)
+                    R_prev = trajectory.states[-1].pose.rotation_matrix
+                    R_curr = rotation_matrix
                     R_rel = R_prev.T @ R_curr
                     
                     # Extract angular velocity from relative rotation
@@ -172,7 +175,7 @@ class TrajectoryInterpolator:
             pose = Pose(
                 timestamp=t,
                 position=position,
-                quaternion=quaternion
+                rotation_matrix=rotation_matrix
             )
             
             state = TrajectoryState(
@@ -261,7 +264,10 @@ def smooth_trajectory(
     # Extract data
     timestamps = np.array([state.pose.timestamp for state in trajectory.states])
     positions = np.array([state.pose.position for state in trajectory.states])
-    quaternions = np.array([state.pose.quaternion for state in trajectory.states])
+    # Convert rotation matrices to quaternions for smoothing
+    from src.utils.math_utils import rotation_matrix_to_quaternion
+    quaternions = np.array([rotation_matrix_to_quaternion(state.pose.rotation_matrix) 
+                           for state in trajectory.states])
     
     # Smooth positions
     smoothed_positions = np.zeros_like(positions)
@@ -285,7 +291,7 @@ def smooth_trajectory(
         )
     
     smoothed_rotations = Rotation.from_rotvec(smoothed_rotvecs)
-    smoothed_quaternions = smoothed_rotations.as_quat()
+    smoothed_rotation_matrices = smoothed_rotations.as_matrix()
     
     # Rebuild trajectory
     smoothed_traj = Trajectory(frame_id=trajectory.frame_id)
@@ -301,7 +307,7 @@ def smooth_trajectory(
         pose = Pose(
             timestamp=t,
             position=smoothed_positions[i],
-            quaternion=smoothed_quaternions[i]
+            rotation_matrix=smoothed_rotation_matrices[i]
         )
         
         state = TrajectoryState(
@@ -362,18 +368,19 @@ def create_bezier_trajectory(
         
         # Simple orientation: facing velocity direction
         quaternion = np.array([1, 0, 0, 0])  # Default identity
+        R = np.eye(3)
         if velocity is not None and np.linalg.norm(velocity[:2]) > 1e-6:
             yaw = np.arctan2(velocity[1], velocity[0])
-            quaternion = rotation_matrix_to_quaternion(np.array([
+            R = np.array([
                 [np.cos(yaw), -np.sin(yaw), 0],
                 [np.sin(yaw), np.cos(yaw), 0],
                 [0, 0, 1]
-            ]))
+            ])
         
         pose = Pose(
             timestamp=t,
             position=pos,
-            quaternion=quaternion
+            rotation_matrix=R
         )
         
         state = TrajectoryState(

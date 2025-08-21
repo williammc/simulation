@@ -150,7 +150,7 @@ class TestEstimatorRunner:
             pose = Pose(
                 timestamp=i * 0.1,
                 position=np.array([i * 0.1, 0, 0]),
-                quaternion=np.array([1, 0, 0, 0])
+                rotation_matrix=np.eye(3)
             )
             state = TrajectoryState(pose=pose, velocity=np.array([1, 0, 0]))
             gt_trajectory.add_state(state)
