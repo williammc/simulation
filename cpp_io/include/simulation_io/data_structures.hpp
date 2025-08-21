@@ -29,23 +29,7 @@ struct Vector3 {
     }
 };
 
-struct Quaternion {
-    double w, x, y, z;
-    
-    Quaternion() : w(1), x(0), y(0), z(0) {}
-    Quaternion(double w_, double x_, double y_, double z_) : w(w_), x(x_), y(y_), z(z_) {}
-    
-    std::vector<double> to_vector() const {
-        return {w, x, y, z};
-    }
-    
-    static Quaternion from_vector(const std::vector<double>& v) {
-        if (v.size() != 4) {
-            throw std::runtime_error("Quaternion requires exactly 4 elements");
-        }
-        return Quaternion(v[0], v[1], v[2], v[3]);
-    }
-};
+// Quaternion removed - using Matrix3x3 for all rotations
 
 struct Matrix3x3 {
     std::array<std::array<double, 3>, 3> data;
@@ -156,7 +140,7 @@ struct IMUCalibration {
 struct TrajectoryState {
     double timestamp;
     Vector3 position;
-    Quaternion quaternion;
+    Matrix3x3 rotation_matrix;
     std::optional<Vector3> velocity;
     std::optional<Vector3> angular_velocity;
     
@@ -230,7 +214,7 @@ struct Metadata {
         std::string rotation;
         std::string time;
         
-        Units() : position("meters"), rotation("quaternion_wxyz"), time("seconds") {}
+        Units() : position("meters"), rotation("rotation_matrix"), time("seconds") {}
     } units;
     
     Metadata() : version("1.0"), trajectory_type("unknown"), duration(0), coordinate_system("ENU") {}

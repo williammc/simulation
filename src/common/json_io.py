@@ -67,7 +67,7 @@ class SimulationData:
             "coordinate_system": coordinate_system,
             "units": {
                 "position": "meters",
-                "rotation": "quaternion_wxyz",
+                "rotation": "rotation_matrix",
                 "time": "seconds"
             }
         }
@@ -110,15 +110,12 @@ class SimulationData:
     
     def set_groundtruth_trajectory(self, trajectory: Trajectory):
         """Set ground truth trajectory."""
-        from src.utils.math_utils import rotation_matrix_to_quaternion
         traj_data = []
         for state in trajectory.states:
-            # Convert rotation matrix to quaternion for JSON storage
-            quaternion = rotation_matrix_to_quaternion(state.pose.rotation_matrix)
             state_dict = {
                 "timestamp": state.pose.timestamp,
                 "position": state.pose.position.tolist(),
-                "quaternion": quaternion.tolist()
+                "rotation_matrix": state.pose.rotation_matrix.tolist()
             }
             if state.velocity is not None:
                 state_dict["velocity"] = state.velocity.tolist()
@@ -211,15 +208,23 @@ class SimulationData:
         if not self.groundtruth.get("trajectory"):
             return None
         
-        from src.utils.math_utils import quaternion_to_rotation_matrix
         trajectory = Trajectory()
         for state_dict in self.groundtruth["trajectory"]:
-            # Convert quaternion from JSON to rotation matrix
-            quaternion = np.array(state_dict["quaternion"])
+            # Support both rotation_matrix and legacy quaternion format
+            if "rotation_matrix" in state_dict:
+                rotation_matrix = np.array(state_dict["rotation_matrix"])
+            elif "quaternion" in state_dict:
+                # Legacy support for quaternion format
+                from src.utils.math_utils import quaternion_to_rotation_matrix
+                quaternion = np.array(state_dict["quaternion"])
+                rotation_matrix = quaternion_to_rotation_matrix(quaternion)
+            else:
+                raise ValueError("No rotation representation found in trajectory state")
+            
             pose = Pose(
                 timestamp=state_dict["timestamp"],
                 position=np.array(state_dict["position"]),
-                rotation_matrix=quaternion_to_rotation_matrix(quaternion)
+                rotation_matrix=rotation_matrix
             )
             
             velocity = None

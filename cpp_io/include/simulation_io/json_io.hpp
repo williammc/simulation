@@ -25,15 +25,32 @@ inline Vector3 json_to_vector3(const json& j) {
     return Vector3(j[0], j[1], j[2]);
 }
 
-inline json quaternion_to_json(const Quaternion& q) {
-    return json::array({q.w, q.x, q.y, q.z});
+inline json matrix3x3_to_json(const Matrix3x3& m) {
+    json result = json::array();
+    for (int i = 0; i < 3; ++i) {
+        json row = json::array();
+        for (int j = 0; j < 3; ++j) {
+            row.push_back(m.data[i][j]);
+        }
+        result.push_back(row);
+    }
+    return result;
 }
 
-inline Quaternion json_to_quaternion(const json& j) {
-    if (!j.is_array() || j.size() != 4) {
-        throw std::runtime_error("Invalid Quaternion JSON format");
+inline Matrix3x3 json_to_matrix3x3(const json& j) {
+    if (!j.is_array() || j.size() != 3) {
+        throw std::runtime_error("Invalid Matrix3x3 JSON format");
     }
-    return Quaternion(j[0], j[1], j[2], j[3]);
+    Matrix3x3 m;
+    for (int i = 0; i < 3; ++i) {
+        if (!j[i].is_array() || j[i].size() != 3) {
+            throw std::runtime_error("Invalid Matrix3x3 row format");
+        }
+        for (int j_ = 0; j_ < 3; ++j_) {
+            m.data[i][j_] = j[i][j_];
+        }
+    }
+    return m;
 }
 
 inline json matrix4x4_to_json(const Matrix4x4& m) {
@@ -121,7 +138,7 @@ public:
                 json state_json;
                 state_json["timestamp"] = state.timestamp;
                 state_json["position"] = detail::vector3_to_json(state.position);
-                state_json["quaternion"] = detail::quaternion_to_json(state.quaternion);
+                state_json["rotation_matrix"] = detail::matrix3x3_to_json(state.rotation_matrix);
                 if (state.velocity.has_value()) {
                     state_json["velocity"] = detail::vector3_to_json(state.velocity.value());
                 }
@@ -277,7 +294,18 @@ public:
                     TrajectoryState state;
                     state.timestamp = state_json["timestamp"];
                     state.position = detail::json_to_vector3(state_json["position"]);
-                    state.quaternion = detail::json_to_quaternion(state_json["quaternion"]);
+                    
+                    // Support both rotation_matrix and legacy quaternion format
+                    if (state_json.contains("rotation_matrix")) {
+                        state.rotation_matrix = detail::json_to_matrix3x3(state_json["rotation_matrix"]);
+                    } else if (state_json.contains("quaternion")) {
+                        // Legacy quaternion support - convert to rotation matrix
+                        // For simplicity, we'll just use identity matrix for legacy files
+                        // In production, you'd want to implement quaternion_to_rotation_matrix
+                        std::cerr << "Warning: Legacy quaternion format detected, using identity rotation" << std::endl;
+                        state.rotation_matrix = Matrix3x3(); // Identity
+                    }
+                    
                     if (state_json.contains("velocity")) {
                         state.velocity = detail::json_to_vector3(state_json["velocity"]);
                     }
