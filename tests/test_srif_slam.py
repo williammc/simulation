@@ -63,10 +63,14 @@ class TestSRIFState:
     
     def test_state_vector_packing(self):
         """Test state vector packing and unpacking."""
+        from src.utils.math_utils import quaternion_to_rotation_matrix
+        q = np.array([0.707, 0, 0, 0.707])
+        R = quaternion_to_rotation_matrix(q)
+        
         state = SRIFState(
             position=np.array([1, 2, 3]),
             velocity=np.array([4, 5, 6]),
-            quaternion=np.array([0.707, 0, 0, 0.707]),  # SRIF still uses quaternions internally
+            rotation_matrix=R,
             accel_bias=np.array([0.1, 0.2, 0.3]),
             gyro_bias=np.array([0.01, 0.02, 0.03]),
             timestamp=1.0

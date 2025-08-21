@@ -348,7 +348,7 @@ class TestTrajectorySmoothing:
         # Single point trajectory
         single_traj = Trajectory()
         single_traj.add_state(TrajectoryState(
-            pose=Pose(0.0, np.zeros(3), np.array([1, 0, 0, 0]))
+            pose=Pose(0.0, np.zeros(3), np.eye(3))
         ))
         
         smoothed_single = smooth_trajectory(single_traj, window_size=3)

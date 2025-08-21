@@ -65,7 +65,7 @@ class TestKeyframe:
         pose = kf.get_pose()
         
         assert np.allclose(pose.position, [1, 2, 3])
-        assert np.allclose(pose.quaternion, [0.707, 0, 0, 0.707], atol=1e-3)
+        assert np.allclose(pose.rotation_matrix, R, atol=1e-6)
 
 
 class TestSWBAConfig:
