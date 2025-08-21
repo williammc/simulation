@@ -15,7 +15,6 @@ from rich.table import Table
 from tools.simulate import run_simulation
 from tools.slam import run_slam
 from tools.dashboard import generate_dashboard
-from tools.download import download_dataset, list_available_datasets
 
 app = typer.Typer(
     name="slam-sim",
@@ -115,26 +114,6 @@ def dashboard(
         raise typer.Exit(exit_code)
 
 
-@app.command()
-def download(
-    dataset: str = typer.Argument(
-        ...,
-        help="Dataset name (e.g., 'tum-vie', 'euroc')"
-    ),
-    sequence: str = typer.Argument(
-        ...,
-        help="Sequence name (e.g., 'mocap-desk', 'mh-01')"
-    ),
-    output: Optional[Path] = typer.Option(
-        None,
-        "--output", "-o",
-        help="Output directory for downloaded data"
-    ),
-):
-    """Download public datasets."""
-    exit_code = download_dataset(dataset, sequence, output)
-    if exit_code != 0:
-        raise typer.Exit(exit_code)
 
 
 @app.command("list-runs")
@@ -177,10 +156,6 @@ def list_runs(
     console.print(table)
 
 
-@app.command("list-datasets")
-def list_datasets():
-    """List available datasets for download."""
-    list_available_datasets()
 
 
 @app.command()
@@ -648,106 +623,6 @@ def evaluation(
         
     except Exception as e:
         console.print(f"\n[red]Error during evaluation: {e}[/red]")
-        import traceback
-        traceback.print_exc()
-        raise typer.Exit(1)
-
-
-@app.command()
-def convert(
-    dataset_type: str = typer.Argument(
-        ...,
-        help="Dataset type to convert (tumvie, euroc, kitti)"
-    ),
-    input_path: Path = typer.Argument(
-        ...,
-        help="Path to input dataset directory"
-    ),
-    output_file: Path = typer.Argument(
-        ...,
-        help="Path to output JSON file"
-    ),
-    num_landmarks: int = typer.Option(
-        200,
-        "--num-landmarks", "-n",
-        help="Number of synthetic 3D landmarks to generate"
-    ),
-    keyframe_interval: float = typer.Option(
-        0.1,
-        "--keyframe-interval", "-k",
-        help="Time between keyframes in seconds"
-    ),
-    pixel_noise: float = typer.Option(
-        1.0,
-        "--pixel-noise", "-p",
-        help="Standard deviation of pixel measurement noise"
-    )
-):
-    """Convert external datasets to common JSON format."""
-    
-    # Check dataset type
-    supported_types = ["tumvie", "euroc", "kitti"]
-    if dataset_type.lower() not in supported_types:
-        console.print(f"[red]Error: Unsupported dataset type: {dataset_type}[/red]")
-        console.print(f"[yellow]Supported types: {', '.join(supported_types)}[/yellow]")
-        raise typer.Exit(1)
-    
-    # Check input path exists
-    if not input_path.exists():
-        console.print(f"[red]Error: Input path not found: {input_path}[/red]")
-        raise typer.Exit(1)
-    
-    # Create output directory if needed
-    output_file.parent.mkdir(parents=True, exist_ok=True)
-    
-    try:
-        if dataset_type.lower() == "tumvie":
-            console.print(f"[cyan]Converting TUM-VIE dataset:[/cyan]")
-            console.print(f"  Input: {input_path}")
-            console.print(f"  Output: {output_file}")
-            console.print(f"  Landmarks: {num_landmarks}")
-            console.print(f"  Keyframe interval: {keyframe_interval}s")
-            console.print(f"  Pixel noise std: {pixel_noise} pixels")
-            
-            from src.utils.tumvie_converter import convert_tumvie_dataset
-            
-            # Show progress
-            with console.status("[bold green]Converting dataset...") as status:
-                convert_tumvie_dataset(
-                    input_path, 
-                    output_file,
-                    num_landmarks=num_landmarks,
-                    keyframe_interval=keyframe_interval,
-                    pixel_noise_std=pixel_noise
-                )
-            
-            console.print(f"[green]✓ Dataset converted successfully![/green]")
-            
-            # Show summary
-            import json
-            with open(output_file, 'r') as f:
-                data = json.load(f)
-                
-            if 'metadata' in data:
-                console.print("\n[bold]Dataset Summary:[/bold]")
-                meta = data['metadata']
-                console.print(f"  Source: {meta.get('source', 'Unknown')}")
-                console.print(f"  Duration: {meta.get('duration', 0):.1f}s")
-                console.print(f"  Poses: {meta.get('num_poses', 0)}")
-                console.print(f"  Landmarks: {meta.get('num_landmarks', 0)}")
-                console.print(f"  IMU Measurements: {meta.get('num_imu_measurements', 0)}")
-                console.print(f"  Camera Frames: {meta.get('num_camera_frames', 0)}")
-        
-        elif dataset_type.lower() == "euroc":
-            console.print(f"[yellow]EuRoC conversion not yet implemented[/yellow]")
-            raise typer.Exit(1)
-            
-        elif dataset_type.lower() == "kitti":
-            console.print(f"[yellow]KITTI conversion not yet implemented[/yellow]")
-            raise typer.Exit(1)
-            
-    except Exception as e:
-        console.print(f"[red]Error during conversion: {e}[/red]")
         import traceback
         traceback.print_exc()
         raise typer.Exit(1)

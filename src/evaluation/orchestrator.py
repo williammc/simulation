@@ -128,13 +128,7 @@ class EvaluationOrchestrator:
                     dataset_path = self._generate_simulated_dataset(dataset_name, dataset['config'])
                     datasets[f"sim_{dataset_name}"] = dataset_path
         
-        # Handle TUM-VIE datasets
-        if 'tum_vie' in self.config['datasets']:
-            tum_config = self.config['datasets']['tum_vie']
-            for sequence in tum_config['sequences']:
-                seq_name = sequence['name']
-                dataset_path = self._prepare_tumvie_dataset(seq_name, tum_config)
-                datasets[f"tumvie_{seq_name}"] = dataset_path
+        # Only handle simulated datasets now
         
         self.logger.info(f"Prepared {len(datasets)} datasets")
         return datasets
@@ -254,111 +248,6 @@ class EvaluationOrchestrator:
         except subprocess.CalledProcessError as e:
             self.logger.error(f"Failed to generate dataset {name}: {e.stderr}")
             raise
-    
-    def _prepare_tumvie_dataset(self, sequence: str, config: Dict) -> Path:
-        """
-        Prepare a TUM-VIE dataset for evaluation.
-        
-        Args:
-            sequence: Sequence name
-            config: TUM-VIE configuration
-            
-        Returns:
-            Path to the prepared dataset
-        """
-        base_path = Path(config['base_path'])
-        sequence_dir = base_path / sequence
-        output_file = self.output_dir / "datasets" / "tumvie" / f"{sequence}.json"
-        
-        if output_file.exists() and not self.config['evaluation'].get('overwrite', False):
-            self.logger.info(f"Using existing TUM-VIE dataset: {sequence}")
-            return output_file
-        
-        self.logger.info(f"Converting TUM-VIE dataset: {sequence}")
-        output_file.parent.mkdir(parents=True, exist_ok=True)
-        
-        # Check if dataset exists
-        if not sequence_dir.exists():
-            if config.get('download_if_missing', True):
-                self._download_tumvie_dataset(sequence, base_path)
-            else:
-                raise FileNotFoundError(f"TUM-VIE dataset not found: {sequence_dir}")
-        
-        # Convert dataset using the new convert command
-        cmd = [
-            "./run.sh", "convert",
-            "tumvie",
-            str(sequence_dir),
-            str(output_file)
-        ]
-        
-        try:
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-            self.logger.info(f"Converted dataset: {output_file}")
-        except subprocess.CalledProcessError as e:
-            self.logger.error(f"Failed to convert TUM-VIE dataset {sequence}: {e.stderr}")
-            raise
-        
-        return output_file
-    
-    def _download_tumvie_dataset(self, sequence: str, base_path: Path):
-        """Download a TUM-VIE dataset."""
-        sequence_dir = base_path / sequence
-        
-        # Check if dataset already exists with all necessary files
-        if sequence_dir.exists():
-            # Check for key TUM-VIE dataset indicators
-            key_indicators = [
-                sequence_dir / "calibration_a.json",
-                sequence_dir / "calibration_b.json", 
-                sequence_dir / "mocap",
-                sequence_dir / "imu",
-                sequence_dir / "frames",
-                sequence_dir / "events"
-            ]
-            
-            # If any key files/dirs exist, assume dataset is already downloaded
-            if any(indicator.exists() for indicator in key_indicators):
-                self.logger.info(f"TUM-VIE dataset {sequence} already exists at {sequence_dir}")
-                return
-        
-        self.logger.info(f"Downloading TUM-VIE dataset: {sequence}")
-        base_path.mkdir(parents=True, exist_ok=True)
-        
-        # Use the download command through run.sh
-        cmd = [
-            "./run.sh", "download",
-            "tum-vie",
-            "--sequence", sequence,
-            "--output", str(base_path)
-        ]
-        
-        try:
-            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-            self.logger.info(f"Downloaded {sequence} to {sequence_dir}")
-        except subprocess.CalledProcessError as e:
-            self.logger.error(f"Failed to download TUM-VIE dataset {sequence}: {e.stderr}")
-            # Fallback to placeholder creation for testing
-            self.logger.warning(f"Creating placeholder dataset for {sequence}")
-            sequence_dir.mkdir(parents=True, exist_ok=True)
-            
-            # Create minimal structure for testing
-            (sequence_dir / "mocap").mkdir(exist_ok=True)
-            (sequence_dir / "imu").mkdir(exist_ok=True)
-            (sequence_dir / "frames").mkdir(exist_ok=True)
-            (sequence_dir / "events").mkdir(exist_ok=True)
-            
-            # Create a basic calibration file
-            import json
-            calib_data = {
-                "cameras": {},
-                "imu": {
-                    "accelerometer": {"noise_density": 0.00018},
-                    "gyroscope": {"noise_density": 0.00026}
-                }
-            }
-            with open(sequence_dir / "calibration_b.json", 'w') as f:
-                json.dump(calib_data, f, indent=2)
     
     def _run_estimators(self, datasets: Dict[str, Path]) -> Dict[str, Dict[str, Any]]:
         """

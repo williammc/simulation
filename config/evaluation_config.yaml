@@ -82,22 +82,7 @@ datasets:
           landmarks:
             num_landmarks: 100
 
-  tum_vie:
-    # TUM-VIE dataset configurations
-    download_if_missing: true
-    base_path: "data/TUM-VIE"
-    sequences:
-      - name: "mocap-desk"
-        type: "room"
-        has_ground_truth: true
-        
-      - name: "mocap-desk2"
-        type: "room"
-        has_ground_truth: true
-        
-      - name: "running-easy"
-        type: "outdoor"
-        has_ground_truth: true
+  # External datasets removed - only simulated datasets supported
         
       - name: "running-hard"
         type: "outdoor"
