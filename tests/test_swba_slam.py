@@ -7,8 +7,9 @@ import numpy as np
 from pathlib import Path
 
 from src.estimation.swba_slam import (
-    SlidingWindowBA, SWBAConfig, Keyframe, RobustCostType
+    SlidingWindowBA, Keyframe, RobustCostType
 )
+from src.common.config import SWBAConfig
 from src.estimation.base_estimator import EstimatorType
 from src.estimation.imu_integration import IMUState
 from src.common.data_structures import (
@@ -78,7 +79,7 @@ class TestSWBAConfig:
         assert config.estimator_type == EstimatorType.SWBA
         assert config.window_size == 10
         assert config.max_iterations == 20
-        assert config.robust_cost_type == "huber"
+        assert config.robust_kernel == "huber"
     
     def test_custom_config(self):
         """Test custom configuration."""
@@ -316,7 +317,7 @@ class TestSlidingWindowBA:
     def test_robust_cost_huber(self, camera_calibration):
         """Test Huber robust cost computation."""
         config = SWBAConfig(
-            robust_cost_type="huber",
+            robust_kernel="huber",
             huber_threshold=1.0
         )
         swba = SlidingWindowBA(config, camera_calibration)
@@ -335,7 +336,7 @@ class TestSlidingWindowBA:
     def test_robust_cost_cauchy(self, camera_calibration):
         """Test Cauchy robust cost computation."""
         config = SWBAConfig(
-            robust_cost_type="cauchy",
+            robust_kernel="cauchy",
             huber_threshold=1.0
         )
         swba = SlidingWindowBA(config, camera_calibration)

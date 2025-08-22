@@ -10,6 +10,7 @@ import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
+
 class TrajectoryType(str, Enum):
     """Available trajectory types for simulation."""
     CIRCLE = "circle"
@@ -28,9 +29,10 @@ class NoiseModel(str, Enum):
 
 class EstimatorType(str, Enum):
     """Available estimator algorithms."""
-    SWBA = "sliding_window_ba"
+    SWBA = "swba"
     EKF = "ekf"
     SRIF = "srif"
+    UNKNOWN = "unknown"
 
 
 class CameraModel(str, Enum):
@@ -262,58 +264,144 @@ class SimulationConfig(BaseModel):
         return self
 
 
-class SWBAConfig(BaseModel):
+class BaseEstimatorConfig(BaseModel):
+    """Base configuration for all SLAM estimators."""
+    # Common fields for all estimators
+    estimator_type: Optional[EstimatorType] = Field(
+        default=None,
+        description="Type of estimator (set in subclasses)"
+    )
+    max_landmarks: int = Field(1000, ge=1, description="Maximum number of landmarks")
+    verbose: bool = Field(False, description="Enable verbose logging")
+    seed: Optional[int] = Field(None, description="Random seed for reproducibility")
+    
+    # Common measurement noise
+    pixel_noise_std: float = Field(1.0, gt=0, description="Pixel measurement noise (pixels)")
+    
+    # Common outlier rejection
+    chi2_threshold: float = Field(
+        5.991,
+        gt=0,
+        description="Chi-squared test threshold (95% confidence for 2 DOF)"
+    )
+
+
+class SWBAConfig(BaseEstimatorConfig):
     """Sliding Window Bundle Adjustment configuration."""
+    # Set default estimator type
+    estimator_type: EstimatorType = Field(
+        default=EstimatorType.SWBA,
+        description="Type of estimator"
+    )
+    
+    # Window parameters
     window_size: int = Field(10, ge=3, le=30, description="Number of keyframes in window")
-    max_iterations: int = Field(10, ge=1, le=100, description="Maximum optimization iterations")
+    keyframe_translation_threshold: float = Field(0.5, gt=0, description="Translation threshold for keyframe (m)")
+    keyframe_rotation_threshold: float = Field(0.3, gt=0, description="Rotation threshold for keyframe (rad)")
+    keyframe_time_threshold: float = Field(0.5, gt=0, description="Time threshold for keyframe (s)")
+    
+    # Optimization parameters
+    max_iterations: int = Field(20, ge=1, le=100, description="Maximum optimization iterations")
     convergence_threshold: float = Field(
         1e-6,
         gt=0,
         le=0.01,
         description="Convergence threshold for cost reduction"
     )
-    robust_kernel: Optional[str] = Field(
-        "huber",
-        description="Robust cost function (huber, cauchy, or None)"
-    )
-    huber_delta: float = Field(1.0, gt=0, description="Huber kernel threshold")
+    lambda_init: float = Field(1e-4, gt=0, description="Initial Levenberg-Marquardt damping")
+    lambda_factor: float = Field(10.0, gt=1, description="LM damping adjustment factor")
+    lambda_min: float = Field(1e-8, gt=0, description="Minimum LM damping")
+    lambda_max: float = Field(1e8, gt=0, description="Maximum LM damping")
+    
+    # Robust cost parameters
+    robust_kernel: str = Field("huber", description="Robust cost function type")
+    huber_threshold: float = Field(1.0, gt=0, description="Huber kernel threshold")
+    huber_delta: float = Field(1.0, gt=0, description="Huber kernel threshold (alias)")
+    
+    # IMU parameters
+    use_imu_preintegration: bool = Field(True, description="Use IMU preintegration")
+    imu_weight: float = Field(1.0, gt=0, description="IMU measurement weight")
+    
+    # Camera parameters
+    camera_weight: float = Field(1.0, gt=0, description="Camera measurement weight")
+    min_observations_per_landmark: int = Field(2, ge=2, description="Minimum observations per landmark")
+    
+    # Marginalization
+    marginalize_old_keyframes: bool = Field(True, description="Marginalize old keyframes")
+    prior_weight: float = Field(1.0, gt=0, description="Prior factor weight")
 
 
-class EKFConfig(BaseModel):
+class EKFConfig(BaseEstimatorConfig):
     """Extended Kalman Filter configuration."""
-    chi2_threshold: float = Field(
-        5.991,
-        gt=0,
-        description="Chi-squared test threshold (95% confidence for 2 DOF)"
+    # Set default estimator type
+    estimator_type: EstimatorType = Field(
+        default=EstimatorType.EKF,
+        description="Type of estimator"
     )
+    
+    # EKF-specific outlier rejection
     innovation_threshold: float = Field(
         3.0,
         gt=0,
         description="Innovation outlier threshold (sigma multiplier)"
     )
+    max_iterations: int = Field(5, ge=1, description="Max iterations for outlier rejection")
+    
+    # Initial uncertainties
     initial_position_std: float = Field(0.1, gt=0, description="Initial position uncertainty (m)")
-    initial_orientation_std: float = Field(0.087, gt=0, description="Initial orientation uncertainty (rad, ~5°)")
+    initial_orientation_std: float = Field(0.01, gt=0, description="Initial orientation uncertainty (rad)")
     initial_velocity_std: float = Field(0.1, gt=0, description="Initial velocity uncertainty (m/s)")
-    initial_bias_std: float = Field(0.01, gt=0, description="Initial bias uncertainty")
+    initial_accel_bias_std: float = Field(0.01, gt=0, description="Initial accelerometer bias uncertainty (m/s²)")
+    initial_gyro_bias_std: float = Field(0.001, gt=0, description="Initial gyroscope bias uncertainty (rad/s)")
+    
+    # Process noise
+    accel_noise_density: float = Field(0.01, gt=0, description="Accelerometer noise density (m/s²/√Hz)")
+    gyro_noise_density: float = Field(0.001, gt=0, description="Gyroscope noise density (rad/s/√Hz)")
+    accel_bias_random_walk: float = Field(0.001, gt=0, description="Accelerometer bias random walk (m/s³/√Hz)")
+    gyro_bias_random_walk: float = Field(0.0001, gt=0, description="Gyroscope bias random walk (rad/s²/√Hz)")
+    
+    
+    # Integration
+    integration_method: str = Field("euler", description="IMU integration method (euler, rk4, midpoint)")
+    gravity_magnitude: float = Field(9.81, gt=0, description="Gravity magnitude (m/s²)")
 
 
-class SRIFConfig(BaseModel):
+class SRIFConfig(BaseEstimatorConfig):
     """Square Root Information Filter configuration."""
+    # Set default estimator type
+    estimator_type: EstimatorType = Field(
+        default=EstimatorType.SRIF,
+        description="Type of estimator"
+    )
+    
+    # Numerical parameters
     qr_threshold: float = Field(
         1e-10,
         gt=0,
         description="QR decomposition threshold for numerical stability"
     )
-    chi2_threshold: float = Field(
-        5.991,
-        gt=0,
-        description="Chi-squared test threshold"
-    )
+    adaptive_threshold: bool = Field(True, description="Use adaptive thresholding")
+    
+    # Initial uncertainties
+    initial_position_std: float = Field(0.1, gt=0, description="Initial position uncertainty (m)")
+    initial_velocity_std: float = Field(0.1, gt=0, description="Initial velocity uncertainty (m/s)")
+    initial_orientation_std: float = Field(0.01, gt=0, description="Initial orientation uncertainty (rad)")
+    initial_bias_std: float = Field(0.01, gt=0, description="Initial bias uncertainty")
     initial_information_scale: float = Field(
         10.0,
         gt=0,
         description="Scale factor for initial information matrix"
     )
+    
+    # Process noise
+    accel_noise_std: float = Field(0.1, gt=0, description="Accelerometer noise standard deviation (m/s²)")
+    gyro_noise_std: float = Field(0.01, gt=0, description="Gyroscope noise standard deviation (rad/s)")
+    accel_bias_noise_std: float = Field(0.001, gt=0, description="Accelerometer bias noise (m/s²)")
+    gyro_bias_noise_std: float = Field(0.0001, gt=0, description="Gyroscope bias noise (rad/s)")
+    
+    
+    # IMU integration
+    integration_method: str = Field("rk4", description="IMU integration method (euler, rk4, midpoint)")
 
 
 class EstimatorConfig(BaseModel):

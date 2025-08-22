@@ -10,6 +10,9 @@ import numpy as np
 import time
 from enum import Enum
 
+# Import EstimatorType from config to have a single definition
+from src.common.config import EstimatorType
+
 from src.common.data_structures import (
     Trajectory, Pose, Landmark, Map,
     IMUMeasurement, CameraFrame, CameraObservation,
@@ -17,12 +20,7 @@ from src.common.data_structures import (
 )
 
 
-class EstimatorType(Enum):
-    """Types of SLAM estimators."""
-    EKF = "ekf"          # Extended Kalman Filter
-    SWBA = "swba"        # Sliding Window Bundle Adjustment
-    SRIF = "srif"        # Square Root Information Filter
-    UNKNOWN = "unknown"
+# EstimatorType now imported from config.py above
 
 
 @dataclass

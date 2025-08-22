@@ -1,5 +1,5 @@
 # Sliding Window Bundle Adjustment configuration
-type: sliding_window_ba
+type: swba
 
 swba:
   window_size: 10  # Number of keyframes

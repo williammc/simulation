@@ -16,6 +16,7 @@ from src.estimation.base_estimator import (
     BaseEstimator, EstimatorState, EstimatorConfig,
     EstimatorResult, EstimatorType
 )
+from src.common.config import SWBAConfig
 from src.estimation.imu_integration import (
     IMUPreintegrator, PreintegrationResult, IMUState
 )
@@ -98,42 +99,7 @@ class OptimizationProblem:
     prior_information: Optional[np.ndarray] = None
 
 
-@dataclass
-class SWBAConfig(EstimatorConfig):
-    """
-    SWBA-specific configuration.
-    """
-    # Window parameters
-    window_size: int = 10  # Maximum number of keyframes
-    keyframe_translation_threshold: float = 0.5  # meters
-    keyframe_rotation_threshold: float = 0.3  # radians
-    keyframe_time_threshold: float = 0.5  # seconds
-    
-    # Optimization parameters
-    max_iterations: int = 20
-    convergence_threshold: float = 1e-6
-    lambda_init: float = 1e-4  # Levenberg-Marquardt damping
-    lambda_factor: float = 10.0  # LM damping adjustment
-    
-    # Robust cost parameters
-    robust_cost_type: str = "huber"
-    huber_threshold: float = 1.0
-    
-    # IMU parameters
-    use_imu_preintegration: bool = True
-    imu_weight: float = 1.0
-    
-    # Camera parameters
-    camera_weight: float = 1.0
-    min_observations_per_landmark: int = 2
-    
-    # Marginalization
-    marginalize_old_keyframes: bool = True
-    prior_weight: float = 1.0
-    
-    def __post_init__(self):
-        """Set estimator type."""
-        self.estimator_type = EstimatorType.SWBA
+# Config now imported from src.common.config
 
 
 class SlidingWindowBA(BaseEstimator):
@@ -647,12 +613,12 @@ class SlidingWindowBA(BaseEstimator):
         """
         r_norm = np.linalg.norm(residual)
         
-        if self.config.robust_cost_type == "huber":
+        if self.config.robust_kernel == "huber":
             if r_norm <= self.config.huber_threshold:
                 return 1.0
             else:
                 return self.config.huber_threshold / r_norm
-        elif self.config.robust_cost_type == "cauchy":
+        elif self.config.robust_kernel == "cauchy":
             c2 = self.config.huber_threshold ** 2
             return np.sqrt(c2 / (c2 + r_norm**2))
         else:  # L2

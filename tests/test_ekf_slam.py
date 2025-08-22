@@ -8,8 +8,9 @@ from pathlib import Path
 import tempfile
 
 from src.estimation.ekf_slam import (
-    EKFSlam, EKFState, EKFConfig
+    EKFSlam, EKFState
 )
+from src.common.config import EKFConfig
 from src.estimation.base_estimator import EstimatorType
 from src.common.data_structures import (
     Pose, IMUMeasurement, CameraFrame, CameraObservation,

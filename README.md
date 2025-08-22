@@ -444,17 +444,6 @@ The `./run.sh cmd` wrapper ensures:
 ./run.sh cmd "python3 -m pytest tests/test_multi_imu.py tests/test_stereo_camera.py -v"
 ```
 
-## Citation
-
-If you use this simulator in your research, please cite:
-```bibtex
-@software{slam_simulation,
-  title = {SLAM Simulation System},
-  year = {2025},
-  url = {https://github.com/williammc/slam-simulation}
-}
-```
-
 ## License
 
 MIT License - See LICENSE file for details

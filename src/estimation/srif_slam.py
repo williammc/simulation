@@ -15,6 +15,7 @@ from src.estimation.base_estimator import (
     BaseEstimator, EstimatorState, EstimatorConfig,
     EstimatorResult, EstimatorType
 )
+from src.common.config import SRIFConfig
 from src.estimation.imu_integration import (
     IMUIntegrator, IMUState, IntegrationMethod
 )
@@ -145,38 +146,7 @@ class SRIFState:
         self.gyro_bias = x[12:15].copy()
 
 
-@dataclass
-class SRIFConfig(EstimatorConfig):
-    """
-    SRIF-specific configuration.
-    """
-    # Initial uncertainty
-    initial_position_std: float = 0.1
-    initial_velocity_std: float = 0.1
-    initial_orientation_std: float = 0.01
-    initial_bias_std: float = 0.01
-    
-    # Process noise
-    accel_noise_std: float = 0.1
-    gyro_noise_std: float = 0.01
-    accel_bias_noise_std: float = 0.001
-    gyro_bias_noise_std: float = 0.0001
-    
-    # Measurement noise
-    pixel_noise_std: float = 1.0
-    
-    # Outlier rejection
-    chi2_threshold: float = 5.991  # 95% confidence for 2 DOF
-    
-    # Numerical parameters
-    qr_threshold: float = 1e-10  # Threshold for QR decomposition
-    
-    # IMU integration
-    integration_method: str = "rk4"
-    
-    def __post_init__(self):
-        """Set estimator type."""
-        self.estimator_type = EstimatorType.SRIF
+# Config now imported from src.common.config
 
 
 class SRIFSlam(BaseEstimator):
@@ -279,9 +249,9 @@ class SRIFSlam(BaseEstimator):
         sqrt_info_diag = np.zeros(15)
         sqrt_info_diag[0:3] = 1.0 / self.config.initial_position_std
         sqrt_info_diag[3:6] = 1.0 / self.config.initial_velocity_std
-        sqrt_info_diag[6:10] = 1.0 / self.config.initial_orientation_std
-        sqrt_info_diag[10:13] = 1.0 / self.config.initial_bias_std
-        sqrt_info_diag[13:15] = 1.0 / self.config.initial_bias_std
+        sqrt_info_diag[6:9] = 1.0 / self.config.initial_orientation_std  # SO3 tangent space
+        sqrt_info_diag[9:12] = 1.0 / self.config.initial_bias_std  # accel bias
+        sqrt_info_diag[12:15] = 1.0 / self.config.initial_bias_std  # gyro bias
         
         self.state.sqrt_information = np.diag(sqrt_info_diag)
     
@@ -463,12 +433,12 @@ class SRIFSlam(BaseEstimator):
         # Velocity noise
         Q[3:6, 3:6] = np.eye(3) * (self.config.accel_noise_std * dt)**2
         
-        # Orientation noise
-        Q[6:10, 6:10] = np.eye(4) * (self.config.gyro_noise_std * dt)**2
+        # Orientation noise (SO3 tangent space)
+        Q[6:9, 6:9] = np.eye(3) * (self.config.gyro_noise_std * dt)**2
         
         # Bias noise
-        Q[10:13, 10:13] = np.eye(3) * (self.config.accel_bias_noise_std * dt)**2
-        Q[13:15, 13:15] = np.eye(2) * (self.config.gyro_bias_noise_std * dt)**2
+        Q[9:12, 9:12] = np.eye(3) * (self.config.accel_bias_noise_std * dt)**2  # accel bias
+        Q[12:15, 12:15] = np.eye(3) * (self.config.gyro_bias_noise_std * dt)**2  # gyro bias
         
         return Q
     

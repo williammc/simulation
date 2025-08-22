@@ -15,6 +15,7 @@ from src.estimation.base_estimator import (
     BaseEstimator, EstimatorState, EstimatorConfig,
     EstimatorResult, EstimatorType
 )
+from src.common.config import EKFConfig
 from src.estimation.imu_integration import (
     IMUIntegrator, IMUState, IntegrationMethod,
     compute_imu_jacobian
@@ -137,42 +138,7 @@ class EKFState:
         )
 
 
-@dataclass
-class EKFConfig(EstimatorConfig):
-    """
-    EKF-specific configuration.
-    
-    Extends base estimator config with EKF parameters.
-    """
-    # Initial uncertainties
-    initial_position_std: float = 0.1  # meters
-    initial_velocity_std: float = 0.1  # m/s
-    initial_rotation_std: float = 0.01  # radians
-    initial_accel_bias_std: float = 0.01  # m/s^2
-    initial_gyro_bias_std: float = 0.001  # rad/s
-    
-    # Process noise
-    accel_noise_density: float = 0.01  # m/s^2/sqrt(Hz)
-    gyro_noise_density: float = 0.001  # rad/s/sqrt(Hz)
-    accel_bias_random_walk: float = 0.001  # m/s^3/sqrt(Hz)
-    gyro_bias_random_walk: float = 0.0001  # rad/s^2/sqrt(Hz)
-    
-    # Measurement noise
-    pixel_noise_std: float = 1.0  # pixels
-    
-    # Outlier rejection
-    chi2_threshold: float = 5.991  # 95% confidence for 2 DOF
-    max_iterations: int = 5  # Max iterations for outlier rejection
-    
-    # Integration method
-    integration_method: str = "euler"  # euler, rk4, midpoint
-    
-    # Gravity
-    gravity_magnitude: float = 9.81  # m/s^2
-    
-    def __post_init__(self):
-        """Set estimator type."""
-        self.estimator_type = EstimatorType.EKF
+# Config now imported from src.common.config
 
 
 class EKFSlam(BaseEstimator):
@@ -258,7 +224,7 @@ class EKFSlam(BaseEstimator):
             P = np.zeros((15, 15))
             P[0:3, 0:3] = np.eye(3) * self.config.initial_position_std**2
             P[3:6, 3:6] = np.eye(3) * self.config.initial_velocity_std**2
-            P[6:9, 6:9] = np.eye(3) * self.config.initial_rotation_std**2
+            P[6:9, 6:9] = np.eye(3) * self.config.initial_orientation_std**2
             P[9:12, 9:12] = np.eye(3) * self.config.initial_accel_bias_std**2
             P[12:15, 12:15] = np.eye(3) * self.config.initial_gyro_bias_std**2
             self.state.covariance = P

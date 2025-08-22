@@ -10,7 +10,8 @@ from pathlib import Path
 # Add parent directory to path
 sys.path.append(str(Path(__file__).parent.parent))
 
-from src.estimation.ekf_slam import EKFSlam, EKFConfig
+from src.estimation.ekf_slam import EKFSlam
+from src.common.config import EKFConfig
 from src.common.data_structures import (
     Pose, IMUMeasurement, CameraFrame, CameraObservation,
     ImagePoint, Map, Landmark, Trajectory, TrajectoryState,
