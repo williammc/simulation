@@ -498,6 +498,72 @@ class IMUPreintegrator:
             num_measurements=len(self.measurements)
         )
     
+    def batch_process(
+        self,
+        measurements: List[IMUMeasurement],
+        from_keyframe_id: int,
+        to_keyframe_id: int
+    ) -> 'PreintegratedIMUData':
+        """
+        Batch process IMU measurements between two keyframes.
+        
+        Args:
+            measurements: List of IMU measurements between keyframes
+            from_keyframe_id: Source keyframe ID
+            to_keyframe_id: Target keyframe ID
+        
+        Returns:
+            PreintegratedIMUData ready for use in estimators
+        """
+        from src.common.data_structures import PreintegratedIMUData
+        
+        # Reset preintegrator before processing
+        self.reset(self.bias_accel, self.bias_gyro)
+        
+        # Process all measurements
+        for i, meas in enumerate(measurements):
+            if i == 0:
+                # First measurement - assume small dt
+                dt = 0.005  # Default 200Hz
+            else:
+                dt = meas.timestamp - measurements[i-1].timestamp
+            
+            if dt > 0:
+                self.add_measurement(meas, dt)
+        
+        # Get preintegration result
+        result = self.get_result()
+        
+        # Convert to PreintegratedIMUData
+        # Expand covariance from 9x9 to 15x15 (full state)
+        covariance_15 = np.zeros((15, 15))
+        # Map: [p, v, R] -> [p, v, R, ba, bg]
+        covariance_15[0:3, 0:3] = self.covariance[6:9, 6:9]  # Position
+        covariance_15[3:6, 3:6] = self.covariance[3:6, 3:6]  # Velocity
+        covariance_15[6:9, 6:9] = self.covariance[0:3, 0:3]  # Rotation
+        # Add small values for bias terms
+        covariance_15[9:12, 9:12] = np.eye(3) * self.accel_random_walk**2 * self.dt
+        covariance_15[12:15, 12:15] = np.eye(3) * self.gyro_random_walk**2 * self.dt
+        
+        # Expand Jacobian from 9x6 to 15x6
+        jacobian_15 = np.zeros((15, 6))
+        jacobian_15[0:3, :] = result.jacobian[6:9, :]  # Position jacobians
+        jacobian_15[3:6, :] = result.jacobian[3:6, :]  # Velocity jacobians
+        jacobian_15[6:9, :] = result.jacobian[0:3, :]  # Rotation jacobians
+        
+        return PreintegratedIMUData(
+            delta_position=result.delta_position,
+            delta_velocity=result.delta_velocity,
+            delta_rotation=self.delta_R,  # Use rotation matrix directly
+            covariance=covariance_15,
+            dt=self.dt,
+            from_keyframe_id=from_keyframe_id,
+            to_keyframe_id=to_keyframe_id,
+            num_measurements=len(self.measurements),
+            jacobian=jacobian_15,
+            source_measurements=self.measurements.copy()
+        )
+    
     def predict(
         self,
         state_i: IMUState,

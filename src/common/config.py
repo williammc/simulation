@@ -256,6 +256,22 @@ class SimulationConfig(BaseModel):
     )
     seed: Optional[int] = Field(None, description="Random seed for reproducibility")
     
+    # Preintegration settings
+    enable_preintegration: bool = Field(
+        default=False,
+        description="Enable IMU preintegration between keyframes"
+    )
+    keyframe_interval: int = Field(
+        default=10,
+        ge=1,
+        description="Select every N-th frame as keyframe"
+    )
+    min_keyframe_time_gap: float = Field(
+        default=0.1,
+        gt=0,
+        description="Minimum time gap between keyframes (seconds)"
+    )
+    
     @model_validator(mode='after')
     def validate_sensors(self):
         """Ensure at least one sensor is configured."""

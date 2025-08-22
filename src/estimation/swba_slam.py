@@ -276,13 +276,18 @@ class SlidingWindowBA(BaseEstimator):
         
         if from_kf is not None:
             # Store preintegration with the source keyframe
+            # Convert rotation matrix to quaternion for PreintegrationResult
+            from src.utils.math_utils import rotation_matrix_to_quaternion
+            delta_quat = rotation_matrix_to_quaternion(preintegrated.delta_rotation)
+            
             from_kf.imu_preintegration = PreintegrationResult(
                 delta_position=preintegrated.delta_position,
                 delta_velocity=preintegrated.delta_velocity,
-                delta_rotation=preintegrated.delta_rotation,
+                delta_rotation=delta_quat,
                 covariance=preintegrated.covariance,
                 dt=preintegrated.dt,
-                jacobian=preintegrated.jacobian
+                jacobian=preintegrated.jacobian,
+                num_measurements=preintegrated.num_measurements
             )
             
             # Update current state based on preintegration if it's the latest
