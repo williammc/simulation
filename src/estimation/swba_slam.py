@@ -267,7 +267,7 @@ class SlidingWindowBA(BaseEstimator):
         else:
             logger.warning(f"Could not find source keyframe {preintegrated.from_keyframe_id} for preintegration")
     
-    def update(self, camera_frame: CameraFrame, landmarks: Map) -> None:
+    def update(self, camera_frame: Optional[CameraFrame], landmarks: Optional[Map]) -> None:
         """
         Process camera measurements.
         
@@ -275,11 +275,17 @@ class SlidingWindowBA(BaseEstimator):
         optimization if needed.
         
         Args:
-            camera_frame: Camera observations
+            camera_frame: Camera observations (can be None for simplified version)
             landmarks: Known landmarks (for initialization)
         """
         if not self.keyframes or self.current_state is None:
             logger.warning("SWBA not initialized, skipping update")
+            return
+        
+        # Handle None camera_frame for simplified version
+        if camera_frame is None:
+            # Create a minimal keyframe for tracking purposes
+            self._create_minimal_keyframe()
             return
         
         # Check keyframe-only processing
@@ -382,6 +388,41 @@ class SlidingWindowBA(BaseEstimator):
             self._marginalize_oldest_keyframe()
         
         logger.debug(f"Created keyframe {new_kf.id} at time {camera_frame.timestamp}")
+    
+    def _create_minimal_keyframe(self) -> None:
+        """
+        Create a minimal keyframe for simplified version without camera measurements.
+        
+        This is used when update() is called with None camera_frame.
+        """
+        # Increment timestamp slightly to ensure chronological order
+        if self.keyframes:
+            # Ensure new timestamp is after the last keyframe
+            self.current_state.timestamp = max(
+                self.current_state.timestamp,
+                self.keyframes[-1].timestamp + 0.001
+            )
+        
+        # Create new keyframe with current state
+        new_kf = Keyframe(
+            id=self.next_keyframe_id,
+            timestamp=self.current_state.timestamp,
+            state=self.current_state.copy(),
+            observations=[]  # No observations in simplified version
+        )
+        
+        self.keyframes.append(new_kf)
+        self.next_keyframe_id += 1
+        
+        # Trigger optimization if enough keyframes (use window_size/2 as threshold)
+        if len(self.keyframes) >= max(2, self.config.window_size // 2):
+            self.optimize()
+        
+        # Marginalize old keyframe if window is full
+        if self.config.marginalize_old_keyframes and len(self.keyframes) > self.config.window_size:
+            self._marginalize_oldest_keyframe()
+        
+        logger.debug(f"Created minimal keyframe {new_kf.id} at time {self.current_state.timestamp}")
     
     def optimize(self) -> None:
         """

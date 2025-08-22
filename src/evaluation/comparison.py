@@ -21,7 +21,7 @@ from src.estimation.base_estimator import (
 )
 from src.common.data_structures import (
     Trajectory, Map, IMUMeasurement, CameraFrame,
-    CameraCalibration, IMUCalibration
+    CameraCalibration, IMUCalibration, PreintegratedIMUData
 )
 from src.evaluation.metrics import (
     compute_ate, compute_rpe, compute_nees,
@@ -148,7 +148,7 @@ class EstimatorRunner:
     def run_estimator(
         self,
         estimator_type: str,
-        imu_measurements: List[List[IMUMeasurement]],
+        preintegrated_imu: List[PreintegratedIMUData],  # Changed to preintegrated
         camera_frames: List[CameraFrame],
         ground_truth: Trajectory,
         landmarks: Map,
@@ -159,7 +159,7 @@ class EstimatorRunner:
         
         Args:
             estimator_type: Type of estimator ("EKF", "SWBA", "SRIF")
-            imu_measurements: IMU measurements grouped by prediction step
+            preintegrated_imu: Preintegrated IMU data between keyframes
             camera_frames: Camera measurements
             ground_truth: Ground truth trajectory
             landmarks: Known landmarks
@@ -183,22 +183,19 @@ class EstimatorRunner:
         states = []
         cam_idx = 0
         
-        for imu_batch in imu_measurements:
-            if imu_batch:
-                # IMU prediction
-                dt = imu_batch[-1].timestamp - imu_batch[0].timestamp
-                if dt > 0:
-                    estimator.predict(imu_batch, dt)
+        for preint_data in preintegrated_imu:
+            if preint_data:
+                # IMU prediction with preintegrated data
+                estimator.predict(preint_data)
             
-            # Check for camera update
-            while cam_idx < len(camera_frames):
+            # Check for camera update at keyframe
+            if cam_idx < len(camera_frames):
                 frame = camera_frames[cam_idx]
-                if imu_batch and frame.timestamp <= imu_batch[-1].timestamp:
+                # Process camera frame if it's a keyframe
+                if hasattr(frame, 'is_keyframe') and frame.is_keyframe:
                     estimator.update(frame, landmarks)
                     states.append(estimator.get_state())
                     cam_idx += 1
-                else:
-                    break
         
         # Get final result
         result = estimator.get_result()

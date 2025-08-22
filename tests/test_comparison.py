@@ -208,14 +208,30 @@ class TestEstimatorRunner:
         """Test running a single estimator."""
         runner = EstimatorRunner(camera_calibration, enable_profiling=False)
         
-        # Prepare data
-        imu_batches = runner._prepare_imu_batches(simple_simulation_data.imu_measurements)
+        # Create preintegrated IMU data for testing
+        from src.common.data_structures import PreintegratedIMUData
+        preintegrated_imu = []
+        
+        # Create simple preintegrated data between keyframes
+        for i in range(len(simple_simulation_data.camera_measurements)):
+            preint_data = PreintegratedIMUData(
+                delta_position=np.array([0.1, 0, 0]),  # Simple forward motion
+                delta_velocity=np.array([0.01, 0, 0]),
+                delta_rotation=np.eye(3),  # No rotation
+                covariance=np.eye(15) * 0.01,
+                dt=0.1,
+                from_keyframe_id=i,
+                to_keyframe_id=i+1,
+                num_measurements=10
+            )
+            preintegrated_imu.append(preint_data)
+        
         initial_pose = simple_simulation_data.ground_truth_trajectory.states[0].pose
         
         # Run EKF
         perf = runner.run_estimator(
             "EKF",
-            imu_batches,
+            preintegrated_imu,
             simple_simulation_data.camera_measurements,
             simple_simulation_data.ground_truth_trajectory,
             simple_simulation_data.landmarks,
