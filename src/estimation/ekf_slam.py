@@ -26,8 +26,10 @@ from src.estimation.camera_model import (
 from src.common.data_structures import (
     IMUMeasurement, CameraFrame, Map, Landmark,
     Trajectory, TrajectoryState, Pose,
-    CameraCalibration, IMUCalibration
+    CameraCalibration, IMUCalibration,
+    PreintegratedIMUData
 )
+from typing import Union
 from src.utils.math_utils import (
     quaternion_to_rotation_matrix, rotation_matrix_to_quaternion,
     skew, so3_exp, so3_log, project_to_so3
@@ -231,21 +233,39 @@ class EKFSlam(BaseEstimator):
         
         logger.info(f"EKF initialized at time {initial_pose.timestamp}")
     
-    def predict(self, imu_measurements: List[IMUMeasurement], dt: float) -> None:
+    def predict(self, imu_data: Union[List[IMUMeasurement], PreintegratedIMUData], dt: Optional[float] = None) -> None:
         """
         IMU prediction step.
         
         Propagates state and covariance using IMU measurements.
         
         Args:
-            imu_measurements: List of IMU measurements
-            dt: Total time step
+            imu_data: Either raw IMU measurements or preintegrated IMU data
+            dt: Total time step (required for raw measurements, ignored for preintegrated)
         """
         if self.state is None:
             raise RuntimeError("EKF not initialized")
         
-        if not imu_measurements:
-            return
+        # Dispatch based on input type
+        if isinstance(imu_data, PreintegratedIMUData):
+            if self.config.use_preintegrated_imu:
+                self._predict_preintegrated(imu_data)
+            else:
+                # If preintegrated data provided but not configured to use it,
+                # use source measurements if available
+                if imu_data.source_measurements:
+                    self._predict_raw(imu_data.source_measurements, imu_data.dt)
+                else:
+                    logger.warning("Preintegrated IMU provided but use_preintegrated_imu=False and no source measurements")
+        else:
+            if not imu_data:
+                return
+            if dt is None:
+                raise ValueError("dt required for raw IMU measurements")
+            self._predict_raw(imu_data, dt)
+    
+    def _predict_raw(self, imu_measurements: List[IMUMeasurement], dt: float) -> None:
+        """Predict using raw IMU measurements."""
         
         # Convert to IMU state
         imu_state = self.state.to_imu_state()
@@ -289,6 +309,67 @@ class EKFSlam(BaseEstimator):
         
         # Update state from IMU integration
         self.state.from_imu_state(imu_state)
+    
+    def _predict_preintegrated(self, preintegrated: PreintegratedIMUData) -> None:
+        """
+        Predict using preintegrated IMU measurements.
+        
+        Uses preintegrated delta values to directly update the state without
+        iterating through individual measurements.
+        
+        Args:
+            preintegrated: Preintegrated IMU data between keyframes
+        """
+        # Update position using preintegrated delta
+        # p_new = p_old + v_old * dt + R_old * delta_p + 0.5 * g * dt^2
+        R_old = self.state.rotation_matrix
+        self.state.position += (
+            self.state.velocity * preintegrated.dt + 
+            R_old @ preintegrated.delta_position + 
+            0.5 * self.imu_integrator.gravity * preintegrated.dt**2
+        )
+        
+        # Update velocity using preintegrated delta
+        # v_new = v_old + R_old * delta_v + g * dt
+        self.state.velocity += (
+            R_old @ preintegrated.delta_velocity + 
+            self.imu_integrator.gravity * preintegrated.dt
+        )
+        
+        # Update rotation using preintegrated delta
+        # R_new = R_old * delta_R
+        self.state.rotation_matrix = R_old @ preintegrated.delta_rotation
+        
+        # Biases remain constant in the prediction step
+        # (they are only updated during optimization/correction)
+        
+        # Update timestamp
+        self.state.timestamp += preintegrated.dt
+        
+        # Propagate covariance using preintegrated covariance
+        # The preintegrated covariance already accounts for noise propagation
+        # We need to transform it to the global frame
+        
+        # State transition matrix for preintegrated measurements
+        F = np.eye(15)
+        F[0:3, 3:6] = np.eye(3) * preintegrated.dt  # Position depends on velocity
+        F[0:3, 6:9] = -R_old @ skew(preintegrated.delta_position)  # Position depends on rotation
+        F[3:6, 6:9] = -R_old @ skew(preintegrated.delta_velocity)  # Velocity depends on rotation
+        
+        # If jacobian w.r.t biases is provided, use it
+        if preintegrated.jacobian is not None:
+            # The jacobian relates changes in biases to changes in the preintegrated values
+            # F should incorporate this dependency
+            F[0:3, 9:12] = R_old @ preintegrated.jacobian[0:3, 0:3]  # Position w.r.t accel bias
+            F[0:3, 12:15] = R_old @ preintegrated.jacobian[0:3, 3:6]  # Position w.r.t gyro bias
+            F[3:6, 9:12] = R_old @ preintegrated.jacobian[3:6, 0:3]  # Velocity w.r.t accel bias
+            F[3:6, 12:15] = R_old @ preintegrated.jacobian[3:6, 3:6]  # Velocity w.r.t gyro bias
+            F[6:9, 12:15] = preintegrated.jacobian[6:9, 3:6]  # Rotation w.r.t gyro bias
+        
+        # Propagate covariance
+        # P_new = F * P_old * F' + Q_preintegrated
+        P = self.state.covariance
+        self.state.covariance = F @ P @ F.T + preintegrated.covariance
     
     def update(self, camera_frame: CameraFrame, landmarks: Map) -> None:
         """

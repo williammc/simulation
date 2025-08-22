@@ -319,7 +319,7 @@ class SWBAConfig(BaseEstimatorConfig):
     huber_delta: float = Field(1.0, gt=0, description="Huber kernel threshold (alias)")
     
     # IMU parameters
-    use_imu_preintegration: bool = Field(True, description="Use IMU preintegration")
+    use_preintegrated_imu: bool = Field(True, description="Use preintegrated IMU measurements")
     imu_weight: float = Field(1.0, gt=0, description="IMU measurement weight")
     
     # Camera parameters
@@ -338,6 +338,9 @@ class EKFConfig(BaseEstimatorConfig):
         default=EstimatorType.EKF,
         description="Type of estimator"
     )
+    
+    # Preintegrated IMU support
+    use_preintegrated_imu: bool = Field(False, description="Use preintegrated IMU measurements")
     
     # EKF-specific outlier rejection
     innovation_threshold: float = Field(
@@ -373,6 +376,9 @@ class SRIFConfig(BaseEstimatorConfig):
         default=EstimatorType.SRIF,
         description="Type of estimator"
     )
+    
+    # Preintegrated IMU support
+    use_preintegrated_imu: bool = Field(False, description="Use preintegrated IMU measurements")
     
     # Numerical parameters
     qr_threshold: float = Field(

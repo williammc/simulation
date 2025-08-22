@@ -6,7 +6,7 @@ with IMU preintegration and bundle adjustment for camera measurements.
 """
 
 import numpy as np
-from typing import List, Dict, Optional, Tuple, Set
+from typing import List, Dict, Optional, Tuple, Set, Union
 from dataclasses import dataclass, field
 from enum import Enum
 import logging
@@ -26,7 +26,8 @@ from src.estimation.camera_model import (
 from src.common.data_structures import (
     IMUMeasurement, CameraFrame, Map, Landmark,
     Trajectory, TrajectoryState, Pose,
-    CameraCalibration, IMUCalibration
+    CameraCalibration, IMUCalibration,
+    PreintegratedIMUData
 )
 from src.utils.math_utils import (
     rotation_matrix_to_quaternion,
@@ -143,8 +144,16 @@ class SlidingWindowBA(BaseEstimator):
         # Camera model
         self.camera_model = CameraMeasurementModel(camera_calibration)
         
+        # IMU integration
+        from src.estimation.imu_integration import IMUIntegrator, IntegrationMethod
+        if imu_calibration is None:
+            gravity = np.array([0, 0, -9.81])
+        else:
+            gravity = np.array([0, 0, -imu_calibration.gravity_magnitude])
+        self.imu_integrator = IMUIntegrator(gravity=gravity, method=IntegrationMethod.RK4)
+        
         # IMU preintegrators
-        self.current_preintegrator = IMUPreintegrator() if config.use_imu_preintegration else None
+        self.current_preintegrator = IMUPreintegrator() if config.use_preintegrated_imu else None
         
         # Prior from marginalization
         self.prior_mean: Optional[np.ndarray] = None
@@ -194,7 +203,7 @@ class SlidingWindowBA(BaseEstimator):
         
         logger.info(f"SWBA initialized with keyframe {first_kf.id} at time {initial_pose.timestamp}")
     
-    def predict(self, imu_measurements: List[IMUMeasurement], dt: float) -> None:
+    def predict(self, imu_data: Union[List[IMUMeasurement], PreintegratedIMUData], dt: Optional[float] = None) -> None:
         """
         Process IMU measurements.
         
@@ -202,18 +211,36 @@ class SlidingWindowBA(BaseEstimator):
         preintegration for the next keyframe.
         
         Args:
-            imu_measurements: List of IMU measurements
-            dt: Total time step
+            imu_data: Either raw IMU measurements or preintegrated IMU data
+            dt: Total time step (required for raw measurements, ignored for preintegrated)
         """
         if not self.keyframes or self.current_state is None:
             logger.warning("SWBA not initialized, skipping prediction")
             return
         
-        if not imu_measurements:
-            return
-        
+        # Handle preintegrated IMU data
+        if isinstance(imu_data, PreintegratedIMUData):
+            if self.config.use_preintegrated_imu:
+                self._predict_preintegrated(imu_data)
+            else:
+                # If preintegrated data provided but not configured to use it,
+                # use source measurements if available
+                if imu_data.source_measurements:
+                    self._predict_raw(imu_data.source_measurements, imu_data.dt)
+                else:
+                    logger.warning("Preintegrated IMU provided but use_preintegrated_imu=False and no source measurements")
+        else:
+            # Handle raw IMU measurements
+            if not imu_data:
+                return
+            if dt is None:
+                raise ValueError("dt required for raw IMU measurements")
+            self._predict_raw(imu_data, dt)
+    
+    def _predict_raw(self, imu_measurements: List[IMUMeasurement], dt: float) -> None:
+        """Process raw IMU measurements."""
         # Accumulate in preintegrator if using preintegration
-        if self.config.use_imu_preintegration and self.current_preintegrator:
+        if self.config.use_preintegrated_imu and self.current_preintegrator:
             for i, meas in enumerate(imu_measurements):
                 if i == 0:
                     meas_dt = meas.timestamp - self.current_state.timestamp
@@ -226,6 +253,55 @@ class SlidingWindowBA(BaseEstimator):
         # Update current state timestamp
         if imu_measurements:
             self.current_state.timestamp = imu_measurements[-1].timestamp
+    
+    def _predict_preintegrated(self, preintegrated: PreintegratedIMUData) -> None:
+        """
+        Process preintegrated IMU measurements.
+        
+        For SWBA, we store the preintegrated data for use in the optimization
+        when creating factors between keyframes.
+        
+        Args:
+            preintegrated: Preintegrated IMU data between keyframes
+        """
+        # Find the keyframes this preintegration corresponds to
+        from_kf = None
+        to_kf = None
+        
+        for kf in self.keyframes:
+            if kf.id == preintegrated.from_keyframe_id:
+                from_kf = kf
+            if kf.id == preintegrated.to_keyframe_id:
+                to_kf = kf
+        
+        if from_kf is not None:
+            # Store preintegration with the source keyframe
+            from_kf.imu_preintegration = PreintegrationResult(
+                delta_position=preintegrated.delta_position,
+                delta_velocity=preintegrated.delta_velocity,
+                delta_rotation=preintegrated.delta_rotation,
+                covariance=preintegrated.covariance,
+                dt=preintegrated.dt,
+                jacobian=preintegrated.jacobian
+            )
+            
+            # Update current state based on preintegration if it's the latest
+            if from_kf == self.keyframes[-1]:
+                # Propagate state using preintegrated deltas
+                R_old = self.current_state.rotation_matrix
+                self.current_state.position = from_kf.state.position + (
+                    from_kf.state.velocity * preintegrated.dt +
+                    R_old @ preintegrated.delta_position +
+                    0.5 * self.imu_integrator.gravity * preintegrated.dt**2
+                )
+                self.current_state.velocity = from_kf.state.velocity + (
+                    R_old @ preintegrated.delta_velocity +
+                    self.imu_integrator.gravity * preintegrated.dt
+                )
+                self.current_state.rotation_matrix = R_old @ preintegrated.delta_rotation
+                self.current_state.timestamp += preintegrated.dt
+        else:
+            logger.warning(f"Could not find source keyframe {preintegrated.from_keyframe_id} for preintegration")
     
     def update(self, camera_frame: CameraFrame, landmarks: Map) -> None:
         """
@@ -420,7 +496,7 @@ class SlidingWindowBA(BaseEstimator):
         jacobian_rows = []
         
         # IMU residuals between consecutive keyframes
-        if self.config.use_imu_preintegration:
+        if self.config.use_preintegrated_imu:
             for i in range(len(self.keyframes) - 1):
                 kf_i = self.keyframes[i]
                 kf_j = self.keyframes[i + 1]

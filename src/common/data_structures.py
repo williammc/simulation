@@ -86,6 +86,91 @@ class IMUData:
         )
 
 
+@dataclass
+class PreintegratedIMUData:
+    """
+    Preintegrated IMU measurements between two keyframes.
+    
+    Represents the integrated effect of multiple IMU measurements between
+    two keyframes, enabling efficient visual-inertial optimization.
+    """
+    delta_position: np.ndarray      # Relative position change (3x1)
+    delta_velocity: np.ndarray      # Relative velocity change (3x1)
+    delta_rotation: np.ndarray      # Relative rotation as SO3 matrix (3x3)
+    covariance: np.ndarray          # Uncertainty covariance (15x15)
+    dt: float                       # Total time interval
+    from_keyframe_id: int           # Source keyframe ID
+    to_keyframe_id: int             # Target keyframe ID
+    num_measurements: int           # Number of integrated measurements
+    jacobian: Optional[np.ndarray] = None  # Jacobian w.r.t biases (15x6)
+    source_measurements: Optional[List[IMUMeasurement]] = None  # Original measurements
+    
+    def __post_init__(self):
+        """Validate dimensions and ensure proper array types."""
+        self.delta_position = np.asarray(self.delta_position).reshape(3)
+        self.delta_velocity = np.asarray(self.delta_velocity).reshape(3)
+        
+        # Ensure rotation is a proper SO3 matrix
+        self.delta_rotation = np.asarray(self.delta_rotation).reshape(3, 3)
+        # Project to SO3 if needed
+        U, _, Vt = np.linalg.svd(self.delta_rotation)
+        self.delta_rotation = U @ Vt
+        if np.linalg.det(self.delta_rotation) < 0:
+            U[:, -1] *= -1
+            self.delta_rotation = U @ Vt
+        
+        # Validate covariance
+        self.covariance = np.asarray(self.covariance).reshape(15, 15)
+        # Ensure symmetric
+        self.covariance = 0.5 * (self.covariance + self.covariance.T)
+        
+        # Validate jacobian if provided
+        if self.jacobian is not None:
+            self.jacobian = np.asarray(self.jacobian).reshape(15, 6)
+        
+        # Validate keyframe IDs
+        if self.from_keyframe_id == self.to_keyframe_id:
+            raise ValueError("from_keyframe_id and to_keyframe_id must be different")
+        
+        if self.dt <= 0:
+            raise ValueError(f"Time interval dt must be positive, got {self.dt}")
+        
+        if self.num_measurements <= 0:
+            raise ValueError(f"num_measurements must be positive, got {self.num_measurements}")
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        result = {
+            "delta_position": self.delta_position.tolist(),
+            "delta_velocity": self.delta_velocity.tolist(),
+            "delta_rotation": self.delta_rotation.tolist(),
+            "covariance": self.covariance.tolist(),
+            "dt": self.dt,
+            "from_keyframe_id": self.from_keyframe_id,
+            "to_keyframe_id": self.to_keyframe_id,
+            "num_measurements": self.num_measurements
+        }
+        if self.jacobian is not None:
+            result["jacobian"] = self.jacobian.tolist()
+        return result
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'PreintegratedIMUData':
+        """Create from dictionary."""
+        jacobian = np.array(data["jacobian"]) if "jacobian" in data else None
+        return cls(
+            delta_position=np.array(data["delta_position"]),
+            delta_velocity=np.array(data["delta_velocity"]),
+            delta_rotation=np.array(data["delta_rotation"]),
+            covariance=np.array(data["covariance"]),
+            dt=data["dt"],
+            from_keyframe_id=data["from_keyframe_id"],
+            to_keyframe_id=data["to_keyframe_id"],
+            num_measurements=data["num_measurements"],
+            jacobian=jacobian
+        )
+
+
 # ============================================================================
 # Camera Data Structures
 # ============================================================================
@@ -148,6 +233,9 @@ class CameraFrame:
     camera_id: str  # Camera identifier (e.g., "cam0", "cam1")
     observations: List[CameraObservation] = field(default_factory=list)
     image_path: Optional[str] = None  # Path to actual image file (if stored)
+    is_keyframe: bool = False  # Whether this frame is a keyframe
+    keyframe_id: Optional[int] = None  # Keyframe index if is_keyframe is True
+    preintegrated_imu: Optional['PreintegratedIMUData'] = None  # IMU to next keyframe
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""

@@ -208,7 +208,7 @@ class TestSlidingWindowBA:
     
     def test_imu_prediction(self, camera_calibration, imu_calibration):
         """Test IMU prediction."""
-        config = SWBAConfig(use_imu_preintegration=True)
+        config = SWBAConfig(use_preintegrated_imu=True)
         swba = SlidingWindowBA(config, camera_calibration, imu_calibration)
         
         # Initialize
@@ -511,7 +511,7 @@ class TestSWBAIntegration:
         config = SWBAConfig(
             window_size=5,
             keyframe_time_threshold=0.2,
-            use_imu_preintegration=False  # Simplify for test
+            use_preintegrated_imu=False  # Simplify for test
         )
         swba = SlidingWindowBA(config, camera_calib, imu_calib)
         
