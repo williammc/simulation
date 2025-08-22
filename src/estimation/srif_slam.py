@@ -6,7 +6,7 @@ using QR factorization to maintain the square root of the information matrix.
 """
 
 import numpy as np
-from typing import List, Dict, Optional, Tuple, Union
+from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass, field
 import logging
 from scipy.linalg import qr, solve_triangular
@@ -183,17 +183,8 @@ class SRIFSlam(BaseEstimator):
         # Camera model
         self.camera_model = CameraMeasurementModel(camera_calibration)
         
-        # IMU integrator
-        gravity = np.array([0, 0, -9.81])
-        method_map = {
-            "euler": IntegrationMethod.EULER,
-            "rk4": IntegrationMethod.RK4,
-            "midpoint": IntegrationMethod.MIDPOINT
-        }
-        self.imu_integrator = IMUIntegrator(
-            gravity=gravity,
-            method=method_map.get(config.integration_method, IntegrationMethod.RK4)
-        )
+        # Gravity vector
+        self.gravity = np.array([0, 0, -9.81])
         
         # Landmark estimates
         self.landmarks: Dict[int, Landmark] = {}
@@ -256,78 +247,28 @@ class SRIFSlam(BaseEstimator):
         
         self.state.sqrt_information = np.diag(sqrt_info_diag)
     
-    def predict(self, imu_data: Union[List[IMUMeasurement], PreintegratedIMUData], dt: Optional[float] = None) -> None:
+    def predict(self, imu_data: PreintegratedIMUData) -> None:
         """
-        Prediction step using IMU measurements.
+        Prediction step using preintegrated IMU measurements.
         
-        For SRIF, we need to:
+        For SRIF, we:
         1. Convert to covariance form
-        2. Perform standard EKF prediction
+        2. Perform prediction with preintegrated data
         3. Convert back to information form
         
         Args:
-            imu_data: Either raw IMU measurements or preintegrated IMU data
-            dt: Total time step (required for raw measurements, ignored for preintegrated)
+            imu_data: Preintegrated IMU data between keyframes
         """
         if self.state is None:
             logger.warning("SRIF not initialized, skipping prediction")
             return
         
-        # Handle preintegrated IMU data
-        if isinstance(imu_data, PreintegratedIMUData):
-            if self.config.use_preintegrated_imu:
-                self._predict_preintegrated(imu_data)
-            else:
-                # If preintegrated data provided but not configured to use it,
-                # use source measurements if available
-                if imu_data.source_measurements:
-                    self._predict_raw(imu_data.source_measurements, imu_data.dt)
-                else:
-                    logger.warning("Preintegrated IMU provided but use_preintegrated_imu=False and no source measurements")
-        else:
-            # Handle raw IMU measurements
-            if not imu_data:
-                return
-            if dt is None:
-                raise ValueError("dt required for raw IMU measurements")
-            self._predict_raw(imu_data, dt)
+        if not isinstance(imu_data, PreintegratedIMUData):
+            raise TypeError("SRIF now only accepts PreintegratedIMUData")
+        
+        self._predict_preintegrated(imu_data)
     
-    def _predict_raw(self, imu_measurements: List[IMUMeasurement], dt: float) -> None:
-        """Process raw IMU measurements."""
-        # Convert to covariance form for prediction
-        P = self.state.get_covariance_matrix()
-        x = self.state.get_state_vector()
-        
-        # Unpack current state
-        self.state._unpack_state_vector(x)
-        
-        # Propagate state using IMU
-        imu_state = self.state.to_imu_state()
-        for meas in imu_measurements:
-            imu_state = self.imu_integrator.integrate(
-                imu_state, meas, dt / len(imu_measurements)
-            )
-        self.state.from_imu_state(imu_state)
-        
-        # Compute state transition Jacobian
-        F = self._compute_state_transition_jacobian(imu_measurements, dt)
-        
-        # Process noise
-        Q = self._compute_process_noise(dt)
-        
-        # Propagate covariance: P = F P F^T + Q
-        P_pred = F @ P @ F.T + Q
-        
-        # Convert back to information form using QR decomposition
-        self._covariance_to_information(P_pred)
-        
-        # Update information vector
-        x_pred = self.state._pack_state_vector()
-        self.state.information_vector = self.state.sqrt_information.T @ self.state.sqrt_information @ x_pred
-        
-        # Update timestamp
-        if imu_measurements:
-            self.state.timestamp = imu_measurements[-1].timestamp
+    # Removed _predict_raw method - only using preintegrated IMU now
     
     def _predict_preintegrated(self, preintegrated: PreintegratedIMUData) -> None:
         """
@@ -347,11 +288,11 @@ class SRIFSlam(BaseEstimator):
         self.state.position += (
             self.state.velocity * preintegrated.dt +
             R_old @ preintegrated.delta_position +
-            0.5 * self.imu_integrator.gravity * preintegrated.dt**2
+            0.5 * self.gravity * preintegrated.dt**2
         )
         self.state.velocity += (
             R_old @ preintegrated.delta_velocity +
-            self.imu_integrator.gravity * preintegrated.dt
+            self.gravity * preintegrated.dt
         )
         self.state.rotation_matrix = R_old @ preintegrated.delta_rotation
         

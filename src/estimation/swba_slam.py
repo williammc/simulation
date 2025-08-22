@@ -1,8 +1,11 @@
 """
-Sliding Window Bundle Adjustment (SWBA) for Visual-Inertial SLAM.
+Simplified Sliding Window Bundle Adjustment (SWBA) for trajectory estimation.
 
-Implements optimization-based SLAM using a sliding window of recent states,
-with IMU preintegration and bundle adjustment for camera measurements.
+Minimal implementation that:
+- Maintains a sliding window of keyframes
+- Uses preintegrated IMU between keyframes
+- Performs simple optimization over the window
+- No complex SLAM features or landmark mapping
 """
 
 import numpy as np
@@ -17,9 +20,7 @@ from src.estimation.base_estimator import (
     EstimatorResult, EstimatorType
 )
 from src.common.config import SWBAConfig
-from src.estimation.imu_integration import (
-    IMUPreintegrator, PreintegrationResult, IMUState
-)
+from src.estimation.imu_integration import IMUState, PreintegrationResult
 from src.estimation.camera_model import (
     CameraMeasurementModel, batch_compute_reprojection_errors
 )
@@ -62,7 +63,7 @@ class Keyframe:
     timestamp: float
     state: IMUState
     observations: List['CameraObservation'] = field(default_factory=list)
-    imu_preintegration: Optional[PreintegrationResult] = None
+    imu_preintegration: Optional[Union[PreintegrationResult, PreintegratedIMUData]] = None
     is_marginalized: bool = False
     
     def get_pose(self) -> Pose:
@@ -144,16 +145,11 @@ class SlidingWindowBA(BaseEstimator):
         # Camera model
         self.camera_model = CameraMeasurementModel(camera_calibration)
         
-        # IMU integration
-        from src.estimation.imu_integration import IMUIntegrator, IntegrationMethod
+        # Gravity vector
         if imu_calibration is None:
-            gravity = np.array([0, 0, -9.81])
+            self.gravity = np.array([0, 0, -9.81])
         else:
-            gravity = np.array([0, 0, -imu_calibration.gravity_magnitude])
-        self.imu_integrator = IMUIntegrator(gravity=gravity, method=IntegrationMethod.RK4)
-        
-        # IMU preintegrators
-        self.current_preintegrator = IMUPreintegrator() if config.use_preintegrated_imu else None
+            self.gravity = np.array([0, 0, -imu_calibration.gravity_magnitude])
         
         # Prior from marginalization
         self.prior_mean: Optional[np.ndarray] = None
@@ -197,62 +193,25 @@ class SlidingWindowBA(BaseEstimator):
         # Set current state
         self.current_state = initial_state.copy()
         
-        # Reset preintegrator
-        if self.current_preintegrator:
-            self.current_preintegrator.reset()
-        
         logger.info(f"SWBA initialized with keyframe {first_kf.id} at time {initial_pose.timestamp}")
     
-    def predict(self, imu_data: Union[List[IMUMeasurement], PreintegratedIMUData], dt: Optional[float] = None) -> None:
+    def predict(self, imu_data: PreintegratedIMUData) -> None:
         """
-        Process IMU measurements.
+        Process preintegrated IMU measurements.
         
-        For SWBA, this updates the current state and accumulates
-        preintegration for the next keyframe.
+        For SWBA, this stores the preintegrated data for the next keyframe.
         
         Args:
-            imu_data: Either raw IMU measurements or preintegrated IMU data
-            dt: Total time step (required for raw measurements, ignored for preintegrated)
+            imu_data: Preintegrated IMU data between keyframes
         """
         if not self.keyframes or self.current_state is None:
             logger.warning("SWBA not initialized, skipping prediction")
             return
         
-        # Handle preintegrated IMU data
-        if isinstance(imu_data, PreintegratedIMUData):
-            if self.config.use_preintegrated_imu:
-                self._predict_preintegrated(imu_data)
-            else:
-                # If preintegrated data provided but not configured to use it,
-                # use source measurements if available
-                if imu_data.source_measurements:
-                    self._predict_raw(imu_data.source_measurements, imu_data.dt)
-                else:
-                    logger.warning("Preintegrated IMU provided but use_preintegrated_imu=False and no source measurements")
-        else:
-            # Handle raw IMU measurements
-            if not imu_data:
-                return
-            if dt is None:
-                raise ValueError("dt required for raw IMU measurements")
-            self._predict_raw(imu_data, dt)
-    
-    def _predict_raw(self, imu_measurements: List[IMUMeasurement], dt: float) -> None:
-        """Process raw IMU measurements."""
-        # Accumulate in preintegrator if using preintegration
-        if self.config.use_preintegrated_imu and self.current_preintegrator:
-            for i, meas in enumerate(imu_measurements):
-                if i == 0:
-                    meas_dt = meas.timestamp - self.current_state.timestamp
-                else:
-                    meas_dt = meas.timestamp - imu_measurements[i-1].timestamp
-                
-                if meas_dt > 0:
-                    self.current_preintegrator.add_measurement(meas, meas_dt)
+        if not isinstance(imu_data, PreintegratedIMUData):
+            raise TypeError("SWBA now only accepts PreintegratedIMUData")
         
-        # Update current state timestamp
-        if imu_measurements:
-            self.current_state.timestamp = imu_measurements[-1].timestamp
+        self._predict_preintegrated(imu_data)
     
     def _predict_preintegrated(self, preintegrated: PreintegratedIMUData) -> None:
         """
@@ -386,10 +345,13 @@ class SlidingWindowBA(BaseEstimator):
             camera_frame: Camera observations for the keyframe
             landmarks: Known landmarks
         """
-        # Store preintegration in previous keyframe
-        if len(self.keyframes) > 0 and self.current_preintegrator:
-            self.keyframes[-1].imu_preintegration = self.current_preintegrator.get_result()
-            self.current_preintegrator.reset()
+        # Handle preintegrated IMU data
+        if self.config.use_keyframes_only and hasattr(camera_frame, 'preintegrated_imu') and camera_frame.preintegrated_imu:
+            # Use preintegrated IMU from the frame (computed during simulation)
+            if len(self.keyframes) > 0:
+                self.keyframes[-1].imu_preintegration = camera_frame.preintegrated_imu
+                logger.debug(f"Using preintegrated IMU from frame for keyframe {self.next_keyframe_id-1}")
+        # Simplified: no internal preintegrator in this version
         
         # Create new keyframe
         new_kf = Keyframe(
@@ -969,8 +931,7 @@ class SlidingWindowBA(BaseEstimator):
         self.current_state = None
         self.landmarks.clear()
         self.landmark_observations.clear()
-        if self.current_preintegrator:
-            self.current_preintegrator.reset()
+        # No preintegrator to reset in simplified version
         self.prior_mean = None
         self.prior_information = None
         self.num_optimizations = 0

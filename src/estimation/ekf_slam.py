@@ -1,12 +1,15 @@
 """
-Extended Kalman Filter (EKF) for Visual-Inertial SLAM.
+Simplified Extended Kalman Filter (EKF) for keyframe-based trajectory estimation.
 
-Implements an EKF-based SLAM estimator with IMU prediction and camera updates.
-State vector includes robot pose, velocity, and IMU biases.
+This is a minimal implementation that:
+- Processes only preintegrated IMU data between keyframes
+- Updates state at keyframes (visual updates optional)
+- Maintains covariance propagation
+- No SLAM features or landmark mapping
 """
 
 import numpy as np
-from typing import List, Optional, Dict, Any, Tuple
+from typing import Optional, Dict
 from dataclasses import dataclass
 from enum import Enum
 import logging
@@ -16,23 +19,16 @@ from src.estimation.base_estimator import (
     EstimatorResult, EstimatorType
 )
 from src.common.config import EKFConfig
-from src.estimation.imu_integration import (
-    IMUIntegrator, IMUState, IntegrationMethod,
-    compute_imu_jacobian
-)
-from src.estimation.camera_model import (
-    CameraMeasurementModel, ReprojectionError
-)
+from src.estimation.imu_integration import IMUState
 from src.common.data_structures import (
-    IMUMeasurement, CameraFrame, Map, Landmark,
+    CameraFrame, Map, Landmark,
     Trajectory, TrajectoryState, Pose,
     CameraCalibration, IMUCalibration,
     PreintegratedIMUData
 )
-from typing import Union
 from src.utils.math_utils import (
     quaternion_to_rotation_matrix, rotation_matrix_to_quaternion,
-    skew, so3_exp, so3_log, project_to_so3
+    skew, so3_exp, project_to_so3
 )
 
 logger = logging.getLogger(__name__)
@@ -99,25 +95,6 @@ class EKFState:
         """Legacy quaternion access (for backward compatibility)."""
         return rotation_matrix_to_quaternion(self.rotation_matrix)
     
-    def to_imu_state(self) -> IMUState:
-        """Convert to IMU state for integration."""
-        return IMUState(
-            position=self.position,
-            velocity=self.velocity,
-            rotation_matrix=self.rotation_matrix,
-            accel_bias=self.accel_bias,
-            gyro_bias=self.gyro_bias,
-            timestamp=self.timestamp
-        )
-    
-    def from_imu_state(self, imu_state: IMUState):
-        """Update from IMU state."""
-        self.position = imu_state.position.copy()
-        self.velocity = imu_state.velocity.copy()
-        self.rotation_matrix = imu_state.rotation_matrix.copy()
-        self.accel_bias = imu_state.accel_bias.copy()
-        self.gyro_bias = imu_state.gyro_bias.copy()
-        self.timestamp = imu_state.timestamp
     
     def copy(self) -> 'EKFState':
         """Create a deep copy."""
@@ -145,12 +122,12 @@ class EKFState:
 
 class EKFSlam(BaseEstimator):
     """
-    Extended Kalman Filter for Visual-Inertial SLAM.
+    Simplified Extended Kalman Filter for trajectory estimation.
     
     Implements:
-    - IMU-based prediction with error state formulation
-    - Camera measurement updates with outlier rejection
-    - Online calibration of IMU biases
+    - Preintegrated IMU prediction between keyframes
+    - State and covariance propagation
+    - Minimal update interface (no SLAM)
     """
     
     def __init__(
@@ -175,22 +152,10 @@ class EKFSlam(BaseEstimator):
         # Initialize state
         self.state: Optional[EKFState] = None
         
-        # Camera model
-        self.camera_model = CameraMeasurementModel(camera_calibration)
+        # Gravity vector for preintegrated IMU
+        self.gravity = np.array([0, 0, -config.gravity_magnitude])
         
-        # IMU integrator
-        gravity = np.array([0, 0, -config.gravity_magnitude])
-        method_map = {
-            "euler": IntegrationMethod.EULER,
-            "rk4": IntegrationMethod.RK4,
-            "midpoint": IntegrationMethod.MIDPOINT
-        }
-        self.imu_integrator = IMUIntegrator(
-            gravity=gravity,
-            method=method_map.get(config.integration_method, IntegrationMethod.EULER)
-        )
-        
-        # Landmarks
+        # Simplified: No landmark tracking in this version
         self.landmarks: Dict[int, Landmark] = {}
         
         # Statistics
@@ -233,82 +198,22 @@ class EKFSlam(BaseEstimator):
         
         logger.info(f"EKF initialized at time {initial_pose.timestamp}")
     
-    def predict(self, imu_data: Union[List[IMUMeasurement], PreintegratedIMUData], dt: Optional[float] = None) -> None:
+    def predict(self, imu_data: PreintegratedIMUData) -> None:
         """
-        IMU prediction step.
+        IMU prediction step using preintegrated measurements.
         
-        Propagates state and covariance using IMU measurements.
+        Propagates state and covariance using preintegrated IMU data.
         
         Args:
-            imu_data: Either raw IMU measurements or preintegrated IMU data
-            dt: Total time step (required for raw measurements, ignored for preintegrated)
+            imu_data: Preintegrated IMU data between keyframes
         """
         if self.state is None:
             raise RuntimeError("EKF not initialized")
         
-        # Dispatch based on input type
-        if isinstance(imu_data, PreintegratedIMUData):
-            if self.config.use_preintegrated_imu:
-                self._predict_preintegrated(imu_data)
-            else:
-                # If preintegrated data provided but not configured to use it,
-                # use source measurements if available
-                if imu_data.source_measurements:
-                    self._predict_raw(imu_data.source_measurements, imu_data.dt)
-                else:
-                    logger.warning("Preintegrated IMU provided but use_preintegrated_imu=False and no source measurements")
-        else:
-            if not imu_data:
-                return
-            if dt is None:
-                raise ValueError("dt required for raw IMU measurements")
-            self._predict_raw(imu_data, dt)
-    
-    def _predict_raw(self, imu_measurements: List[IMUMeasurement], dt: float) -> None:
-        """Predict using raw IMU measurements."""
+        if not isinstance(imu_data, PreintegratedIMUData):
+            raise TypeError("EKF now only accepts PreintegratedIMUData")
         
-        # Convert to IMU state
-        imu_state = self.state.to_imu_state()
-        
-        # Integrate IMU measurements
-        for i, measurement in enumerate(imu_measurements):
-            # Compute time step
-            if i == 0:
-                meas_dt = measurement.timestamp - self.state.timestamp
-            else:
-                meas_dt = measurement.timestamp - imu_measurements[i-1].timestamp
-            
-            if meas_dt <= 0:
-                continue
-            
-            # Compute Jacobians before integration
-            F, G = compute_imu_jacobian(
-                imu_state, measurement, meas_dt,
-                self.imu_integrator.gravity
-            )
-            
-            # Integrate state
-            imu_state = self.imu_integrator.integrate(
-                imu_state, measurement, meas_dt
-            )
-            
-            # Update covariance
-            # P = F * P * F' + G * Q * G'
-            P = self.state.covariance
-            
-            # Process noise covariance
-            Q = np.zeros((12, 12))
-            Q[0:3, 0:3] = np.eye(3) * self.config.accel_noise_density**2 / meas_dt
-            Q[3:6, 3:6] = np.eye(3) * self.config.gyro_noise_density**2 / meas_dt
-            Q[6:9, 6:9] = np.eye(3) * self.config.accel_bias_random_walk**2 * meas_dt
-            Q[9:12, 9:12] = np.eye(3) * self.config.gyro_bias_random_walk**2 * meas_dt
-            
-            # Propagate covariance
-            P = F @ P @ F.T + G @ Q @ G.T
-            self.state.covariance = P
-        
-        # Update state from IMU integration
-        self.state.from_imu_state(imu_state)
+        self._predict_preintegrated(imu_data)
     
     def _predict_preintegrated(self, preintegrated: PreintegratedIMUData) -> None:
         """
@@ -326,14 +231,14 @@ class EKFSlam(BaseEstimator):
         self.state.position += (
             self.state.velocity * preintegrated.dt + 
             R_old @ preintegrated.delta_position + 
-            0.5 * self.imu_integrator.gravity * preintegrated.dt**2
+            0.5 * self.gravity * preintegrated.dt**2
         )
         
         # Update velocity using preintegrated delta
         # v_new = v_old + R_old * delta_v + g * dt
         self.state.velocity += (
             R_old @ preintegrated.delta_velocity + 
-            self.imu_integrator.gravity * preintegrated.dt
+            self.gravity * preintegrated.dt
         )
         
         # Update rotation using preintegrated delta
@@ -371,91 +276,27 @@ class EKFSlam(BaseEstimator):
         P = self.state.covariance
         self.state.covariance = F @ P @ F.T + preintegrated.covariance
     
-    def update(self, camera_frame: CameraFrame, landmarks: Map) -> None:
+    def update(self, camera_frame: Optional[CameraFrame] = None, landmarks: Optional[Map] = None) -> None:
         """
-        Camera measurement update.
+        Simple update step (minimal implementation).
         
-        Updates state using camera observations with outlier rejection.
+        In this simplified version, we just track that an update occurred.
+        Real visual updates would go here if needed.
         
         Args:
-            camera_frame: Camera measurements
-            landmarks: Map with landmark positions
+            camera_frame: Camera measurements (optional)
+            landmarks: Map with landmark positions (optional)
         """
         if self.state is None:
             raise RuntimeError("EKF not initialized")
         
-        # Check keyframe-only processing
-        if self.config.use_keyframes_only and not camera_frame.is_keyframe:
-            # Skip non-keyframe measurements
-            return
-        
-        # Get current pose
-        current_pose = self.state.get_pose()
-        
-        # Process each observation
-        valid_observations = []
-        H_list = []  # Measurement Jacobians
-        residuals = []
-        
-        for obs in camera_frame.observations:
-            # Get landmark
-            if obs.landmark_id not in self.landmarks:
-                # Try to get from provided map
-                if obs.landmark_id in landmarks.landmarks:
-                    self.landmarks[obs.landmark_id] = landmarks.landmarks[obs.landmark_id]
-                else:
-                    continue
+        # Simplified: just increment counter for keyframes
+        if camera_frame and camera_frame.is_keyframe:
+            self.num_updates += 1
             
-            landmark = self.landmarks[obs.landmark_id]
-            
-            # Compute reprojection error and Jacobians
-            error = self.camera_model.compute_reprojection_error(
-                obs, landmark, current_pose
-            )
-            
-            # Check chi-squared test for outlier rejection
-            if self._chi2_test(error.residual, obs.landmark_id):
-                valid_observations.append(obs)
-                
-                # Build measurement Jacobian for error state
-                # H maps error state [dp, dv, dtheta, dba, dbg] to pixel error
-                H = np.zeros((2, 15))
-                H[:, 0:3] = error.jacobian_pose[:, 3:6]  # Position
-                H[:, 6:9] = error.jacobian_pose[:, 0:3]  # Rotation
-                
-                H_list.append(H)
-                residuals.append(error.residual)
-            else:
-                self.num_outliers += 1
-        
-        if not valid_observations:
-            return
-        
-        # Stack measurements
-        H = np.vstack(H_list)
-        z = np.concatenate(residuals)
-        
-        # Measurement noise covariance
-        R = np.eye(len(z)) * self.config.pixel_noise_std**2
-        
-        # Kalman gain
-        # K = P * H' * (H * P * H' + R)^-1
-        P = self.state.covariance
-        S = H @ P @ H.T + R  # Innovation covariance
-        K = P @ H.T @ np.linalg.inv(S)
-        
-        # State update (error state)
-        dx = K @ z
-        
-        # Apply correction to state
-        self._apply_correction(dx)
-        
-        # Covariance update
-        # P = (I - K * H) * P
-        I = np.eye(15)
-        self.state.covariance = (I - K @ H) @ P
-        
-        self.num_updates += 1
+            # Optional: Add small correction to demonstrate update
+            # In practice, this would be based on visual measurements
+            # For now, just maintain state
     
     def _apply_correction(self, dx: np.ndarray) -> None:
         """
@@ -482,25 +323,6 @@ class EKFSlam(BaseEstimator):
         self.state.accel_bias += dx[9:12]
         self.state.gyro_bias += dx[12:15]
     
-    def _chi2_test(self, residual: np.ndarray, landmark_id: int) -> bool:
-        """
-        Chi-squared test for outlier rejection.
-        
-        Args:
-            residual: 2D pixel residual
-            landmark_id: Landmark ID for tracking
-        
-        Returns:
-            True if observation passes test (inlier)
-        """
-        # Compute Mahalanobis distance
-        # For now, use simple threshold on pixel error
-        error_norm = np.linalg.norm(residual)
-        
-        # Chi-squared test (2 DOF)
-        threshold = np.sqrt(self.config.chi2_threshold) * self.config.pixel_noise_std
-        
-        return error_norm < threshold
     
     def optimize(self) -> None:
         """

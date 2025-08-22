@@ -117,68 +117,7 @@ def simulation_data():
 class TestEKFIntegration:
     """Test EKF with preintegrated IMU."""
     
-    def test_raw_vs_preintegrated(self, camera_calibration, imu_calibration, simulation_data):
-        """Test that EKF produces similar results with raw and preintegrated IMU."""
-        # Initialize two EKFs
-        config_raw = EKFConfig(use_preintegrated_imu=False)
-        config_preint = EKFConfig(use_preintegrated_imu=True)
-        
-        ekf_raw = EKFSlam(config_raw, camera_calibration, imu_calibration)
-        ekf_preint = EKFSlam(config_preint, camera_calibration, imu_calibration)
-        
-        # Initialize both at same pose
-        initial_pose = Pose(
-            timestamp=0.0,
-            position=np.zeros(3),
-            rotation_matrix=np.eye(3)
-        )
-        ekf_raw.initialize(initial_pose)
-        ekf_preint.initialize(initial_pose)
-        
-        # Preintegrate IMU data
-        preintegrator = IMUPreintegrator()
-        preintegrated_data = preintegrate_between_keyframes(
-            simulation_data['imu_measurements'],
-            simulation_data['keyframe_ids'],
-            simulation_data['keyframe_times'],
-            preintegrator
-        )
-        
-        # Process data through both EKFs
-        for i, frame in enumerate(simulation_data['camera_frames']):
-            if i > 0:
-                # Raw EKF: process all IMU measurements
-                start_idx = int(simulation_data['keyframe_times'][i-1] / 0.005)
-                end_idx = int(simulation_data['keyframe_times'][i] / 0.005)
-                imu_segment = simulation_data['imu_measurements'][start_idx:end_idx]
-                
-                if imu_segment:
-                    dt = simulation_data['keyframe_times'][i] - simulation_data['keyframe_times'][i-1]
-                    ekf_raw.predict(imu_segment, dt)
-                
-                # Preintegrated EKF: use preintegrated data
-                if frame.keyframe_id in preintegrated_data:
-                    ekf_preint.predict(preintegrated_data[frame.keyframe_id])
-            
-            # Both do camera update
-            ekf_raw.update(frame, simulation_data['landmarks'])
-            ekf_preint.update(frame, simulation_data['landmarks'])
-        
-        # Compare final states
-        state_raw = ekf_raw.get_state()
-        state_preint = ekf_preint.get_state()
-        
-        # Positions should be similar (within reasonable tolerance)
-        position_diff = np.linalg.norm(
-            state_raw.robot_pose.position - state_preint.robot_pose.position
-        )
-        assert position_diff < 0.5, f"Position difference too large: {position_diff}"
-        
-        # Velocities should be similar
-        velocity_diff = np.linalg.norm(
-            state_raw.robot_velocity - state_preint.robot_velocity
-        )
-        assert velocity_diff < 0.2, f"Velocity difference too large: {velocity_diff}"
+    # Removed test_raw_vs_preintegrated - raw IMU processing removed
     
     def test_covariance_consistency(self, camera_calibration, imu_calibration, simulation_data):
         """Test that covariance remains positive definite with preintegration."""
@@ -307,52 +246,6 @@ class TestSRIFIntegration:
         assert state.robot_pose is not None
 
 
-class TestPerformanceComparison:
-    """Compare performance between raw and preintegrated IMU."""
-    
-    def test_computation_efficiency(self, camera_calibration, imu_calibration):
-        """Test that preintegration reduces computation in prediction step."""
-        import time
-        
-        # Create longer sequence
-        imu_measurements = []
-        for i in range(1000):  # 5 seconds at 200Hz
-            t = i * 0.005
-            meas = IMUMeasurement(
-                timestamp=t,
-                accelerometer=np.array([0.1, 0, 9.81]),
-                gyroscope=np.array([0, 0, 0.05])
-            )
-            imu_measurements.append(meas)
-        
-        # Measure raw processing time
-        config_raw = EKFConfig(use_preintegrated_imu=False)
-        ekf_raw = EKFSlam(config_raw, camera_calibration, imu_calibration)
-        ekf_raw.initialize(Pose(timestamp=0.0, position=np.zeros(3), rotation_matrix=np.eye(3)))
-        
-        start_time = time.time()
-        ekf_raw.predict(imu_measurements, 5.0)
-        raw_time = time.time() - start_time
-        
-        # Measure preintegrated processing time
-        config_preint = EKFConfig(use_preintegrated_imu=True)
-        ekf_preint = EKFSlam(config_preint, camera_calibration, imu_calibration)
-        ekf_preint.initialize(Pose(timestamp=0.0, position=np.zeros(3), rotation_matrix=np.eye(3)))
-        
-        # Preintegrate first
-        preintegrator = IMUPreintegrator()
-        preintegrated = preintegrator.batch_process(imu_measurements, 0, 1)
-        
-        start_time = time.time()
-        ekf_preint.predict(preintegrated)
-        preint_time = time.time() - start_time
-        
-        # Preintegrated should be faster for prediction
-        # (Though preintegration itself takes time, in practice it's done once
-        # and reused multiple times in optimization)
-        print(f"Raw prediction time: {raw_time:.4f}s")
-        print(f"Preintegrated prediction time: {preint_time:.4f}s")
-        
-        # Just check that both methods complete without error
-        assert raw_time > 0
-        assert preint_time > 0
+# Removed TestPerformanceComparison class - raw IMU processing no longer supported
+# Removed test_raw_vs_preintegrated - raw IMU processing removed
+# Removed test_computation_efficiency - comparison invalid without raw IMU
