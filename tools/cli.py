@@ -60,9 +60,22 @@ def simulate(
         "--add-noise",
         help="Add noise to sensor measurements"
     ),
+    enable_preintegration: bool = typer.Option(
+        False,
+        "--preintegrate",
+        help="Enable IMU preintegration between keyframes"
+    ),
+    keyframe_interval: int = typer.Option(
+        10,
+        "--keyframe-interval", "-k",
+        help="Select every N-th frame as keyframe"
+    ),
 ):
     """Run simulation to generate synthetic SLAM data."""
-    exit_code = run_simulation(trajectory, config, duration, output, seed, noise_config, add_noise)
+    exit_code = run_simulation(
+        trajectory, config, duration, output, seed, noise_config, add_noise,
+        enable_preintegration, keyframe_interval
+    )
     if exit_code != 0:
         raise typer.Exit(exit_code)
 

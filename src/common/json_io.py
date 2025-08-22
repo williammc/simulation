@@ -48,7 +48,8 @@ class SimulationData:
         }
         self.measurements: Dict[str, Any] = {
             "imu": None,
-            "camera_frames": []
+            "camera_frames": [],
+            "preintegrated_imu": []
         }
     
     def set_metadata(
@@ -56,7 +57,8 @@ class SimulationData:
         trajectory_type: str = "unknown",
         duration: float = 0.0,
         coordinate_system: str = "ENU",
-        seed: Optional[int] = None
+        seed: Optional[int] = None,
+        **kwargs
     ):
         """Set simulation metadata."""
         self.metadata = {
@@ -73,6 +75,10 @@ class SimulationData:
         }
         if seed is not None:
             self.metadata["seed"] = seed
+        
+        # Add any additional metadata passed as kwargs
+        for key, value in kwargs.items():
+            self.metadata[key] = value
     
     def add_camera_calibration(self, calib: CameraCalibration):
         """Add camera calibration."""
@@ -166,9 +172,31 @@ class SimulationData:
             frame_dict = {
                 "timestamp": frame.timestamp,
                 "camera_id": frame.camera_id,
-                "observations": observations
+                "observations": observations,
+                "is_keyframe": getattr(frame, 'is_keyframe', False),
+                "keyframe_id": getattr(frame, 'keyframe_id', None)
             }
             self.measurements["camera_frames"].append(frame_dict)
+    
+    def set_preintegrated_imu(self, preintegrated_data: Dict[int, 'PreintegratedIMUData']):
+        """Add preintegrated IMU measurements."""
+        from src.common.data_structures import PreintegratedIMUData
+        
+        self.measurements["preintegrated_imu"] = []
+        for keyframe_id, data in preintegrated_data.items():
+            preint_dict = {
+                "from_keyframe_id": data.from_keyframe_id,
+                "to_keyframe_id": data.to_keyframe_id,
+                "delta_position": data.delta_position.tolist(),
+                "delta_velocity": data.delta_velocity.tolist(),
+                "delta_rotation": data.delta_rotation.tolist(),
+                "covariance": data.covariance.tolist(),
+                "dt": data.dt,
+                "num_measurements": data.num_measurements
+            }
+            if data.jacobian is not None:
+                preint_dict["jacobian"] = data.jacobian.tolist()
+            self.measurements["preintegrated_imu"].append(preint_dict)
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary matching JSON schema."""
@@ -340,7 +368,8 @@ def save_simulation_data(
     camera_data: Optional[Union[CameraData, list[CameraData]]] = None,
     camera_calibrations: Optional[list[CameraCalibration]] = None,
     imu_calibrations: Optional[list[IMUCalibration]] = None,
-    metadata: Optional[Dict[str, Any]] = None
+    metadata: Optional[Dict[str, Any]] = None,
+    preintegrated_imu_data: Optional[Dict[int, 'PreintegratedIMUData']] = None
 ) -> None:
     """
     Save simulation data to JSON file.
@@ -389,6 +418,10 @@ def save_simulation_data(
                 sim_data.add_camera_measurements(cam_data)
         else:
             sim_data.add_camera_measurements(camera_data)
+    
+    # Add preintegrated IMU data if provided
+    if preintegrated_imu_data:
+        sim_data.set_preintegrated_imu(preintegrated_imu_data)
     
     # Save to file
     sim_data.save(filepath)

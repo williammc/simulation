@@ -18,9 +18,16 @@ from src.simulation.camera_model import PinholeCamera, generate_camera_observati
 from src.simulation.imu_model import IMUModel, IMUNoiseConfig
 from src.common.data_structures import (
     CameraCalibration, CameraIntrinsics, CameraExtrinsics, CameraModel,
-    IMUCalibration, CameraData
+    IMUCalibration, CameraData, PreintegratedIMUData
 )
 from src.common.json_io import save_simulation_data
+from src.estimation.imu_integration import IMUPreintegrator
+from src.utils.preintegration_utils import (
+    preintegrate_between_keyframes,
+    create_keyframe_schedule,
+    attach_preintegrated_to_frames,
+    PreintegrationCache
+)
 import numpy as np
 
 console = Console()
@@ -34,6 +41,8 @@ def run_simulation(
     seed: Optional[int],
     noise_config: Optional[Path] = None,
     add_noise: bool = False,
+    enable_preintegration: bool = False,
+    keyframe_interval: int = 10,
 ) -> int:
     """
     Run simulation to generate synthetic SLAM data.
@@ -239,6 +248,60 @@ def run_simulation(
             else:
                 imu_data = imu_model.generate_perfect_measurements(traj)
             
+            # Generate preintegrated IMU data if enabled
+            preintegrated_imu_data = None
+            if enable_preintegration:
+                progress.update(task, description="Preintegrating IMU measurements...")
+                
+                # Create keyframe schedule based on camera frames
+                keyframe_schedule = create_keyframe_schedule(
+                    [frame.timestamp for frame in camera_data.frames],
+                    interval=keyframe_interval,
+                    min_time_gap=0.1
+                )
+                
+                # Mark keyframes in camera data
+                for frame in camera_data.frames:
+                    for kf_id, kf_time in keyframe_schedule:
+                        if abs(frame.timestamp - kf_time) < 1e-6:
+                            frame.is_keyframe = True
+                            frame.keyframe_id = kf_id
+                            break
+                
+                # Preintegrate IMU between keyframes
+                if len(keyframe_schedule) >= 2:
+                    keyframe_ids = [kf[0] for kf in keyframe_schedule]
+                    keyframe_times = [kf[1] for kf in keyframe_schedule]
+                    
+                    # Create preintegrator with IMU calibration parameters
+                    preintegrator = IMUPreintegrator(
+                        accel_noise_density=imu_calib.accelerometer_noise_density,
+                        gyro_noise_density=imu_calib.gyroscope_noise_density,
+                        accel_random_walk=imu_calib.accelerometer_random_walk,
+                        gyro_random_walk=imu_calib.gyroscope_random_walk,
+                        gravity=np.array([0, 0, -imu_calib.gravity_magnitude])
+                    )
+                    
+                    # Create cache for efficiency
+                    cache = PreintegrationCache()
+                    
+                    # Preintegrate between keyframes
+                    preintegrated_imu_data = preintegrate_between_keyframes(
+                        imu_data.measurements,
+                        keyframe_ids,
+                        keyframe_times,
+                        preintegrator,
+                        cache
+                    )
+                    
+                    # Attach preintegrated data to camera frames
+                    attach_preintegrated_to_frames(
+                        camera_data.frames,
+                        preintegrated_imu_data
+                    )
+                    
+                    console.print(f"  [green]✓[/green] Preintegrated IMU between {len(keyframe_schedule)} keyframes")
+            
             progress.update(task, description="Saving data...")
             
             # Generate output file
@@ -250,7 +313,10 @@ def run_simulation(
                 "trajectory_type": trajectory,
                 "duration": duration,
                 "coordinate_system": "ENU",
-                "seed": seed
+                "seed": seed,
+                "preintegration_enabled": enable_preintegration,
+                "keyframe_interval": keyframe_interval if enable_preintegration else None,
+                "num_keyframes": len(keyframe_schedule) if enable_preintegration and 'keyframe_schedule' in locals() else None
             }
             
             save_simulation_data(
@@ -261,7 +327,8 @@ def run_simulation(
                 camera_data=camera_data,
                 camera_calibrations=[camera_calib],
                 imu_calibrations=[imu_calib],
-                metadata=metadata
+                metadata=metadata,
+                preintegrated_imu_data=preintegrated_imu_data
             )
             
         except Exception as e:
