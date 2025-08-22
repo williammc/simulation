@@ -225,12 +225,26 @@ def plot_measurements_with_keyframes(
     if hasattr(data, 'camera_calibrations') and data.camera_calibrations:
         camera_calib = list(data.camera_calibrations.values())[0]
     
-    # Select keyframes
+    # Select keyframes - prefer actual keyframes if available
     n_frames = len(data.camera_measurements)
-    if max_keyframes and n_frames > max_keyframes:
-        keyframe_indices = np.linspace(0, n_frames - 1, max_keyframes).astype(int)
+    actual_keyframe_indices = []
+    for i, frame in enumerate(data.camera_measurements):
+        if hasattr(frame, 'is_keyframe') and frame.is_keyframe:
+            actual_keyframe_indices.append(i)
+    
+    if actual_keyframe_indices:
+        # Use actual keyframes
+        keyframe_indices = actual_keyframe_indices
+        if max_keyframes and len(keyframe_indices) > max_keyframes:
+            # Subsample keyframes if too many
+            step = len(keyframe_indices) // max_keyframes
+            keyframe_indices = keyframe_indices[::step][:max_keyframes]
     else:
-        keyframe_indices = range(n_frames)
+        # Fall back to uniform sampling
+        if max_keyframes and n_frames > max_keyframes:
+            keyframe_indices = np.linspace(0, n_frames - 1, max_keyframes).astype(int)
+        else:
+            keyframe_indices = range(n_frames)
     
     # Create figure
     fig = go.Figure()
@@ -771,3 +785,171 @@ def compute_trajectory_length(trajectory: Trajectory) -> float:
         curr_pos = trajectory.states[i].pose.position
         length += np.linalg.norm(curr_pos - prev_pos)
     return length
+
+
+def plot_keyframe_statistics(
+    data: SimulationData,
+    title: str = "Keyframe Selection Statistics"
+) -> go.Figure:
+    """
+    Create visualization of keyframe selection statistics.
+    
+    Args:
+        data: Simulation data with camera measurements
+        title: Plot title
+    
+    Returns:
+        Plotly figure with keyframe statistics
+    """
+    if not hasattr(data, 'camera_measurements') or not data.camera_measurements:
+        return go.Figure().add_annotation(text="No camera measurements available")
+    
+    # Extract keyframe information
+    timestamps = []
+    is_keyframe = []
+    keyframe_ids = []
+    
+    for frame in data.camera_measurements:
+        timestamps.append(frame.timestamp)
+        is_kf = hasattr(frame, 'is_keyframe') and frame.is_keyframe
+        is_keyframe.append(is_kf)
+        if is_kf and hasattr(frame, 'keyframe_id'):
+            keyframe_ids.append(frame.keyframe_id)
+        else:
+            keyframe_ids.append(None)
+    
+    # Find keyframe positions
+    keyframe_timestamps = [t for t, kf in zip(timestamps, is_keyframe) if kf]
+    keyframe_indices = [i for i, kf in enumerate(is_keyframe) if kf]
+    
+    # Compute statistics
+    num_frames = len(timestamps)
+    num_keyframes = len(keyframe_timestamps)
+    
+    # Create subplots
+    from plotly.subplots import make_subplots
+    fig = make_subplots(
+        rows=2, cols=2,
+        subplot_titles=(
+            'Frame Timeline with Keyframes',
+            'Keyframe Intervals',
+            'Keyframe Distribution',
+            'Statistics Summary'
+        ),
+        specs=[
+            [{'type': 'scatter'}, {'type': 'histogram'}],
+            [{'type': 'scatter'}, {'type': 'table'}]
+        ]
+    )
+    
+    # 1. Timeline plot
+    fig.add_trace(
+        go.Scatter(
+            x=timestamps,
+            y=[1 if kf else 0 for kf in is_keyframe],
+            mode='markers+lines',
+            name='Frames',
+            marker=dict(
+                size=[10 if kf else 4 for kf in is_keyframe],
+                color=['red' if kf else 'blue' for kf in is_keyframe],
+                symbol=['diamond' if kf else 'circle' for kf in is_keyframe]
+            ),
+            line=dict(color='lightgray', width=1),
+            hovertemplate='Time: %{x:.2f}s<br>Keyframe: %{text}<extra></extra>',
+            text=['Yes' if kf else 'No' for kf in is_keyframe]
+        ),
+        row=1, col=1
+    )
+    
+    # 2. Keyframe interval histogram
+    if len(keyframe_timestamps) > 1:
+        intervals = np.diff(keyframe_timestamps)
+        fig.add_trace(
+            go.Histogram(
+                x=intervals,
+                name='Time Intervals',
+                nbinsx=20,
+                marker=dict(color='green'),
+                hovertemplate='Interval: %{x:.2f}s<br>Count: %{y}<extra></extra>'
+            ),
+            row=1, col=2
+        )
+    
+    # 3. Keyframe position distribution
+    if keyframe_indices:
+        # Compute motion between keyframes if trajectory available
+        if hasattr(data, 'ground_truth_trajectory'):
+            traj = data.ground_truth_trajectory
+            keyframe_motions = []
+            for i in range(1, len(keyframe_indices)):
+                idx1, idx2 = keyframe_indices[i-1], keyframe_indices[i]
+                # Map frame indices to trajectory indices
+                if idx1 < len(traj.states) and idx2 < len(traj.states):
+                    pos1 = traj.states[idx1].pose.position
+                    pos2 = traj.states[idx2].pose.position
+                    motion = np.linalg.norm(pos2 - pos1)
+                    keyframe_motions.append(motion)
+            
+            if keyframe_motions:
+                fig.add_trace(
+                    go.Scatter(
+                        x=keyframe_timestamps[1:],
+                        y=keyframe_motions,
+                        mode='markers+lines',
+                        name='Motion between keyframes',
+                        marker=dict(size=8, color='purple'),
+                        line=dict(color='purple', width=2),
+                        hovertemplate='Time: %{x:.2f}s<br>Motion: %{y:.3f}m<extra></extra>'
+                    ),
+                    row=2, col=1
+                )
+    
+    # 4. Statistics table
+    stats_data = []
+    stats_data.append(['Total Frames', str(num_frames)])
+    stats_data.append(['Total Keyframes', str(num_keyframes)])
+    stats_data.append(['Keyframe Ratio', f'{num_keyframes/num_frames*100:.1f}%'])
+    
+    if len(keyframe_timestamps) > 1:
+        intervals = np.diff(keyframe_timestamps)
+        stats_data.append(['Mean Interval', f'{np.mean(intervals):.3f}s'])
+        stats_data.append(['Std Interval', f'{np.std(intervals):.3f}s'])
+        stats_data.append(['Min Interval', f'{np.min(intervals):.3f}s'])
+        stats_data.append(['Max Interval', f'{np.max(intervals):.3f}s'])
+    
+    if 'keyframe_motions' in locals() and keyframe_motions:
+        stats_data.append(['Mean Motion', f'{np.mean(keyframe_motions):.3f}m'])
+        stats_data.append(['Std Motion', f'{np.std(keyframe_motions):.3f}m'])
+    
+    # Get strategy from metadata if available
+    if hasattr(data, 'metadata') and 'keyframe_selection_strategy' in data.metadata:
+        stats_data.append(['Strategy', data.metadata['keyframe_selection_strategy']])
+    
+    fig.add_trace(
+        go.Table(
+            cells=dict(
+                values=list(zip(*stats_data)),
+                align='left',
+                font=dict(size=12),
+                height=30
+            )
+        ),
+        row=2, col=2
+    )
+    
+    # Update layout
+    fig.update_xaxes(title_text="Time (s)", row=1, col=1)
+    fig.update_yaxes(title_text="Is Keyframe", row=1, col=1)
+    fig.update_xaxes(title_text="Interval (s)", row=1, col=2)
+    fig.update_yaxes(title_text="Count", row=1, col=2)
+    fig.update_xaxes(title_text="Time (s)", row=2, col=1)
+    fig.update_yaxes(title_text="Motion (m)", row=2, col=1)
+    
+    fig.update_layout(
+        title=title,
+        height=800,
+        showlegend=False,
+        hovermode='closest'
+    )
+    
+    return fig

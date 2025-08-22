@@ -65,16 +65,35 @@ def simulate(
         "--preintegrate",
         help="Enable IMU preintegration between keyframes"
     ),
+    keyframe_strategy: str = typer.Option(
+        "fixed_interval",
+        "--keyframe-strategy", "-ks",
+        help="Keyframe selection strategy: fixed_interval, motion_based, hybrid"
+    ),
     keyframe_interval: int = typer.Option(
         10,
-        "--keyframe-interval", "-k",
-        help="Select every N-th frame as keyframe"
+        "--keyframe-interval", "-ki",
+        help="Interval for fixed keyframe selection"
     ),
 ):
     """Run simulation to generate synthetic SLAM data."""
+    from src.common.config import KeyframeSelectionConfig, KeyframeSelectionStrategy
+    
+    # Create keyframe config
+    try:
+        strategy = KeyframeSelectionStrategy(keyframe_strategy)
+    except ValueError:
+        console.print(f"[red]Invalid keyframe strategy: {keyframe_strategy}[/red]")
+        raise typer.Exit(1)
+    
+    keyframe_config = KeyframeSelectionConfig(
+        strategy=strategy,
+        fixed_interval=keyframe_interval
+    )
+    
     exit_code = run_simulation(
         trajectory, config, duration, output, seed, noise_config, add_noise,
-        enable_preintegration, keyframe_interval
+        enable_preintegration, keyframe_config
     )
     if exit_code != 0:
         raise typer.Exit(exit_code)

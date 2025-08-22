@@ -50,6 +50,13 @@ class CoordinateSystem(str, Enum):
     FRD = "FRD"  # Forward-Right-Down
 
 
+class KeyframeSelectionStrategy(str, Enum):
+    """Keyframe selection strategies."""
+    FIXED_INTERVAL = "fixed_interval"
+    MOTION_BASED = "motion_based"
+    HYBRID = "hybrid"
+
+
 class IMUNoiseParams(BaseModel):
     """IMU noise parameters."""
     accelerometer_noise_density: float = Field(
@@ -177,6 +184,64 @@ class IMUConfig(BaseModel):
         return self
 
 
+class KeyframeSelectionConfig(BaseModel):
+    """Configuration for keyframe selection strategies."""
+    
+    strategy: KeyframeSelectionStrategy = Field(
+        default=KeyframeSelectionStrategy.FIXED_INTERVAL,
+        description="Keyframe selection strategy"
+    )
+    
+    # Fixed interval parameters
+    fixed_interval: int = Field(
+        default=10,
+        ge=1,
+        description="Select every N-th frame as keyframe"
+    )
+    min_time_gap: float = Field(
+        default=0.1,
+        gt=0,
+        description="Minimum time gap between keyframes (seconds)"
+    )
+    
+    # Motion-based parameters
+    translation_threshold: float = Field(
+        default=0.5,
+        gt=0,
+        description="Translation threshold for keyframe selection (meters)"
+    )
+    rotation_threshold: float = Field(
+        default=0.3,
+        gt=0,
+        description="Rotation threshold for keyframe selection (radians)"
+    )
+    
+    # Hybrid parameters
+    max_interval: int = Field(
+        default=20,
+        ge=1,
+        description="Maximum frames between keyframes in hybrid mode"
+    )
+    force_keyframe_on_motion: bool = Field(
+        default=True,
+        description="Force keyframe when motion thresholds are exceeded"
+    )
+    
+    @model_validator(mode='after')
+    def validate_strategy_params(self):
+        """Validate parameters based on selected strategy."""
+        if self.strategy == KeyframeSelectionStrategy.FIXED_INTERVAL:
+            if self.fixed_interval <= 0:
+                raise ValueError("fixed_interval must be positive")
+        elif self.strategy == KeyframeSelectionStrategy.MOTION_BASED:
+            if self.translation_threshold <= 0 and self.rotation_threshold <= 0:
+                raise ValueError("At least one motion threshold must be positive")
+        elif self.strategy == KeyframeSelectionStrategy.HYBRID:
+            if self.max_interval < self.fixed_interval:
+                raise ValueError("max_interval must be >= fixed_interval")
+        return self
+
+
 class TrajectoryConfig(BaseModel):
     """Trajectory generation configuration."""
     type: TrajectoryType = Field(
@@ -261,15 +326,11 @@ class SimulationConfig(BaseModel):
         default=False,
         description="Enable IMU preintegration between keyframes"
     )
-    keyframe_interval: int = Field(
-        default=10,
-        ge=1,
-        description="Select every N-th frame as keyframe"
-    )
-    min_keyframe_time_gap: float = Field(
-        default=0.1,
-        gt=0,
-        description="Minimum time gap between keyframes (seconds)"
+    
+    # Keyframe selection configuration
+    keyframe_selection: KeyframeSelectionConfig = Field(
+        default_factory=KeyframeSelectionConfig,
+        description="Keyframe selection configuration"
     )
     
     @model_validator(mode='after')
@@ -308,6 +369,12 @@ class SWBAConfig(BaseEstimatorConfig):
     estimator_type: EstimatorType = Field(
         default=EstimatorType.SWBA,
         description="Type of estimator"
+    )
+    
+    # Keyframe-only processing
+    use_keyframes_only: bool = Field(
+        True,  # SWBA typically uses keyframes only
+        description="Process only keyframes (ignore non-keyframe measurements)"
     )
     
     # Window parameters
@@ -358,6 +425,12 @@ class EKFConfig(BaseEstimatorConfig):
     # Preintegrated IMU support
     use_preintegrated_imu: bool = Field(False, description="Use preintegrated IMU measurements")
     
+    # Keyframe-only processing
+    use_keyframes_only: bool = Field(
+        False,
+        description="Process only keyframes (ignore non-keyframe measurements)"
+    )
+    
     # EKF-specific outlier rejection
     innovation_threshold: float = Field(
         3.0,
@@ -395,6 +468,12 @@ class SRIFConfig(BaseEstimatorConfig):
     
     # Preintegrated IMU support
     use_preintegrated_imu: bool = Field(False, description="Use preintegrated IMU measurements")
+    
+    # Keyframe-only processing
+    use_keyframes_only: bool = Field(
+        False,
+        description="Process only keyframes (ignore non-keyframe measurements)"
+    )
     
     # Numerical parameters
     qr_threshold: float = Field(

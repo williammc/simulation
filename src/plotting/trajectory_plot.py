@@ -448,3 +448,167 @@ def plot_trajectory_components(
     )
     
     return fig
+
+
+def plot_trajectory_with_keyframes(
+    trajectory: Trajectory,
+    keyframe_indices: List[int],
+    title: str = "Trajectory with Keyframes",
+    show_orientation: bool = True,
+    orientation_scale: float = 0.5,
+    show_grid: bool = True,
+    show_axes: bool = True
+) -> go.Figure:
+    """
+    Create 3D trajectory plot with keyframes highlighted.
+    
+    Args:
+        trajectory: Trajectory to plot
+        keyframe_indices: Indices of keyframes in trajectory
+        title: Plot title
+        show_orientation: Whether to show orientation arrows
+        orientation_scale: Scale factor for orientation arrows
+        show_grid: Whether to show grid
+        show_axes: Whether to show axes
+    
+    Returns:
+        Plotly figure object with keyframes highlighted
+    """
+    # Extract positions
+    if len(trajectory.states) > 0:
+        positions = np.array([state.pose.position for state in trajectory.states])
+        timestamps = [state.pose.timestamp for state in trajectory.states]
+    else:
+        positions = np.array([[0, 0, 0]])
+        timestamps = [0.0]
+    
+    # Separate keyframe and non-keyframe positions
+    keyframe_mask = np.zeros(len(positions), dtype=bool)
+    for idx in keyframe_indices:
+        if 0 <= idx < len(positions):
+            keyframe_mask[idx] = True
+    
+    keyframe_positions = positions[keyframe_mask]
+    keyframe_times = [timestamps[i] for i in range(len(timestamps)) if keyframe_mask[i]]
+    
+    # Create figure
+    fig = go.Figure()
+    
+    # Add full trajectory line
+    fig.add_trace(go.Scatter3d(
+        x=positions[:, 0],
+        y=positions[:, 1],
+        z=positions[:, 2],
+        mode='lines',
+        name='Trajectory',
+        line=dict(
+            color='lightblue',
+            width=2
+        ),
+        hovertemplate=(
+            '<b>Trajectory</b><br>' +
+            'Time: %{text}<br>' +
+            'X: %{x:.3f}<br>' +
+            'Y: %{y:.3f}<br>' +
+            'Z: %{z:.3f}<br>' +
+            '<extra></extra>'
+        ),
+        text=[f'{t:.2f}s' for t in timestamps]
+    ))
+    
+    # Add keyframe markers
+    if len(keyframe_positions) > 0:
+        fig.add_trace(go.Scatter3d(
+            x=keyframe_positions[:, 0],
+            y=keyframe_positions[:, 1],
+            z=keyframe_positions[:, 2],
+            mode='markers',
+            name=f'Keyframes ({len(keyframe_positions)})',
+            marker=dict(
+                size=8,
+                color='red',
+                symbol='diamond',
+                line=dict(color='darkred', width=1)
+            ),
+            hovertemplate=(
+                '<b>Keyframe</b><br>' +
+                'Time: %{text}<br>' +
+                'X: %{x:.3f}<br>' +
+                'Y: %{y:.3f}<br>' +
+                'Z: %{z:.3f}<br>' +
+                '<extra></extra>'
+            ),
+            text=[f'{t:.2f}s' for t in keyframe_times]
+        ))
+    
+    # Add orientation arrows if requested
+    if show_orientation and len(keyframe_positions) > 0:
+        arrow_traces = []
+        for i, idx in enumerate(keyframe_indices):
+            if 0 <= idx < len(trajectory.states):
+                state = trajectory.states[idx]
+                pos = state.pose.position
+                R = state.pose.rotation_matrix
+                
+                # Create arrow for forward direction (x-axis)
+                direction = R[:, 0] * orientation_scale
+                arrow_traces.append(go.Cone(
+                    x=[pos[0] + direction[0]/2],
+                    y=[pos[1] + direction[1]/2],
+                    z=[pos[2] + direction[2]/2],
+                    u=[direction[0]],
+                    v=[direction[1]],
+                    w=[direction[2]],
+                    sizemode='absolute',
+                    sizeref=orientation_scale/2,
+                    showscale=False,
+                    colorscale=[[0, 'red'], [1, 'red']],
+                    name='Keyframe Orientation',
+                    showlegend=i == 0  # Only show legend for first arrow
+                ))
+        
+        for trace in arrow_traces:
+            fig.add_trace(trace)
+    
+    # Update layout
+    fig.update_layout(
+        title=title,
+        scene=dict(
+            xaxis=dict(
+                title='X (m)',
+                showgrid=show_grid,
+                showbackground=True,
+                backgroundcolor='rgba(230, 230, 230, 0.5)',
+                visible=show_axes
+            ),
+            yaxis=dict(
+                title='Y (m)',
+                showgrid=show_grid,
+                showbackground=True,
+                backgroundcolor='rgba(230, 230, 230, 0.5)',
+                visible=show_axes
+            ),
+            zaxis=dict(
+                title='Z (m)',
+                showgrid=show_grid,
+                showbackground=True,
+                backgroundcolor='rgba(230, 230, 230, 0.5)',
+                visible=show_axes
+            ),
+            aspectmode='data',
+            camera=dict(
+                eye=dict(x=1.5, y=1.5, z=1.5)
+            )
+        ),
+        showlegend=True,
+        legend=dict(
+            x=0.02,
+            y=0.98,
+            bgcolor='rgba(255, 255, 255, 0.8)',
+            bordercolor='gray',
+            borderwidth=1
+        ),
+        hovermode='closest'
+    )
+    
+    return fig

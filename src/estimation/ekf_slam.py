@@ -384,6 +384,11 @@ class EKFSlam(BaseEstimator):
         if self.state is None:
             raise RuntimeError("EKF not initialized")
         
+        # Check keyframe-only processing
+        if self.config.use_keyframes_only and not camera_frame.is_keyframe:
+            # Skip non-keyframe measurements
+            return
+        
         # Get current pose
         current_pose = self.state.get_pose()
         

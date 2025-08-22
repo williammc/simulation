@@ -24,10 +24,11 @@ from src.common.json_io import save_simulation_data
 from src.estimation.imu_integration import IMUPreintegrator
 from src.utils.preintegration_utils import (
     preintegrate_between_keyframes,
-    create_keyframe_schedule,
     attach_preintegrated_to_frames,
     PreintegrationCache
 )
+from src.simulation.keyframe_selector import mark_keyframes_in_camera_data
+from src.common.config import KeyframeSelectionConfig
 import numpy as np
 
 console = Console()
@@ -42,7 +43,7 @@ def run_simulation(
     noise_config: Optional[Path] = None,
     add_noise: bool = False,
     enable_preintegration: bool = False,
-    keyframe_interval: int = 10,
+    keyframe_config: Optional[KeyframeSelectionConfig] = None,
 ) -> int:
     """
     Run simulation to generate synthetic SLAM data.
@@ -248,25 +249,45 @@ def run_simulation(
             else:
                 imu_data = imu_model.generate_perfect_measurements(traj)
             
+            # Mark keyframes using selection strategy
+            progress.update(task, description="Selecting keyframes...")
+            
+            # Use provided config or create default
+            if keyframe_config is None:
+                keyframe_config = KeyframeSelectionConfig()
+            
+            # Get poses for each camera frame
+            frame_poses = []
+            for frame in camera_data.frames:
+                pose = traj.get_pose_at_time(frame.timestamp)
+                if pose is not None:
+                    frame_poses.append(pose)
+                else:
+                    # Use interpolation if exact pose not available
+                    frame_poses.append(traj.get_pose_at_time(frame.timestamp))
+            
+            # Mark keyframes based on selection strategy
+            mark_keyframes_in_camera_data(
+                camera_data.frames,
+                frame_poses,
+                keyframe_config
+            )
+            
+            # Count keyframes
+            keyframe_count = sum(1 for f in camera_data.frames if f.is_keyframe)
+            console.print(f"  [green]✓[/green] Selected {keyframe_count} keyframes using {keyframe_config.strategy.value} strategy")
+            
             # Generate preintegrated IMU data if enabled
             preintegrated_imu_data = None
             if enable_preintegration:
                 progress.update(task, description="Preintegrating IMU measurements...")
                 
-                # Create keyframe schedule based on camera frames
-                keyframe_schedule = create_keyframe_schedule(
-                    [frame.timestamp for frame in camera_data.frames],
-                    interval=keyframe_interval,
-                    min_time_gap=0.1
-                )
-                
-                # Mark keyframes in camera data
-                for frame in camera_data.frames:
-                    for kf_id, kf_time in keyframe_schedule:
-                        if abs(frame.timestamp - kf_time) < 1e-6:
-                            frame.is_keyframe = True
-                            frame.keyframe_id = kf_id
-                            break
+                # Get keyframe schedule from marked frames
+                keyframe_schedule = [
+                    (f.keyframe_id, f.timestamp) 
+                    for f in camera_data.frames 
+                    if f.is_keyframe
+                ]
                 
                 # Preintegrate IMU between keyframes
                 if len(keyframe_schedule) >= 2:
@@ -315,8 +336,8 @@ def run_simulation(
                 "coordinate_system": "ENU",
                 "seed": seed,
                 "preintegration_enabled": enable_preintegration,
-                "keyframe_interval": keyframe_interval if enable_preintegration else None,
-                "num_keyframes": len(keyframe_schedule) if enable_preintegration and 'keyframe_schedule' in locals() else None
+                "keyframe_selection_strategy": keyframe_config.strategy.value if keyframe_config else None,
+                "num_keyframes": keyframe_count if 'keyframe_count' in locals() else 0
             }
             
             save_simulation_data(

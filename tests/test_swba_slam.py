@@ -172,6 +172,7 @@ class TestSlidingWindowBA:
             camera_id="cam0",
             observations=[]
         )
+        frame1.is_keyframe = False  # Not a keyframe
         swba.update(frame1, landmarks)
         assert len(swba.keyframes) == 1
         
@@ -185,6 +186,8 @@ class TestSlidingWindowBA:
             camera_id="cam0",
             observations=[]
         )
+        frame2.is_keyframe = True  # Mark as keyframe
+        frame2.keyframe_id = 1
         swba.update(frame2, landmarks)
     
     def test_keyframe_creation_translation_threshold(self, camera_calibration):
@@ -272,6 +275,9 @@ class TestSlidingWindowBA:
             camera_id="cam0",
             observations=observations
         )
+        # Mark as keyframe since SWBA has use_keyframes_only=True by default
+        frame.is_keyframe = True
+        frame.keyframe_id = 0
         
         # Update (will create keyframe and optimize)
         swba.current_state.position = np.array([1, 0, 0])  # Move to trigger keyframe
@@ -309,6 +315,8 @@ class TestSlidingWindowBA:
                 camera_id="cam0",
                 observations=[]
             )
+            frame.is_keyframe = True  # Mark as keyframe
+            frame.keyframe_id = i
             swba._create_keyframe(frame, map_data)
         
         # Should maintain window size
@@ -550,6 +558,9 @@ class TestSWBAIntegration:
                         camera_id="cam0",
                         observations=observations
                     )
+                    # Mark as keyframe since SWBA has use_keyframes_only=True by default
+                    frame.is_keyframe = True
+                    frame.keyframe_id = i // 2
                     swba.update(frame, gt_map)
         
         # Get result

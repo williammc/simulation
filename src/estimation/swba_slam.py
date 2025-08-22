@@ -323,9 +323,17 @@ class SlidingWindowBA(BaseEstimator):
             logger.warning("SWBA not initialized, skipping update")
             return
         
-        # Check if we should create a new keyframe
-        if self._should_create_keyframe(camera_frame.timestamp):
+        # Check keyframe-only processing
+        if self.config.use_keyframes_only:
+            # Only process frames marked as keyframes
+            if not camera_frame.is_keyframe:
+                return
+            # Create keyframe directly since it's already marked
             self._create_keyframe(camera_frame, landmarks)
+        else:
+            # Use internal keyframe selection logic
+            if self._should_create_keyframe(camera_frame.timestamp):
+                self._create_keyframe(camera_frame, landmarks)
         
         # Run optimization if we have enough keyframes
         if len(self.keyframes) >= 2:

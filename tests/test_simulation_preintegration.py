@@ -17,6 +17,13 @@ def test_simulation_with_preintegration():
         output_dir = Path(tmpdir)
         
         # Run simulation with preintegration enabled
+        from src.common.config import KeyframeSelectionConfig, KeyframeSelectionStrategy
+        
+        keyframe_config = KeyframeSelectionConfig(
+            strategy=KeyframeSelectionStrategy.FIXED_INTERVAL,
+            fixed_interval=5
+        )
+        
         exit_code = run_simulation(
             trajectory="circle",
             config=None,
@@ -26,7 +33,7 @@ def test_simulation_with_preintegration():
             noise_config=None,
             add_noise=False,
             enable_preintegration=True,
-            keyframe_interval=5
+            keyframe_config=keyframe_config
         )
         
         assert exit_code == 0, "Simulation should succeed"
@@ -41,7 +48,7 @@ def test_simulation_with_preintegration():
         
         # Check metadata
         assert data["metadata"]["preintegration_enabled"] == True
-        assert data["metadata"]["keyframe_interval"] == 5
+        assert data["metadata"]["keyframe_selection_strategy"] == "fixed_interval"
         assert data["metadata"]["num_keyframes"] is not None
         assert data["metadata"]["num_keyframes"] > 0
         
@@ -88,7 +95,7 @@ def test_simulation_without_preintegration():
             noise_config=None,
             add_noise=False,
             enable_preintegration=False,
-            keyframe_interval=10
+            keyframe_config=None  # Use default config
         )
         
         assert exit_code == 0, "Simulation should succeed"
@@ -103,7 +110,8 @@ def test_simulation_without_preintegration():
         
         # Check metadata
         assert data["metadata"]["preintegration_enabled"] == False
-        assert data["metadata"]["num_keyframes"] is None
+        # Keyframes are still selected even without preintegration
+        assert data["metadata"]["num_keyframes"] >= 0
         
         # Preintegrated IMU should be empty or not present
         if "preintegrated_imu" in data["measurements"]:
@@ -117,6 +125,13 @@ def test_preintegration_consistency():
         output_dir = Path(tmpdir)
         
         # Run twice with same seed
+        from src.common.config import KeyframeSelectionConfig, KeyframeSelectionStrategy
+        
+        keyframe_config = KeyframeSelectionConfig(
+            strategy=KeyframeSelectionStrategy.FIXED_INTERVAL,
+            fixed_interval=3
+        )
+        
         for i in range(2):
             exit_code = run_simulation(
                 trajectory="figure8",
@@ -127,7 +142,7 @@ def test_preintegration_consistency():
                 noise_config=None,
                 add_noise=False,
                 enable_preintegration=True,
-                keyframe_interval=3
+                keyframe_config=keyframe_config
             )
             assert exit_code == 0
         

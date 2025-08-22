@@ -396,6 +396,11 @@ class SRIFSlam(BaseEstimator):
             logger.warning("SRIF not initialized, skipping update")
             return
         
+        # Check keyframe-only processing
+        if self.config.use_keyframes_only and not camera_frame.is_keyframe:
+            # Skip non-keyframe measurements
+            return
+        
         # Process each observation
         for obs in camera_frame.observations:
             if obs.landmark_id not in landmarks.landmarks:
