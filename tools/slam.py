@@ -3,11 +3,9 @@ SLAM estimator command implementation.
 Runs EKF, SWBA, or SRIF estimators on simulation data.
 """
 
-import json
 import yaml
 import time
 from pathlib import Path
-from datetime import datetime
 from typing import Optional
 import tracemalloc
 
@@ -219,40 +217,45 @@ def run_slam(
     
     console.print(f"\n[green]✓ Estimation complete[/green] ({runtime:.2f}s, {peak_mem / 1024 / 1024:.1f} MB)")
     
-    # Get estimated trajectory
+    # Get estimated result
     try:
         result = estimator_instance.get_result()
-        estimated_trajectory = result.trajectory
-        estimated_landmarks = result.landmarks
     except Exception as e:
         console.print(f"[red]✗ Error getting results: {e}[/red]")
         return None
     
+    # Update result with runtime
+    result.runtime_ms = runtime * 1000
     
-    # Save results
+    # Save results using EstimatorResultStorage
+    from src.estimation.result_io import EstimatorResultStorage
+    
     output_dir = output or Path("output/slam")
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_file = output_dir / f"{estimator_lower}_{timestamp}.json"
+    # Get the estimator config (this is the actual config used by the estimator)
+    estimator_config = estimator_instance.config
     
-    # Create output data
-    output_data = {
-        "metadata": {
-            "estimator": estimator_lower,
-            "input_file": str(input_data),
-            "timestamp": timestamp,
-            "runtime_seconds": runtime,
-            "peak_memory_mb": peak_mem / 1024 / 1024
-        },
-        "estimated_trajectory": estimated_trajectory.to_dict() if hasattr(estimated_trajectory, 'to_dict') else {},
-        "estimated_landmarks": estimated_landmarks.to_dict() if hasattr(estimated_landmarks, 'to_dict') else {}
+    # Add simulation metadata
+    simulation_metadata = {
+        "input_file": str(input_data),
+        "trajectory_type": sim_data.get("metadata", {}).get("trajectory_type", "unknown") if isinstance(sim_data, dict) else "unknown",
+        "duration": sim_data.get("metadata", {}).get("duration", 0) if isinstance(sim_data, dict) else 0,
+        "peak_memory_mb": peak_mem / 1024 / 1024
     }
     
-    # Save to file
-    with open(output_file, 'w') as f:
-        json.dump(output_data, f, indent=2, default=str)
-    
-    console.print(f"\n[green]✓ Results saved to:[/green] {output_file}")
-    
-    return output_file
+    # Save using EstimatorResultStorage
+    try:
+        output_file = EstimatorResultStorage.save_result(
+            result=result,
+            config=estimator_config,
+            output_path=output_dir,
+            simulation_metadata=simulation_metadata
+        )
+        console.print(f"\n[green]✓ Results saved to:[/green] {output_file}")
+        return output_file
+    except Exception as e:
+        console.print(f"[red]✗ Error saving results: {e}[/red]")
+        import traceback
+        traceback.print_exc()
+        return None

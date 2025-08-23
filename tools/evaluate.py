@@ -3,11 +3,11 @@ Evaluate SLAM results against ground truth.
 Computes metrics like ATE, RPE, and consistency.
 """
 
-import json
 from pathlib import Path
 from typing import Optional
 from rich.console import Console
 from rich.table import Table
+import json
 
 console = Console()
 
@@ -30,48 +30,36 @@ def run_evaluate(
     Returns:
         Path to metrics file if successful, None if error
     """
+    from src.estimation.result_io import EstimatorResultStorage
     from src.common.json_io import load_simulation_data
-    from src.common.data_structures import Trajectory
     from src.evaluation.metrics import compute_ate, compute_rpe
     
-    # Load SLAM results
+    # Load SLAM results using EstimatorResultStorage
     if not result_file.exists():
         console.print(f"[red]✗ Error: Result file not found: {result_file}[/red]")
         return None
     
-    with open(result_file, 'r') as f:
-        slam_result = json.load(f)
-    
-    # Extract estimated trajectory
-    if 'estimated_trajectory' not in slam_result:
-        console.print("[red]✗ Error: No estimated trajectory in result file[/red]")
+    try:
+        result_data = EstimatorResultStorage.load_result(result_file)
+    except Exception as e:
+        console.print(f"[red]✗ Error loading result file: {e}[/red]")
         return None
     
-    # Convert trajectory dict to Trajectory object
-    estimated_trajectory = Trajectory()
-    est_traj_data = slam_result['estimated_trajectory']
-    if 'states' in est_traj_data:
-        for state_dict in est_traj_data['states']:
-            from src.common.data_structures import TrajectoryState, Pose
-            import numpy as np
-            
-            pose_data = state_dict['pose']
-            state = TrajectoryState(
-                pose=Pose(
-                    timestamp=pose_data['timestamp'],
-                    position=np.array(pose_data['position']),
-                    rotation_matrix=np.array(pose_data['rotation_matrix'])
-                ),
-                velocity=np.array(state_dict.get('velocity', [0, 0, 0]))
-            )
-            estimated_trajectory.add_state(state)
+    # Extract estimated trajectory and landmarks
+    estimated_trajectory = result_data.get('trajectory')
+    estimated_landmarks = result_data.get('landmarks')
+    
+    if not estimated_trajectory:
+        console.print("[red]✗ Error: No estimated trajectory in result file[/red]")
+        return None
     
     # Get ground truth
     ground_truth_trajectory = None
     
-    # First check if ground truth is in the SLAM result metadata
-    if ground_truth is None and 'metadata' in slam_result:
-        input_file = slam_result['metadata'].get('input_file')
+    # First check if ground truth path is in the simulation metadata
+    if ground_truth is None:
+        sim_metadata = result_data.get('simulation', {})
+        input_file = sim_metadata.get('input_file')
         if input_file:
             ground_truth = Path(input_file)
     
@@ -79,9 +67,15 @@ def run_evaluate(
     if ground_truth and ground_truth.exists():
         console.print(f"[cyan]Loading ground truth from: {ground_truth}[/cyan]")
         sim_data = load_simulation_data(str(ground_truth))
-        ground_truth_trajectory = sim_data.get('trajectory')
+        
+        # Extract trajectory based on data format
+        if isinstance(sim_data, dict):
+            ground_truth_trajectory = sim_data.get('trajectory')
+        else:
+            ground_truth_trajectory = getattr(sim_data, 'ground_truth_trajectory', None)
     else:
         console.print("[yellow]Warning: No ground truth data available[/yellow]")
+        console.print("[yellow]Cannot compute trajectory error metrics without ground truth[/yellow]")
         return None
     
     if not ground_truth_trajectory:
@@ -128,6 +122,21 @@ def run_evaluate(
         }
     }
     
+    # Add landmark metrics if available
+    if estimated_landmarks:
+        true_landmark_count = 0
+        if isinstance(sim_data, dict):
+            landmarks_data = sim_data.get('landmarks', {})
+            if isinstance(landmarks_data, dict):
+                true_landmark_count = len(landmarks_data.get('landmarks', []))
+            elif isinstance(landmarks_data, list):
+                true_landmark_count = len(landmarks_data)
+        
+        metrics["landmarks"] = {
+            "estimated_count": len(estimated_landmarks.landmarks),
+            "true_count": true_landmark_count
+        }
+    
     # Display results
     table = Table(title="Evaluation Metrics")
     table.add_column("Metric", style="cyan")
@@ -146,6 +155,11 @@ def run_evaluate(
     table.add_row("Estimated States", str(metrics['trajectory']['estimated_states']))
     table.add_row("Ground Truth States", str(metrics['trajectory']['ground_truth_states']))
     
+    # Landmark info if available
+    if 'landmarks' in metrics:
+        table.add_row("Estimated Landmarks", str(metrics['landmarks']['estimated_count']))
+        table.add_row("Ground Truth Landmarks", str(metrics['landmarks']['true_count']))
+    
     console.print("\n")
     console.print(table)
     
@@ -162,8 +176,23 @@ def run_evaluate(
         "result_file": str(result_file),
         "ground_truth_file": str(ground_truth) if ground_truth else None,
         "metrics": metrics,
-        "estimator_metadata": slam_result.get('metadata', {})
+        "estimator_info": {
+            "algorithm": result_data.get("algorithm"),
+            "run_id": result_data.get("run_id"),
+            "timestamp": result_data.get("timestamp"),
+            "configuration": result_data.get("configuration", {})
+        },
+        "simulation_metadata": result_data.get("simulation", {})
     }
+    
+    # Add computational metrics from the result
+    if "results" in result_data:
+        evaluation_output["computational_metrics"] = {
+            "runtime_ms": result_data["results"].get("runtime_ms"),
+            "iterations": result_data["results"].get("iterations"),
+            "converged": result_data["results"].get("converged"),
+            "final_cost": result_data["results"].get("final_cost")
+        }
     
     with open(metrics_file, 'w') as f:
         json.dump(evaluation_output, f, indent=2)
@@ -176,5 +205,24 @@ def run_evaluate(
         console.print(f"  ATE: min={metrics['ate']['min']:.4f}, max={metrics['ate']['max']:.4f}")
         console.print(f"  RPE Trans: median={metrics['rpe_translation']['median']:.4f}")
         console.print(f"  RPE Rot: median={metrics['rpe_rotation']['median']:.4f}")
+        
+        if "computational_metrics" in evaluation_output:
+            comp = evaluation_output["computational_metrics"]
+            if comp.get("runtime_ms"):
+                console.print(f"  Runtime: {comp['runtime_ms']/1000:.2f} seconds")
+            if comp.get("iterations"):
+                console.print(f"  Iterations: {comp['iterations']}")
+            if comp.get("converged") is not None:
+                console.print(f"  Converged: {comp['converged']}")
+    
+    # Use EstimatorResultStorage to create KPI summary
+    try:
+        kpi_summary = EstimatorResultStorage.create_kpi_summary(result_file, ground_truth)
+        if verbose:
+            console.print("\n[bold]KPI Summary:[/bold]")
+            console.print(f"  Algorithm: {kpi_summary.get('algorithm')}")
+            console.print(f"  Run ID: {kpi_summary.get('run_id')}")
+    except Exception as e:
+        console.print(f"[yellow]Warning: Could not create KPI summary: {e}[/yellow]")
     
     return metrics_file

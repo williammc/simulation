@@ -63,27 +63,8 @@ class EstimatorResultStorage:
             "timestamp": datetime.now().isoformat(),
             "algorithm": config.estimator_type.value,
             
-            # Configuration
-            "configuration": {
-                "estimator_type": config.estimator_type.value,
-                "max_landmarks": config.max_landmarks,
-                "max_iterations": config.max_iterations,
-                "convergence_threshold": config.convergence_threshold,
-                "outlier_threshold": config.outlier_threshold,
-                "enable_marginalization": config.enable_marginalization,
-                "marginalization_window": config.marginalization_window,
-                "process_noise": {
-                    "position": config.process_noise_position,
-                    "orientation": config.process_noise_orientation,
-                    "velocity": config.process_noise_velocity,
-                    "bias": config.process_noise_bias
-                },
-                "measurement_noise": {
-                    "camera": config.measurement_noise_camera,
-                    "imu_accel": config.measurement_noise_imu_accel,
-                    "imu_gyro": config.measurement_noise_imu_gyro
-                }
-            },
+            # Configuration - handle different config types
+            "configuration": EstimatorResultStorage._config_to_dict(config),
             
             # Results
             "results": {
@@ -155,6 +136,33 @@ class EstimatorResultStorage:
             )
         
         return data
+    
+    @staticmethod
+    def _config_to_dict(config: Any) -> Dict[str, Any]:
+        """Convert estimator config to dictionary format."""
+        # Try to convert using Pydantic's dict() method if available
+        if hasattr(config, 'dict'):
+            return config.dict()
+        elif hasattr(config, 'model_dump'):
+            return config.model_dump()
+        
+        # Fallback: manually extract common fields
+        config_dict = {
+            "estimator_type": getattr(config, 'estimator_type', EstimatorType.EKF).value
+        }
+        
+        # Add fields that might exist
+        for field in ['max_landmarks', 'max_iterations', 'convergence_threshold',
+                      'outlier_threshold', 'enable_marginalization', 'marginalization_window',
+                      'process_noise_position', 'process_noise_orientation', 
+                      'process_noise_velocity', 'process_noise_bias',
+                      'measurement_noise_camera', 'measurement_noise_imu_accel',
+                      'measurement_noise_imu_gyro', 'window_size', 'optimization_iterations',
+                      'imu_rate', 'camera_rate', 'use_preintegration']:
+            if hasattr(config, field):
+                config_dict[field] = getattr(config, field)
+        
+        return config_dict
     
     @staticmethod
     def _trajectory_to_dict(trajectory: Trajectory) -> Dict[str, Any]:
@@ -231,22 +239,35 @@ class EstimatorResultStorage:
     @staticmethod
     def _states_to_dict(states: list) -> list:
         """Convert state history to compact dictionary format."""
+        from src.utils.math_utils import rotation_matrix_to_quaternion
         state_list = []
         
         for state in states:
-            state_dict = {
-                "t": state.timestamp,
-                "p": state.robot_pose.position.tolist(),
-                "q": state.robot_pose.quaternion.tolist()
-            }
-            
-            # Add optional fields only if present
-            if state.robot_velocity is not None:
-                state_dict["v"] = state.robot_velocity.tolist()
-            
-            # Add covariance diagonal for space efficiency
-            if state.robot_covariance is not None:
-                state_dict["cov_diag"] = np.diag(state.robot_covariance).tolist()
+            # Handle different state formats
+            if hasattr(state, 'robot_pose'):
+                # EstimatorState format
+                position = state.robot_pose.position
+                if hasattr(state.robot_pose, 'quaternion'):
+                    quaternion = state.robot_pose.quaternion
+                else:
+                    quaternion = rotation_matrix_to_quaternion(state.robot_pose.rotation_matrix)
+                
+                state_dict = {
+                    "t": state.timestamp,
+                    "p": position.tolist(),
+                    "q": quaternion.tolist()
+                }
+                
+                # Add optional fields only if present
+                if hasattr(state, 'robot_velocity') and state.robot_velocity is not None:
+                    state_dict["v"] = state.robot_velocity.tolist()
+                
+                # Add covariance diagonal for space efficiency
+                if hasattr(state, 'robot_covariance') and state.robot_covariance is not None:
+                    state_dict["cov_diag"] = np.diag(state.robot_covariance).tolist()
+            else:
+                # Skip if not a valid state format
+                continue
             
             state_list.append(state_dict)
         
