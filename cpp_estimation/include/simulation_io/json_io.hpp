@@ -199,10 +199,39 @@ public:
                     }
                     frame_json["observations"].push_back(obs_json);
                 }
+                
+                // Add keyframe information
+                frame_json["is_keyframe"] = frame.is_keyframe;
+                if (frame.keyframe_id.has_value()) {
+                    frame_json["keyframe_id"] = frame.keyframe_id.value();
+                }
+                
                 j["measurements"]["camera_frames"].push_back(frame_json);
             }
         } else {
             j["measurements"]["camera_frames"] = json::array();
+        }
+        
+        // Preintegrated IMU measurements
+        if (!data.preintegrated_imu.empty()) {
+            j["measurements"]["preintegrated_imu"] = json::array();
+            for (const auto& preint : data.preintegrated_imu) {
+                json preint_json;
+                preint_json["from_keyframe_id"] = preint.from_keyframe_id;
+                preint_json["to_keyframe_id"] = preint.to_keyframe_id;
+                preint_json["delta_position"] = detail::vector3_to_json(preint.delta_position);
+                preint_json["delta_velocity"] = detail::vector3_to_json(preint.delta_velocity);
+                preint_json["delta_rotation"] = detail::matrix3x3_to_json(preint.delta_rotation);
+                preint_json["covariance"] = preint.covariance;
+                preint_json["dt"] = preint.dt;
+                preint_json["num_measurements"] = preint.num_measurements;
+                if (preint.jacobian.has_value()) {
+                    preint_json["jacobian"] = preint.jacobian.value();
+                }
+                j["measurements"]["preintegrated_imu"].push_back(preint_json);
+            }
+        } else {
+            j["measurements"]["preintegrated_imu"] = json::array();
         }
         
         // Write to file with pretty printing
@@ -234,7 +263,9 @@ public:
             if (meta.contains("trajectory_type")) data.metadata.trajectory_type = meta["trajectory_type"];
             if (meta.contains("duration")) data.metadata.duration = meta["duration"];
             if (meta.contains("coordinate_system")) data.metadata.coordinate_system = meta["coordinate_system"];
-            if (meta.contains("seed")) data.metadata.seed = meta["seed"];
+            if (meta.contains("seed") && !meta["seed"].is_null()) {
+                data.metadata.seed = meta["seed"];
+            }
             
             if (meta.contains("units")) {
                 if (meta["units"].contains("position")) data.metadata.units.position = meta["units"]["position"];
@@ -352,6 +383,16 @@ public:
                     frame.timestamp = frame_json["timestamp"];
                     frame.camera_id = frame_json["camera_id"];
                     
+                    // Load keyframe information
+                    if (frame_json.contains("is_keyframe")) {
+                        frame.is_keyframe = frame_json["is_keyframe"];
+                    } else {
+                        frame.is_keyframe = false;
+                    }
+                    if (frame_json.contains("keyframe_id") && !frame_json["keyframe_id"].is_null()) {
+                        frame.keyframe_id = frame_json["keyframe_id"];
+                    }
+                    
                     if (frame_json.contains("observations") && frame_json["observations"].is_array()) {
                         for (const auto& obs_json : frame_json["observations"]) {
                             CameraObservation obs;
@@ -365,6 +406,75 @@ public:
                         }
                     }
                     data.camera_frames.push_back(frame);
+                }
+            }
+            
+            // Preintegrated IMU measurements
+            if (meas.contains("preintegrated_imu") && meas["preintegrated_imu"].is_array()) {
+                for (const auto& preint_json : meas["preintegrated_imu"]) {
+                    PreintegratedIMUData preint;
+                    preint.from_keyframe_id = preint_json["from_keyframe_id"];
+                    preint.to_keyframe_id = preint_json["to_keyframe_id"];
+                    preint.delta_position = detail::json_to_vector3(preint_json["delta_position"]);
+                    preint.delta_velocity = detail::json_to_vector3(preint_json["delta_velocity"]);
+                    
+                    // Handle delta_rotation which could be a matrix or a list
+                    if (preint_json["delta_rotation"].is_array()) {
+                        if (preint_json["delta_rotation"][0].is_array()) {
+                            // It's a matrix
+                            preint.delta_rotation = detail::json_to_matrix3x3(preint_json["delta_rotation"]);
+                        } else if (preint_json["delta_rotation"].size() == 9) {
+                            // It's a flattened matrix
+                            Matrix3x3 m;
+                            const auto& flat = preint_json["delta_rotation"];
+                            for (int i = 0; i < 3; ++i) {
+                                for (int j = 0; j < 3; ++j) {
+                                    m.data[i][j] = flat[i * 3 + j];
+                                }
+                            }
+                            preint.delta_rotation = m;
+                        }
+                    }
+                    
+                    // Handle covariance which could be 2D or flattened
+                    if (preint_json["covariance"].is_array()) {
+                        const auto& cov = preint_json["covariance"];
+                        if (!cov.empty() && cov[0].is_array()) {
+                            // It's a 2D array, flatten it
+                            preint.covariance.clear();
+                            for (const auto& row : cov) {
+                                for (const auto& val : row) {
+                                    preint.covariance.push_back(val);
+                                }
+                            }
+                        } else {
+                            // It's already flattened
+                            preint.covariance = cov.get<std::vector<double>>();
+                        }
+                    }
+                    preint.dt = preint_json["dt"];
+                    preint.num_measurements = preint_json["num_measurements"];
+                    
+                    if (preint_json.contains("jacobian") && !preint_json["jacobian"].is_null()) {
+                        const auto& jac = preint_json["jacobian"];
+                        if (jac.is_array()) {
+                            if (!jac.empty() && jac[0].is_array()) {
+                                // It's a 2D array, flatten it
+                                std::vector<double> flattened;
+                                for (const auto& row : jac) {
+                                    for (const auto& val : row) {
+                                        flattened.push_back(val);
+                                    }
+                                }
+                                preint.jacobian = flattened;
+                            } else {
+                                // It's already flattened
+                                preint.jacobian = jac.get<std::vector<double>>();
+                            }
+                        }
+                    }
+                    
+                    data.preintegrated_imu.push_back(preint);
                 }
             }
         }

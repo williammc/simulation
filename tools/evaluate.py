@@ -5,7 +5,7 @@ Computes metrics like ATE, RPE, and consistency.
 
 import json
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional
 from rich.console import Console
 from rich.table import Table
 
@@ -92,10 +92,10 @@ def run_evaluate(
     console.print("\n[bold]Computing Evaluation Metrics[/bold]")
     
     # Compute ATE
-    ate_errors, ate_metrics = compute_ate(estimated_trajectory, ground_truth_trajectory)
+    _, ate_metrics = compute_ate(estimated_trajectory, ground_truth_trajectory)
     
     # Compute RPE
-    rpe_trans_errors, rpe_rot_errors, rpe_metrics = compute_rpe(
+    _, _, rpe_metrics = compute_rpe(
         estimated_trajectory, ground_truth_trajectory, delta=1
     )
     

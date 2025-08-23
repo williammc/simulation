@@ -6,10 +6,9 @@ Runs EKF, SWBA, or SRIF estimators on simulation data.
 import json
 import yaml
 import time
-import traceback
 from pathlib import Path
 from datetime import datetime
-from typing import Optional, Dict, Any
+from typing import Optional
 import tracemalloc
 
 from rich.console import Console
@@ -55,20 +54,19 @@ def run_slam(
         console.print("  Available estimators: ekf, swba, srif")
         return None
     
-    console.print(f"\n[bold green]Running {estimator.upper()} Estimator[/bold green]")
-    console.print(f"  Input: [cyan]{input_data}[/cyan]")
+    console.print(f"\n[bold]Running {estimator.upper()} Estimator[/bold]")
+    console.print(f"  Input: {input_data}")
     
     # Load configuration
-    estimator_config = None
     if config and config.exists():
-        console.print(f"  Config: [cyan]{config}[/cyan]")
+        console.print(f"  Config: {config}")
         with open(config, 'r') as f:
             config_data = yaml.safe_load(f)
     else:
         # Use default config
         config = Path(f"config/{estimator_lower}_default.yaml")
         if config.exists():
-            console.print(f"  Config: [cyan]{config}[/cyan] (default)")
+            console.print(f"  Config: {config} (default)")
             with open(config, 'r') as f:
                 config_data = yaml.safe_load(f)
         else:
@@ -76,7 +74,6 @@ def run_slam(
             config_data = {}
     
     # Load simulation data
-    console.print("\n[yellow]Loading simulation data...[/yellow]")
     try:
         sim_data = load_simulation_data(str(input_data))
         
@@ -85,30 +82,22 @@ def run_slam(
             trajectory_gt = sim_data.get('trajectory')
             landmarks = sim_data.get('landmarks')
             camera_data = sim_data.get('camera_data')
-            imu_data = sim_data.get('imu_data')
             preintegrated_imu = sim_data.get('preintegrated_imu', [])
             camera_calibrations = sim_data.get('camera_calibrations', [])
             imu_calibrations = sim_data.get('imu_calibrations', [])
-            metadata = sim_data.get('metadata', {})
         else:
             # Handle object-based format
             trajectory_gt = getattr(sim_data, 'ground_truth_trajectory', None)
             landmarks = getattr(sim_data, 'landmarks', None)
             camera_data = getattr(sim_data, 'camera_measurements', None)
-            imu_data = getattr(sim_data, 'imu_measurements', None)
             preintegrated_imu = getattr(sim_data, 'preintegrated_imu', [])
             camera_calibrations = getattr(sim_data, 'camera_calibrations', [])
             imu_calibrations = getattr(sim_data, 'imu_calibrations', [])
-            metadata = getattr(sim_data, 'metadata', {})
         
-        # Display data info
-        if metadata:
-            console.print(f"  Trajectory: [cyan]{metadata.get('trajectory_type', 'unknown')}[/cyan]")
-            console.print(f"  Duration: [cyan]{metadata.get('duration', 0)}s[/cyan]")
-            console.print(f"  Keyframes: [cyan]{metadata.get('num_keyframes', 'N/A')}[/cyan]")
         
     except Exception as e:
         console.print(f"[red]✗ Error loading simulation data: {e}[/red]")
+        import traceback
         traceback.print_exc()
         return None
     
@@ -134,7 +123,6 @@ def run_slam(
             imu_calib = imu_calibrations
     
     # Create estimator
-    console.print(f"\n[yellow]Initializing {estimator.upper()} estimator...[/yellow]")
     
     try:
         if estimator_lower == 'ekf':
@@ -160,13 +148,11 @@ def run_slam(
     if trajectory_gt and len(trajectory_gt.states) > 0:
         initial_pose = trajectory_gt.states[0].pose
         estimator_instance.initialize(initial_pose)
-        console.print(f"  Initialized at t={initial_pose.timestamp:.3f}")
     else:
         console.print("[red]✗ Error: No ground truth trajectory found[/red]")
         return None
     
     # Run estimation
-    console.print(f"\n[yellow]Running {estimator.upper()} estimation...[/yellow]")
     
     # Track performance
     tracemalloc.start()
@@ -228,12 +214,10 @@ def run_slam(
     
     # Get results
     runtime = time.perf_counter() - start_time
-    current_mem, peak_mem = tracemalloc.get_traced_memory()
+    _, peak_mem = tracemalloc.get_traced_memory()
     tracemalloc.stop()
     
-    console.print(f"\n[green]✓ Estimation complete![/green]")
-    console.print(f"  Runtime: {runtime:.2f} seconds")
-    console.print(f"  Peak memory: {peak_mem / 1024 / 1024:.1f} MB")
+    console.print(f"\n[green]✓ Estimation complete[/green] ({runtime:.2f}s, {peak_mem / 1024 / 1024:.1f} MB)")
     
     # Get estimated trajectory
     try:
@@ -270,25 +254,5 @@ def run_slam(
         json.dump(output_data, f, indent=2, default=str)
     
     console.print(f"\n[green]✓ Results saved to:[/green] {output_file}")
-    
-    # Display summary table
-    from rich.table import Table
-    
-    table = Table(title=f"{estimator.upper()} Results Summary")
-    table.add_column("Metric", style="cyan")
-    table.add_column("Value", style="green")
-    
-    table.add_row("Runtime", f"{runtime:.2f} s")
-    table.add_row("Peak Memory", f"{peak_mem / 1024 / 1024:.1f} MB")
-    
-    # Trajectory info
-    if estimated_trajectory and hasattr(estimated_trajectory, 'states'):
-        table.add_row("Trajectory States", str(len(estimated_trajectory.states)))
-    if estimated_landmarks:
-        landmark_count = len(estimated_landmarks.landmarks) if hasattr(estimated_landmarks, 'landmarks') else 0
-        table.add_row("Landmarks", str(landmark_count))
-    
-    console.print("\n")
-    console.print(table)
     
     return output_file

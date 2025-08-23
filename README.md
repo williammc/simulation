@@ -125,17 +125,17 @@ Example structure:
 }
 ```
 
-#### Inspecting Ground Truth
+#### Inspecting Simulation Data
 
 ```bash
-# View ground truth information
-python tools/inspect_ground_truth.py inspect output/simulation.json
+# View simulation data structure
+python -c "import json; d=json.load(open('output/simulation.json')); print(list(d.keys()))"
 
-# Extract only ground truth to separate file
-python tools/inspect_ground_truth.py extract-gt output/simulation.json
+# Extract ground truth trajectory info
+python -c "import json; d=json.load(open('output/simulation.json')); print(f\"Trajectory: {len(d['groundtruth']['trajectory'])} states\")"
 
-# Compare noise levels
-python tools/inspect_ground_truth.py compare-noise output/simulation.json
+# View trajectory and landmarks directly
+./run.sh plot output/simulation.json --trajectory --landmarks
 ```
 
 ### Dataset Conversion

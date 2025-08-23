@@ -5,26 +5,23 @@ Evaluation orchestrator for running comprehensive SLAM benchmarks.
 import yaml
 import json
 import logging
-import shutil
 from pathlib import Path
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Dict, Any
 from datetime import datetime
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
-from src.evaluation.comparison import ComparisonResult, EstimatorRunner
+from src.evaluation.comparison import ComparisonResult
 from src.evaluation.metrics import TrajectoryMetrics
 from src.plotting.evaluation_dashboard import create_evaluation_dashboard
 
 # Import tool functions directly
-from slam import run_slam
-from evaluate import run_evaluate
 from simulate import run_simulation
 
 
-class EvaluationOrchestrator:
+class E2EOrchestrator:
     """Orchestrates the complete evaluation pipeline."""
     
     def __init__(self, config_path: str):
@@ -625,7 +622,7 @@ class EvaluationOrchestrator:
                     json.dump(comparison_dict, f, indent=2)
         
         # Create CSV summary for easy analysis
-        self._create_csv_summary(comparison_results, kpis)
+        self._create_csv_summary(comparison_results)
         
         self.logger.info(f"Results saved to {self.output_dir}")
     
@@ -671,7 +668,7 @@ class EvaluationOrchestrator:
         
         return comparison
     
-    def _create_csv_summary(self, comparison_results: Dict, kpis: Dict):
+    def _create_csv_summary(self, comparison_results: Dict):
         """Create CSV summaries of results."""
         # Create performance matrix
         data = []
@@ -699,15 +696,3 @@ class EvaluationOrchestrator:
             self.logger.info(f"Performance matrix saved to {csv_file}")
 
 
-def run_evaluation(config_path: str) -> Dict:
-    """
-    Main entry point for running the evaluation.
-    
-    Args:
-        config_path: Path to evaluation configuration
-        
-    Returns:
-        Evaluation results
-    """
-    orchestrator = EvaluationOrchestrator(config_path)
-    return orchestrator.run()

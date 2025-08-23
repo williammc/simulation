@@ -4,16 +4,13 @@ SLAM Simulation System - Command Line Interface
 """
 
 import sys
+import os
 from pathlib import Path
 from typing import Optional
 
 import typer
 from rich.console import Console
 from rich.table import Table
-
-# Import command implementations
-import sys
-import os
 # Add parent directory to path for src imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # Add tools directory for local imports
@@ -21,7 +18,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from simulate import run_simulation
 from slam import run_slam
 from dashboard import generate_dashboard
-from evaluate_pipeline import run_evaluation
+from e2e_pipeline import run_e2e
 from evaluate import run_evaluate
 
 app = typer.Typer(
@@ -349,16 +346,15 @@ def plot(
     # Load primary data
     try:
         data_dict = load_simulation_data(str(input_file))
-        # Always create a simple object with the expected attributes
+        # Create a simple object with the expected attributes
         # (The raw SimulationData doesn't have the right attribute names)
-        class SimData:
-            pass
-        primary_data = SimData()
-        # Map the loaded data to expected attributes
-        primary_data.ground_truth_trajectory = data_dict.get('trajectory')
-        primary_data.landmarks = data_dict.get('landmarks')
-        primary_data.imu_measurements = None
-        primary_data.camera_measurements = None
+        from types import SimpleNamespace
+        primary_data = SimpleNamespace(
+            ground_truth_trajectory=data_dict.get('trajectory'),
+            landmarks=data_dict.get('landmarks'),
+            imu_measurements=None,
+            camera_measurements=None
+        )
         
         # Handle IMU data
         if data_dict.get('imu_data'):
@@ -384,14 +380,14 @@ def plot(
     if compare_file:
         try:
             comp_dict = load_simulation_data(str(compare_file))
-            # Always create a simple object with the expected attributes
-            class SimData:
-                pass
-            compare_data = SimData()
-            compare_data.ground_truth_trajectory = comp_dict.get('trajectory')
-            compare_data.landmarks = comp_dict.get('landmarks')
-            compare_data.imu_measurements = None
-            compare_data.camera_measurements = None
+            # Create a simple object with the expected attributes
+            from types import SimpleNamespace
+            compare_data = SimpleNamespace(
+                ground_truth_trajectory=comp_dict.get('trajectory'),
+                landmarks=comp_dict.get('landmarks'),
+                imu_measurements=None,
+                camera_measurements=None
+            )
             
             if comp_dict.get('imu_data'):
                 imu_data = comp_dict['imu_data']
@@ -513,8 +509,8 @@ def info():
     console.print("  Run './run.sh list-datasets' for details")
 
 
-@app.command()
-def evaluation(
+@app.command(name="e2e")
+def e2e_command(
     config_file: Path = typer.Argument(
         Path("config/evaluation_config.yaml"),
         help="Path to evaluation configuration YAML file"
@@ -555,9 +551,9 @@ def evaluation(
         help="Show what would be done without actually running"
     )
 ):
-    """Run comprehensive evaluation pipeline across all datasets and estimators."""
-    # Call the evaluation module
-    exit_code = run_evaluation(
+    """Run end-to-end (e2e) pipeline across all datasets and estimators."""
+    # Call the e2e module
+    exit_code = run_e2e(
         config_file=config_file,
         output_dir=output_dir,
         parallel_jobs=parallel_jobs,

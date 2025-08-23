@@ -196,8 +196,10 @@ struct CameraFrame {
     double timestamp;
     std::string camera_id;
     std::vector<CameraObservation> observations;
+    bool is_keyframe;
+    std::optional<int> keyframe_id;
     
-    CameraFrame() : timestamp(0) {}
+    CameraFrame() : timestamp(0), is_keyframe(false) {}
 };
 
 // Metadata structure
@@ -220,6 +222,21 @@ struct Metadata {
     Metadata() : version("1.0"), trajectory_type("unknown"), duration(0), coordinate_system("ENU") {}
 };
 
+// Preintegrated IMU data structure
+struct PreintegratedIMUData {
+    int from_keyframe_id;
+    int to_keyframe_id;
+    Vector3 delta_position;
+    Vector3 delta_velocity;
+    Matrix3x3 delta_rotation;
+    std::vector<double> covariance;  // Flattened covariance matrix
+    double dt;
+    int num_measurements;
+    std::optional<std::vector<double>> jacobian;  // Flattened jacobian matrix
+    
+    PreintegratedIMUData() : from_keyframe_id(-1), to_keyframe_id(-1), dt(0), num_measurements(0) {}
+};
+
 // Main simulation data container
 struct SimulationData {
     Metadata metadata;
@@ -229,6 +246,7 @@ struct SimulationData {
     std::vector<Landmark> landmarks;
     std::vector<IMUMeasurement> imu_measurements;
     std::vector<CameraFrame> camera_frames;
+    std::vector<PreintegratedIMUData> preintegrated_imu;
     
     SimulationData() = default;
 };

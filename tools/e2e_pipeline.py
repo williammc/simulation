@@ -1,6 +1,6 @@
 """
-Evaluation command implementation.
-Runs comprehensive evaluation pipeline across datasets and estimators.
+End-to-end (e2e) command implementation.
+Runs comprehensive e2e pipeline across datasets and estimators.
 """
 
 import os
@@ -12,10 +12,12 @@ from typing import Optional
 
 from rich.console import Console
 
+from tools.e2e_orchestrator import E2EOrchestrator
+
 console = Console()
 
 
-def run_evaluation(
+def run_e2e(
     config_file: Path,
     output_dir: Optional[Path] = None,
     parallel_jobs: Optional[int] = None,
@@ -26,10 +28,10 @@ def run_evaluation(
     dry_run: bool = False
 ) -> int:
     """
-    Run comprehensive evaluation pipeline.
+    Run comprehensive end-to-end pipeline.
     
     Args:
-        config_file: Path to evaluation configuration YAML
+        config_file: Path to e2e configuration YAML
         output_dir: Override output directory from config
         parallel_jobs: Number of parallel estimation jobs
         datasets: Comma-separated list of datasets to evaluate
@@ -41,7 +43,6 @@ def run_evaluation(
     Returns:
         Exit code (0 for success)
     """
-    from orchestrator import EvaluationOrchestrator
     
     # Check if config file exists
     if not config_file.exists():
@@ -95,7 +96,7 @@ def run_evaluation(
         config['dashboard']['sections'] = []
     
     # Show configuration summary
-    console.print("\n[bold]Evaluation Configuration:[/bold]")
+    console.print("\n[bold]E2E Pipeline Configuration:[/bold]")
     console.print(f"  Config File: {config_file}")
     console.print(f"  Output Directory: {config['evaluation']['output_dir']}")
     console.print(f"  Parallel Jobs: {config['evaluation'].get('parallel_jobs', 1)}")
@@ -143,7 +144,7 @@ def run_evaluation(
     
     # Run evaluation
     try:
-        console.print("\n[green]Starting evaluation pipeline...[/green]")
+        console.print("\n[green]Starting e2e pipeline...[/green]")
         
         # Save modified config to temp file
         with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
@@ -152,12 +153,12 @@ def run_evaluation(
         
         try:
             # Create orchestrator with modified config
-            orchestrator = EvaluationOrchestrator(temp_config_path)
+            orchestrator = E2EOrchestrator(temp_config_path)
             
             # Run pipeline
             results = orchestrator.run()
             
-            console.print("\n[green]✓ Evaluation complete![/green]")
+            console.print("\n[green]✓ E2E pipeline complete![/green]")
             
             # Show dashboard if created
             if results and 'dashboard' in results:
@@ -189,7 +190,7 @@ def run_evaluation(
                     pass
         
     except Exception as e:
-        console.print(f"\n[red]Error during evaluation: {e}[/red]")
+        console.print(f"\n[red]Error during e2e pipeline: {e}[/red]")
         import traceback
         traceback.print_exc()
         return 1
