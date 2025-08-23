@@ -2,10 +2,16 @@
 # Simplified configuration for educational trajectory estimation
 
 evaluation:
+  name: "Educational Trajectory Estimation"
   output_dir: output/educational
   parallel_jobs: 1  # Sequential for clarity
   generate_plots: true
   save_intermediate: true
+
+# Resource limits
+resources:
+  timeout_minutes: 5  # 5 minutes per estimation
+  max_memory_gb: 2
 
 # Educational datasets - will auto-generate if not present
 datasets:
@@ -60,10 +66,14 @@ dashboard:
   enabled: true
   template: educational  # Use educational template
   sections:
-    - summary_table
-    - trajectory_plots
-    - error_plots
-    - performance_comparison
+    - type: summary_table
+      title: "Results Summary"
+    - type: trajectory_plots
+      title: "Trajectory Comparisons"
+    - type: error_plots
+      title: "Error Analysis"
+    - type: performance_comparison
+      title: "Performance Metrics"
   
   # Specific plots for education
   plots:

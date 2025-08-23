@@ -21,9 +21,9 @@ console = Console()
 def run_slam(
     estimator: str,
     input_data: Path,
-    config: Optional[Path],
-    output: Optional[Path],
-) -> int:
+    config: Optional[Path] = None,
+    output: Optional[Path] = None,
+) -> Optional[Path]:
     """
     Run SLAM estimator on simulation data.
     
@@ -34,7 +34,7 @@ def run_slam(
         output: Output directory for SLAM results
     
     Returns:
-        Exit code (0 for success, 1 for error)
+        Path to output file if successful, None if error
     """
     # Import estimators
     from src.estimation.ekf_slam import EKFSlam
@@ -42,19 +42,18 @@ def run_slam(
     from src.estimation.srif_slam import SRIFSlam
     from src.common.json_io import load_simulation_data
     from src.common.config import EKFConfig, SWBAConfig, SRIFConfig
-    from src.evaluation.metrics import compute_ate, compute_rpe
     
     # Validate input
     if not input_data.exists():
         console.print(f"[red]✗ Error: Input file not found: {input_data}[/red]")
-        return 1
+        return None
     
     # Validate estimator type
     estimator_lower = estimator.lower()
     if estimator_lower not in ['ekf', 'swba', 'srif']:
         console.print(f"[red]✗ Error: Unknown estimator: {estimator}[/red]")
         console.print("  Available estimators: ekf, swba, srif")
-        return 1
+        return None
     
     console.print(f"\n[bold green]Running {estimator.upper()} Estimator[/bold green]")
     console.print(f"  Input: [cyan]{input_data}[/cyan]")
@@ -111,7 +110,7 @@ def run_slam(
     except Exception as e:
         console.print(f"[red]✗ Error loading simulation data: {e}[/red]")
         traceback.print_exc()
-        return 1
+        return None
     
     # Get camera calibration (use first camera)
     camera_calib = None
@@ -155,7 +154,7 @@ def run_slam(
         
     except Exception as e:
         console.print(f"[red]✗ Error creating estimator: {e}[/red]")
-        return 1
+        return None
     
     # Initialize estimator with first pose
     if trajectory_gt and len(trajectory_gt.states) > 0:
@@ -164,7 +163,7 @@ def run_slam(
         console.print(f"  Initialized at t={initial_pose.timestamp:.3f}")
     else:
         console.print("[red]✗ Error: No ground truth trajectory found[/red]")
-        return 1
+        return None
     
     # Run estimation
     console.print(f"\n[yellow]Running {estimator.upper()} estimation...[/yellow]")
@@ -243,31 +242,8 @@ def run_slam(
         estimated_landmarks = result.landmarks
     except Exception as e:
         console.print(f"[red]✗ Error getting results: {e}[/red]")
-        return 1
+        return None
     
-    # Compute metrics if ground truth available
-    metrics = {}
-    if trajectory_gt and estimated_trajectory:
-        console.print("\n[yellow]Computing metrics...[/yellow]")
-        
-        # Compute ATE
-        ate_errors, ate_metrics = compute_ate(estimated_trajectory, trajectory_gt)
-        metrics['ate'] = {
-            'rmse': ate_metrics.ate_rmse,
-            'mean': ate_metrics.ate_mean,
-            'std': ate_metrics.ate_std
-        }
-        
-        # Compute RPE
-        rpe_trans_errors, rpe_rot_errors, rpe_metrics = compute_rpe(estimated_trajectory, trajectory_gt, delta=1)
-        metrics['rpe'] = {
-            'translation_rmse': rpe_metrics.rpe_trans_rmse,
-            'rotation_rmse': rpe_metrics.rpe_rot_rmse
-        }
-        
-        console.print(f"  ATE RMSE: [cyan]{ate_metrics.ate_rmse:.4f} m[/cyan]")
-        console.print(f"  RPE Trans: [cyan]{rpe_metrics.rpe_trans_rmse:.4f} m[/cyan]")
-        console.print(f"  RPE Rot: [cyan]{rpe_metrics.rpe_rot_rmse:.4f} rad[/cyan]")
     
     # Save results
     output_dir = output or Path("output/slam")
@@ -285,7 +261,6 @@ def run_slam(
             "runtime_seconds": runtime,
             "peak_memory_mb": peak_mem / 1024 / 1024
         },
-        "metrics": metrics,
         "estimated_trajectory": estimated_trajectory.to_dict() if hasattr(estimated_trajectory, 'to_dict') else {},
         "estimated_landmarks": estimated_landmarks.to_dict() if hasattr(estimated_landmarks, 'to_dict') else {}
     }
@@ -306,13 +281,14 @@ def run_slam(
     table.add_row("Runtime", f"{runtime:.2f} s")
     table.add_row("Peak Memory", f"{peak_mem / 1024 / 1024:.1f} MB")
     
-    if metrics:
-        table.add_row("ATE RMSE", f"{metrics['ate']['rmse']:.4f} m")
-        table.add_row("ATE Mean", f"{metrics['ate']['mean']:.4f} m")
-        table.add_row("RPE Translation", f"{metrics['rpe']['translation_rmse']:.4f} m")
-        table.add_row("RPE Rotation", f"{metrics['rpe']['rotation_rmse']:.4f} rad")
+    # Trajectory info
+    if estimated_trajectory and hasattr(estimated_trajectory, 'states'):
+        table.add_row("Trajectory States", str(len(estimated_trajectory.states)))
+    if estimated_landmarks:
+        landmark_count = len(estimated_landmarks.landmarks) if hasattr(estimated_landmarks, 'landmarks') else 0
+        table.add_row("Landmarks", str(landmark_count))
     
     console.print("\n")
     console.print(table)
     
-    return 0
+    return output_file

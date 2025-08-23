@@ -21,7 +21,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from simulate import run_simulation
 from slam import run_slam
 from dashboard import generate_dashboard
-from evaluation import run_evaluation
+from evaluate_pipeline import run_evaluation
+from evaluate import run_evaluate
 
 app = typer.Typer(
     name="slam-sim",
@@ -129,9 +130,37 @@ def slam(
     ),
 ):
     """Run SLAM estimator on simulation data."""
-    exit_code = run_slam(estimator, input_data, config, output)
-    if exit_code != 0:
-        raise typer.Exit(exit_code)
+    result_file = run_slam(estimator, input_data, config, output)
+    if result_file is None:
+        raise typer.Exit(1)
+
+
+@app.command()
+def evaluate(
+    result_file: Path = typer.Argument(
+        ...,
+        help="Path to SLAM result JSON file"
+    ),
+    ground_truth: Optional[Path] = typer.Option(
+        None,
+        "--ground-truth", "-g",
+        help="Path to ground truth data (auto-detected if not provided)"
+    ),
+    output: Optional[Path] = typer.Option(
+        None,
+        "--output", "-o",
+        help="Output directory for evaluation metrics"
+    ),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose", "-v",
+        help="Show detailed metrics"
+    ),
+):
+    """Evaluate SLAM results against ground truth."""
+    metrics_file = run_evaluate(result_file, ground_truth, output, verbose)
+    if metrics_file is None:
+        raise typer.Exit(1)
 
 
 @app.command()
