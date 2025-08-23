@@ -9,7 +9,7 @@ This is a minimal implementation that:
 """
 
 import numpy as np
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 from dataclasses import dataclass
 from enum import Enum
 import logging
@@ -152,6 +152,9 @@ class EKFSlam(BaseEstimator):
         # Initialize state
         self.state: Optional[EKFState] = None
         
+        # Store trajectory history
+        self.trajectory_history: List[TrajectoryState] = []
+        
         # Gravity vector for preintegrated IMU
         self.gravity = np.array([0, 0, -config.gravity_magnitude])
         
@@ -183,6 +186,12 @@ class EKFSlam(BaseEstimator):
             gyro_bias=np.zeros(3),
             timestamp=initial_pose.timestamp
         )
+        
+        # Save initial state to trajectory history
+        self.trajectory_history.append(TrajectoryState(
+            pose=self.state.get_pose(),
+            velocity=self.state.velocity.copy()
+        ))
         
         # Initialize covariance
         if initial_covariance is not None:
@@ -275,6 +284,12 @@ class EKFSlam(BaseEstimator):
         # P_new = F * P_old * F' + Q_preintegrated
         P = self.state.covariance
         self.state.covariance = F @ P @ F.T + preintegrated.covariance
+        
+        # Save state to trajectory history after prediction
+        self.trajectory_history.append(TrajectoryState(
+            pose=self.state.get_pose(),
+            velocity=self.state.velocity.copy()
+        ))
     
     def update(self, camera_frame: Optional[CameraFrame] = None, landmarks: Optional[Map] = None) -> None:
         """
@@ -355,16 +370,13 @@ class EKFSlam(BaseEstimator):
         Get estimated trajectory.
         
         Returns:
-            Trajectory with single current state
+            Trajectory with all historical states
         """
         trajectory = Trajectory()
         
-        if self.state is not None:
-            traj_state = TrajectoryState(
-                pose=self.state.get_pose(),
-                velocity=self.state.velocity.copy()
-            )
-            trajectory.add_state(traj_state)
+        # Add all states from history
+        for state in self.trajectory_history:
+            trajectory.add_state(state)
         
         return trajectory
     
@@ -406,6 +418,7 @@ class EKFSlam(BaseEstimator):
         """Reset filter state."""
         self.state = None
         self.landmarks = {}
+        self.trajectory_history = []
         self.num_updates = 0
         self.num_outliers = 0
     

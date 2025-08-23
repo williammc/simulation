@@ -223,6 +223,25 @@ class SlidingWindowBA(BaseEstimator):
         Args:
             preintegrated: Preintegrated IMU data between keyframes
         """
+        # Create keyframes if they don't exist yet
+        # This happens when we have preintegrated IMU but no camera frames
+        while self.next_keyframe_id <= preintegrated.to_keyframe_id:
+            # Create a new keyframe at the current state
+            kf = Keyframe(
+                id=self.next_keyframe_id,
+                timestamp=self.current_state.timestamp,
+                state=IMUState(
+                    position=self.current_state.position.copy(),
+                    velocity=self.current_state.velocity.copy(),
+                    rotation_matrix=self.current_state.rotation_matrix.copy(),
+                    accel_bias=self.current_state.accel_bias.copy(),
+                    gyro_bias=self.current_state.gyro_bias.copy(),
+                    timestamp=self.current_state.timestamp
+                )
+            )
+            self.keyframes.append(kf)
+            self.next_keyframe_id += 1
+        
         # Find the keyframes this preintegration corresponds to
         from_kf = None
         to_kf = None
@@ -249,23 +268,35 @@ class SlidingWindowBA(BaseEstimator):
                 num_measurements=preintegrated.num_measurements
             )
             
-            # Update current state based on preintegration if it's the latest
-            if from_kf == self.keyframes[-1]:
+            # Update current state and to_kf state based on preintegration
+            if from_kf is not None and to_kf is not None:
                 # Propagate state using preintegrated deltas
-                R_old = self.current_state.rotation_matrix
+                R_old = from_kf.state.rotation_matrix
                 # Use simple gravity vector (in world frame)
                 gravity = np.array([0, 0, -9.81])
-                self.current_state.position = from_kf.state.position + (
+                
+                # Update the to_kf state with the propagated values
+                to_kf.state.position = from_kf.state.position + (
                     from_kf.state.velocity * preintegrated.dt +
                     R_old @ preintegrated.delta_position +
                     0.5 * gravity * preintegrated.dt**2
                 )
-                self.current_state.velocity = from_kf.state.velocity + (
+                to_kf.state.velocity = from_kf.state.velocity + (
                     R_old @ preintegrated.delta_velocity +
                     gravity * preintegrated.dt
                 )
-                self.current_state.rotation_matrix = R_old @ preintegrated.delta_rotation
-                self.current_state.timestamp += preintegrated.dt
+                to_kf.state.rotation_matrix = R_old @ preintegrated.delta_rotation
+                to_kf.state.timestamp = from_kf.state.timestamp + preintegrated.dt
+                
+                # Update current state to match the latest keyframe
+                self.current_state = IMUState(
+                    position=to_kf.state.position.copy(),
+                    velocity=to_kf.state.velocity.copy(),
+                    rotation_matrix=to_kf.state.rotation_matrix.copy(),
+                    accel_bias=to_kf.state.accel_bias.copy(),
+                    gyro_bias=to_kf.state.gyro_bias.copy(),
+                    timestamp=to_kf.state.timestamp
+                )
         else:
             logger.warning(f"Could not find source keyframe {preintegrated.from_keyframe_id} for preintegration")
     

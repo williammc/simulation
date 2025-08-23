@@ -180,6 +180,9 @@ class SRIFSlam(BaseEstimator):
         # Initialize state
         self.state: Optional[SRIFState] = None
         
+        # Store trajectory history
+        self.trajectory_history: List[TrajectoryState] = []
+        
         # Camera model
         self.camera_model = CameraMeasurementModel(camera_calibration)
         
@@ -214,6 +217,16 @@ class SRIFSlam(BaseEstimator):
             gyro_bias=np.zeros(3),
             timestamp=initial_pose.timestamp
         )
+        
+        # Save initial state to trajectory history
+        self.trajectory_history.append(TrajectoryState(
+            pose=Pose(
+                timestamp=self.state.timestamp,
+                position=self.state.position.copy(),
+                rotation_matrix=self.state.rotation_matrix.copy()
+            ),
+            velocity=self.state.velocity.copy()
+        ))
         
         # Initialize information form
         if initial_covariance is not None:
@@ -298,6 +311,16 @@ class SRIFSlam(BaseEstimator):
         
         # Update timestamp
         self.state.timestamp += preintegrated.dt
+        
+        # Save state to trajectory history after prediction
+        self.trajectory_history.append(TrajectoryState(
+            pose=Pose(
+                timestamp=self.state.timestamp,
+                position=self.state.position.copy(),
+                rotation_matrix=self.state.rotation_matrix.copy()
+            ),
+            velocity=self.state.velocity.copy()
+        ))
         
         # State transition matrix for preintegrated measurements
         F = np.eye(15)
@@ -507,15 +530,8 @@ class SRIFSlam(BaseEstimator):
         """Get estimated trajectory."""
         trajectory = Trajectory()
         
-        if self.state:
-            state = TrajectoryState(
-                pose=Pose(
-                    timestamp=self.state.timestamp,
-                    position=self.state.position.copy(),
-                    rotation_matrix=self.state.rotation_matrix.copy()
-                ),
-                velocity=self.state.velocity.copy()
-            )
+        # Add all states from history
+        for state in self.trajectory_history:
             trajectory.add_state(state)
         
         return trajectory
@@ -596,5 +612,6 @@ class SRIFSlam(BaseEstimator):
         """Reset estimator state."""
         self.state = None
         self.landmarks.clear()
+        self.trajectory_history = []
         self.num_updates = 0
         self.num_outliers = 0
