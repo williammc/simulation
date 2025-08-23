@@ -253,14 +253,16 @@ class SlidingWindowBA(BaseEstimator):
             if from_kf == self.keyframes[-1]:
                 # Propagate state using preintegrated deltas
                 R_old = self.current_state.rotation_matrix
+                # Use simple gravity vector (in world frame)
+                gravity = np.array([0, 0, -9.81])
                 self.current_state.position = from_kf.state.position + (
                     from_kf.state.velocity * preintegrated.dt +
                     R_old @ preintegrated.delta_position +
-                    0.5 * self.imu_integrator.gravity * preintegrated.dt**2
+                    0.5 * gravity * preintegrated.dt**2
                 )
                 self.current_state.velocity = from_kf.state.velocity + (
                     R_old @ preintegrated.delta_velocity +
-                    self.imu_integrator.gravity * preintegrated.dt
+                    gravity * preintegrated.dt
                 )
                 self.current_state.rotation_matrix = R_old @ preintegrated.delta_rotation
                 self.current_state.timestamp += preintegrated.dt

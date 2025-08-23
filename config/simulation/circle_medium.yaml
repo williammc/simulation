@@ -1,0 +1,58 @@
+# Circle Medium - Standard difficulty
+name: circle_medium
+description: Circle trajectory with medium noise - standard difficulty
+
+# Trajectory configuration
+trajectory:
+  type: circle
+  duration: 20.0
+  frequency: 100.0  # Hz
+  radius: 5.0
+  velocity: 1.0
+
+# Sensor configuration
+sensors:
+  imu:
+    frequency: 200.0  # Hz
+    noise:
+      accelerometer_noise_density: 0.001  # Medium noise
+      gyroscope_noise_density: 0.0001
+      accelerometer_random_walk: 0.0001
+      gyroscope_random_walk: 0.00001
+  
+  camera:
+    frequency: 10.0  # Hz
+    noise:
+      pixel_noise: 0.1  # Medium pixel noise
+    calibration:
+      fx: 500.0
+      fy: 500.0
+      cx: 320.0
+      cy: 240.0
+      width: 640
+      height: 480
+
+# Landmark configuration
+landmarks:
+  num_landmarks: 50
+  x_range: [-10.0, 10.0]
+  y_range: [-10.0, 10.0]
+  z_range: [0.0, 5.0]
+
+# Keyframe selection
+keyframes:
+  strategy: fixed_interval
+  interval: 20  # Every 20th camera frame
+
+# IMU Preintegration
+preintegration:
+  enabled: true
+
+# Random seed for reproducibility
+seed: 43
+
+# Output configuration
+output:
+  save_raw_imu: false
+  save_preintegrated: true
+  save_visualization: false

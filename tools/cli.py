@@ -12,9 +12,16 @@ from rich.console import Console
 from rich.table import Table
 
 # Import command implementations
-from tools.simulate import run_simulation
-from tools.slam import run_slam
-from tools.dashboard import generate_dashboard
+import sys
+import os
+# Add parent directory to path for src imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Add tools directory for local imports
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from simulate import run_simulation
+from slam import run_slam
+from dashboard import generate_dashboard
+from evaluation import run_evaluation
 
 app = typer.Typer(
     name="slam-sim",
@@ -520,144 +527,19 @@ def evaluation(
     )
 ):
     """Run comprehensive evaluation pipeline across all datasets and estimators."""
-    from src.evaluation.orchestrator import EvaluationOrchestrator
-    import yaml
-    
-    # Check if config file exists
-    if not config_file.exists():
-        console.print(f"[red]Error: Configuration file not found: {config_file}[/red]")
-        console.print("\n[yellow]Tip: Use the default config at config/evaluation_config.yaml[/yellow]")
-        raise typer.Exit(1)
-    
-    # Load and potentially modify config
-    with open(config_file, 'r') as f:
-        config = yaml.safe_load(f)
-    
-    # Override settings from command line
-    if output_dir:
-        config['evaluation']['output_dir'] = str(output_dir)
-    if parallel_jobs:
-        config['evaluation']['parallel_jobs'] = parallel_jobs
-    if skip_generation:
-        config['datasets']['simulated']['generate_if_missing'] = False
-        config['datasets']['tum_vi']['download_if_missing'] = False
-    
-    # Filter datasets if specified
-    if datasets:
-        dataset_list = [d.strip() for d in datasets.split(",")]
-        # Filter simulated datasets
-        if 'simulated' in config['datasets']:
-            config['datasets']['simulated']['types'] = [
-                d for d in config['datasets']['simulated']['types']
-                if d['name'] in dataset_list
-            ]
-        # Filter TUM-VI sequences
-        if 'tum_vi' in config['datasets']:
-            config['datasets']['tum_vi']['sequences'] = [
-                s for s in config['datasets']['tum_vi']['sequences']
-                if s['name'] in dataset_list
-            ]
-    
-    # Filter estimators if specified
-    if estimators:
-        estimator_list = [e.strip().lower() for e in estimators.split(",")]
-        for est_name in config['estimators'].keys():
-            if est_name not in estimator_list:
-                config['estimators'][est_name]['enabled'] = False
-    
-    # Disable dashboard if requested
-    if skip_dashboard:
-        config['dashboard']['sections'] = []
-    
-    # Show configuration summary
-    console.print("\n[bold]Evaluation Configuration:[/bold]")
-    console.print(f"  Output Directory: {config['evaluation']['output_dir']}")
-    console.print(f"  Parallel Jobs: {config['evaluation']['parallel_jobs']}")
-    
-    # Count enabled items
-    num_sim = len(config['datasets'].get('simulated', {}).get('types', []))
-    num_tum = len(config['datasets'].get('tum_vi', {}).get('sequences', []))
-    num_datasets = num_sim + num_tum
-    
-    enabled_estimators = [
-        name for name, cfg in config['estimators'].items()
-        if cfg.get('enabled', True)
-    ]
-    
-    console.print(f"  Datasets: {num_datasets} ({num_sim} simulated, {num_tum} TUM-VI)")
-    console.print(f"  Estimators: {len(enabled_estimators)} ({', '.join(enabled_estimators)})")
-    console.print(f"  Total Runs: {num_datasets * len(enabled_estimators)}")
-    
-    if dry_run:
-        console.print("\n[yellow]Dry run mode - no actual execution[/yellow]")
-        console.print("\n[bold]Would evaluate:[/bold]")
-        
-        # Show datasets
-        console.print("\n[cyan]Simulated Datasets:[/cyan]")
-        for dataset in config['datasets'].get('simulated', {}).get('types', []):
-            console.print(f"  - {dataset['name']}")
-        
-        console.print("\n[cyan]TUM-VI Sequences:[/cyan]")
-        for seq in config['datasets'].get('tum_vi', {}).get('sequences', []):
-            console.print(f"  - {seq['name']}")
-        
-        console.print("\n[cyan]Estimators:[/cyan]")
-        for est in enabled_estimators:
-            console.print(f"  - {est}")
-        
-        return
-    
-    # Run evaluation
-    try:
-        console.print("\n[green]Starting evaluation pipeline...[/green]")
-        
-        # Save modified config to temp file
-        import tempfile
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
-            yaml.dump(config, f)
-            temp_config_path = f.name
-        
-        try:
-            # Create orchestrator with modified config
-            orchestrator = EvaluationOrchestrator(temp_config_path)
-            
-            # Run pipeline
-            results = orchestrator.run()
-            
-            console.print("\n[green]✓ Evaluation complete![/green]")
-            
-            if 'dashboard' in results:
-                console.print(f"\n[bold]Dashboard:[/bold] {results['dashboard']}")
-                
-                # Optionally open in browser
-                import webbrowser
-                if not skip_dashboard:
-                    webbrowser.open(f"file://{Path(results['dashboard']).absolute()}")
-            
-            # Show KPI summary
-            if 'kpis' in results and 'summary' in results['kpis']:
-                console.print("\n[bold]Top KPIs:[/bold]")
-                kpi_summary = results['kpis']['summary']
-                
-                # Find best performer for each KPI
-                for kpi_name, estimator_stats in kpi_summary.items():
-                    if estimator_stats:
-                        best_est = min(estimator_stats.items(), key=lambda x: x[1]['mean'])
-                        console.print(f"  {kpi_name}: {best_est[0]} ({best_est[1]['mean']:.3f})")
-        finally:
-            # Clean up temp config file
-            import os
-            if 'temp_config_path' in locals():
-                try:
-                    os.unlink(temp_config_path)
-                except:
-                    pass
-        
-    except Exception as e:
-        console.print(f"\n[red]Error during evaluation: {e}[/red]")
-        import traceback
-        traceback.print_exc()
-        raise typer.Exit(1)
+    # Call the evaluation module
+    exit_code = run_evaluation(
+        config_file=config_file,
+        output_dir=output_dir,
+        parallel_jobs=parallel_jobs,
+        datasets=datasets,
+        estimators=estimators,
+        skip_generation=skip_generation,
+        skip_dashboard=skip_dashboard,
+        dry_run=dry_run
+    )
+    if exit_code != 0:
+        raise typer.Exit(exit_code)
 
 
 def main():

@@ -92,6 +92,9 @@ def run_simulation(
     if config and config.exists():
         with open(config, 'r') as f:
             params = yaml.safe_load(f)
+            # Override preintegration setting from config if present
+            if 'preintegration' in params and 'enabled' in params['preintegration']:
+                enable_preintegration = params['preintegration']['enabled']
     else:
         # Default parameters for each trajectory type
         if trajectory == "circle":

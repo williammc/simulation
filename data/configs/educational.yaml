@@ -1,0 +1,113 @@
+# Educational Configuration
+# Simplified configuration for educational trajectory estimation
+
+evaluation:
+  output_dir: output/educational
+  generate_plots: true
+  parallel_jobs: 1  # Sequential for clarity
+  save_intermediate: true
+
+estimators:
+  ekf:
+    enabled: true
+    config:
+      # Simple EKF settings
+      initial_position_std: 0.1
+      initial_velocity_std: 0.1
+      initial_orientation_std: 0.05
+      initial_accel_bias_std: 0.01
+      initial_gyro_bias_std: 0.001
+      
+      # Process noise
+      accel_noise: 0.1
+      gyro_noise: 0.01
+      accel_bias_noise: 0.001
+      gyro_bias_noise: 0.0001
+      
+      # Gravity
+      gravity_magnitude: 9.81
+      
+      # Only process keyframes
+      use_keyframes_only: true
+      use_preintegrated_imu: true
+  
+  swba:
+    enabled: true
+    config:
+      # Sliding window settings
+      window_size: 10
+      optimization_iterations: 5
+      
+      # Simple optimizer settings
+      initial_lambda: 0.01
+      lambda_factor: 10.0
+      
+      # Convergence criteria
+      gradient_tolerance: 1e-6
+      parameter_tolerance: 1e-8
+      
+      # Use preintegrated IMU
+      use_preintegrated_imu: true
+      use_simulation_keyframes: true
+  
+  srif:
+    enabled: true
+    config:
+      # Information filter settings
+      initial_information: 100.0  # 1/variance
+      
+      # QR update parameters
+      use_qr_factorization: true
+      
+      # Process noise (information form)
+      process_information: 10.0
+      
+      # Only process keyframes
+      use_keyframes_only: true
+      use_preintegrated_imu: true
+
+visualization:
+  # Trajectory plots
+  plot_3d_trajectory: true
+  plot_2d_projections: true
+  
+  # Error analysis
+  plot_ate_timeline: true
+  plot_rpe_histogram: true
+  plot_error_heatmap: true
+  
+  # Performance metrics
+  plot_runtime_comparison: true
+  plot_memory_usage: true
+  
+  # Consistency
+  plot_nees: true
+  plot_confidence_bounds: true
+  
+  # Output format
+  save_as_html: true
+  save_as_pdf: false
+  interactive_plots: true
+
+reporting:
+  # Summary table
+  show_comparison_table: true
+  
+  # Metrics to display
+  metrics:
+    - ate_rmse
+    - ate_mean
+    - rpe_trans_rmse
+    - rpe_rot_rmse
+    - runtime_ms
+    - memory_mb
+    - num_keyframes
+  
+  # Statistical tests
+  perform_significance_tests: true
+  confidence_level: 0.95
+  
+  # Export formats
+  export_csv: true
+  export_json: true
+  export_latex: false

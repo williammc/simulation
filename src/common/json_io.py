@@ -4,7 +4,7 @@ JSON I/O for simulation data following the schema from technical specifications.
 
 import json
 from pathlib import Path
-from typing import Dict, Any, Optional, Union
+from typing import Dict, Any, Optional, Union, List
 from datetime import datetime
 
 import numpy as np
@@ -307,6 +307,39 @@ class SimulationData:
         
         return imu_data
     
+    def get_preintegrated_imu(self) -> List['PreintegratedIMUData']:
+        """Extract preintegrated IMU data from measurements."""
+        from src.common.data_structures import PreintegratedIMUData
+        
+        if not self.measurements.get("preintegrated_imu"):
+            return []
+        
+        preintegrated_data = []
+        for preint_dict in self.measurements["preintegrated_imu"]:
+            cov_array = np.array(preint_dict["covariance"])
+            # Determine covariance shape based on size
+            if cov_array.size == 225:  # 15x15
+                cov_shape = (15, 15)
+            elif cov_array.size == 81:  # 9x9
+                cov_shape = (9, 9)
+            else:
+                # Default to flattened array if shape unclear
+                cov_shape = cov_array.shape
+            
+            preint = PreintegratedIMUData(
+                from_keyframe_id=preint_dict["from_keyframe_id"],
+                to_keyframe_id=preint_dict["to_keyframe_id"],
+                delta_position=np.array(preint_dict["delta_position"]),
+                delta_velocity=np.array(preint_dict["delta_velocity"]),
+                delta_rotation=np.array(preint_dict["delta_rotation"]).reshape(3, 3),
+                covariance=cov_array.reshape(cov_shape),
+                dt=preint_dict["dt"],
+                num_measurements=preint_dict["num_measurements"]
+            )
+            preintegrated_data.append(preint)
+        
+        return preintegrated_data
+    
     def get_camera_data(self, camera_id: Optional[str] = None) -> Optional[CameraData]:
         """Extract camera data from measurements."""
         if not self.measurements.get("camera_frames"):
@@ -452,10 +485,49 @@ def load_simulation_data(filepath: Union[str, Path]) -> Dict[str, Any]:
     imu_calibrations = []
     
     if hasattr(sim_data, 'calibration') and sim_data.calibration:
-        if hasattr(sim_data.calibration, 'cameras'):
-            camera_calibrations = sim_data.calibration.cameras
-        if hasattr(sim_data.calibration, 'imus'):
-            imu_calibrations = sim_data.calibration.imus
+        # Handle dict-based calibration
+        if isinstance(sim_data.calibration, dict):
+            if 'cameras' in sim_data.calibration:
+                # Convert camera calibration dicts to CameraCalibration objects
+                from src.common.data_structures import CameraCalibration, CameraIntrinsics, CameraExtrinsics, CameraModel, IMUCalibration
+                for cam_dict in sim_data.calibration['cameras']:
+                    # Create CameraCalibration directly from dict
+                    cam_calib_dict = {
+                        "camera_id": cam_dict['id'],
+                        "intrinsics": {
+                            "model": cam_dict.get('model', 'pinhole'),
+                            "width": cam_dict['width'],
+                            "height": cam_dict['height'],
+                            "fx": cam_dict['intrinsics']['fx'],
+                            "fy": cam_dict['intrinsics']['fy'],
+                            "cx": cam_dict['intrinsics']['cx'],
+                            "cy": cam_dict['intrinsics']['cy'],
+                            "distortion": cam_dict.get('distortion', [0, 0, 0, 0, 0])
+                        },
+                        "extrinsics": {
+                            "B_T_C": cam_dict.get('T_BC', np.eye(4).tolist())
+                        }
+                    }
+                    camera_calibrations.append(CameraCalibration.from_dict(cam_calib_dict))
+            if 'imus' in sim_data.calibration:
+                # Convert IMU calibration dicts to IMUCalibration objects
+                for imu_dict in sim_data.calibration['imus']:
+                    # Create IMUCalibration from dict
+                    imu_calib_dict = {
+                        "imu_id": imu_dict['id'],
+                        "accelerometer_noise_density": imu_dict['accelerometer']['noise_density'],
+                        "accelerometer_random_walk": imu_dict['accelerometer']['random_walk'],
+                        "gyroscope_noise_density": imu_dict['gyroscope']['noise_density'],
+                        "gyroscope_random_walk": imu_dict['gyroscope']['random_walk'],
+                        "rate": imu_dict.get('sampling_rate', imu_dict.get('rate', 200.0))
+                    }
+                    imu_calibrations.append(IMUCalibration.from_dict(imu_calib_dict))
+        else:
+            # Handle object-based calibration (legacy)
+            if hasattr(sim_data.calibration, 'cameras'):
+                camera_calibrations = sim_data.calibration.cameras
+            if hasattr(sim_data.calibration, 'imus'):
+                imu_calibrations = sim_data.calibration.imus
     
     return {
         "metadata": sim_data.metadata,
@@ -465,5 +537,6 @@ def load_simulation_data(filepath: Union[str, Path]) -> Dict[str, Any]:
         "camera_data": sim_data.get_camera_data(),
         "camera_calibrations": camera_calibrations,
         "imu_calibrations": imu_calibrations,
+        "preintegrated_imu": sim_data.get_preintegrated_imu(),
         "raw": sim_data
     }
