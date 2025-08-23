@@ -1,8 +1,9 @@
 #ifndef SIMULATION_IO_DATA_STRUCTURES_HPP
 #define SIMULATION_IO_DATA_STRUCTURES_HPP
 
+#include <Eigen/Core>
+#include <Eigen/Geometry>
 #include <vector>
-#include <array>
 #include <string>
 #include <optional>
 #include <map>
@@ -10,98 +11,12 @@
 
 namespace simulation_io {
 
-// Basic data types
-struct Vector3 {
-    double x, y, z;
-    
-    Vector3() : x(0), y(0), z(0) {}
-    Vector3(double x_, double y_, double z_) : x(x_), y(y_), z(z_) {}
-    
-    std::vector<double> to_vector() const {
-        return {x, y, z};
-    }
-    
-    static Vector3 from_vector(const std::vector<double>& v) {
-        if (v.size() != 3) {
-            throw std::runtime_error("Vector3 requires exactly 3 elements");
-        }
-        return Vector3(v[0], v[1], v[2]);
-    }
-};
-
-// Quaternion removed - using Matrix3x3 for all rotations
-
-struct Matrix3x3 {
-    std::array<std::array<double, 3>, 3> data;
-    
-    Matrix3x3() {
-        for (int i = 0; i < 3; ++i) {
-            for (int j = 0; j < 3; ++j) {
-                data[i][j] = (i == j) ? 1.0 : 0.0;
-            }
-        }
-    }
-    
-    std::vector<std::vector<double>> to_vector() const {
-        std::vector<std::vector<double>> result(3);
-        for (int i = 0; i < 3; ++i) {
-            result[i] = std::vector<double>(data[i].begin(), data[i].end());
-        }
-        return result;
-    }
-    
-    static Matrix3x3 from_vector(const std::vector<std::vector<double>>& v) {
-        if (v.size() != 3) {
-            throw std::runtime_error("Matrix3x3 requires 3 rows");
-        }
-        Matrix3x3 m;
-        for (int i = 0; i < 3; ++i) {
-            if (v[i].size() != 3) {
-                throw std::runtime_error("Matrix3x3 requires 3 columns");
-            }
-            for (int j = 0; j < 3; ++j) {
-                m.data[i][j] = v[i][j];
-            }
-        }
-        return m;
-    }
-};
-
-struct Matrix4x4 {
-    std::array<std::array<double, 4>, 4> data;
-    
-    Matrix4x4() {
-        for (int i = 0; i < 4; ++i) {
-            for (int j = 0; j < 4; ++j) {
-                data[i][j] = (i == j) ? 1.0 : 0.0;
-            }
-        }
-    }
-    
-    std::vector<std::vector<double>> to_vector() const {
-        std::vector<std::vector<double>> result(4);
-        for (int i = 0; i < 4; ++i) {
-            result[i] = std::vector<double>(data[i].begin(), data[i].end());
-        }
-        return result;
-    }
-    
-    static Matrix4x4 from_vector(const std::vector<std::vector<double>>& v) {
-        if (v.size() != 4) {
-            throw std::runtime_error("Matrix4x4 requires 4 rows");
-        }
-        Matrix4x4 m;
-        for (int i = 0; i < 4; ++i) {
-            if (v[i].size() != 4) {
-                throw std::runtime_error("Matrix4x4 requires 4 columns");
-            }
-            for (int j = 0; j < 4; ++j) {
-                m.data[i][j] = v[i][j];
-            }
-        }
-        return m;
-    }
-};
+// Use Eigen types for linear algebra
+using Vector3 = Eigen::Vector3d;
+using Matrix3x3 = Eigen::Matrix3d;
+using Matrix4x4 = Eigen::Matrix4d;
+using VectorX = Eigen::VectorXd;
+using MatrixX = Eigen::MatrixXd;
 
 // Calibration structures
 struct CameraIntrinsics {
@@ -117,6 +32,8 @@ struct CameraCalibration {
     std::string id;
     CameraIntrinsics intrinsics;
     Matrix4x4 T_BC;  // Body to Camera transformation
+    
+    CameraCalibration() : T_BC(Matrix4x4::Identity()) {}
 };
 
 struct IMUNoiseParams {
@@ -144,7 +61,7 @@ struct TrajectoryState {
     std::optional<Vector3> velocity;
     std::optional<Vector3> angular_velocity;
     
-    TrajectoryState() : timestamp(0) {}
+    TrajectoryState() : timestamp(0), position(Vector3::Zero()), rotation_matrix(Matrix3x3::Identity()) {}
 };
 
 // Landmark structure
@@ -153,7 +70,7 @@ struct Landmark {
     Vector3 position;
     std::optional<std::vector<double>> descriptor;
     
-    Landmark() : id(-1) {}
+    Landmark() : id(-1), position(Vector3::Zero()) {}
     Landmark(int id_, const Vector3& pos) : id(id_), position(pos) {}
 };
 
@@ -163,7 +80,7 @@ struct IMUMeasurement {
     Vector3 accelerometer;
     Vector3 gyroscope;
     
-    IMUMeasurement() : timestamp(0) {}
+    IMUMeasurement() : timestamp(0), accelerometer(Vector3::Zero()), gyroscope(Vector3::Zero()) {}
 };
 
 struct ImagePoint {
@@ -172,15 +89,12 @@ struct ImagePoint {
     ImagePoint() : u(0), v(0) {}
     ImagePoint(double u_, double v_) : u(u_), v(v_) {}
     
-    std::vector<double> to_vector() const {
-        return {u, v};
+    Eigen::Vector2d toVector() const {
+        return Eigen::Vector2d(u, v);
     }
     
-    static ImagePoint from_vector(const std::vector<double>& v) {
-        if (v.size() != 2) {
-            throw std::runtime_error("ImagePoint requires exactly 2 elements");
-        }
-        return ImagePoint(v[0], v[1]);
+    static ImagePoint fromVector(const Eigen::Vector2d& v) {
+        return ImagePoint(v.x(), v.y());
     }
 };
 
@@ -202,6 +116,29 @@ struct CameraFrame {
     CameraFrame() : timestamp(0), is_keyframe(false) {}
 };
 
+// Preintegrated IMU data structure
+struct PreintegratedIMUData {
+    int from_keyframe_id;
+    int to_keyframe_id;
+    Vector3 delta_position;
+    Vector3 delta_velocity;
+    Matrix3x3 delta_rotation;
+    VectorX covariance;  // Flattened covariance matrix (15x15 -> 225 elements)
+    double dt;
+    int num_measurements;
+    std::optional<VectorX> jacobian;  // Flattened jacobian matrix
+    
+    PreintegratedIMUData() 
+        : from_keyframe_id(-1), 
+          to_keyframe_id(-1), 
+          delta_position(Vector3::Zero()),
+          delta_velocity(Vector3::Zero()),
+          delta_rotation(Matrix3x3::Identity()),
+          covariance(VectorX::Zero(225)),
+          dt(0), 
+          num_measurements(0) {}
+};
+
 // Metadata structure
 struct Metadata {
     std::string version;
@@ -220,21 +157,6 @@ struct Metadata {
     } units;
     
     Metadata() : version("1.0"), trajectory_type("unknown"), duration(0), coordinate_system("ENU") {}
-};
-
-// Preintegrated IMU data structure
-struct PreintegratedIMUData {
-    int from_keyframe_id;
-    int to_keyframe_id;
-    Vector3 delta_position;
-    Vector3 delta_velocity;
-    Matrix3x3 delta_rotation;
-    std::vector<double> covariance;  // Flattened covariance matrix
-    double dt;
-    int num_measurements;
-    std::optional<std::vector<double>> jacobian;  // Flattened jacobian matrix
-    
-    PreintegratedIMUData() : from_keyframe_id(-1), to_keyframe_id(-1), dt(0), num_measurements(0) {}
 };
 
 // Main simulation data container

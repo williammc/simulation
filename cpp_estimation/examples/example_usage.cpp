@@ -20,12 +20,14 @@ int main() {
         
         // Circular motion
         double angle = 2.0 * M_PI * state.timestamp / 5.0;
-        state.position.x = 10.0 * std::cos(angle);
-        state.position.y = 10.0 * std::sin(angle);
-        state.position.z = 5.0;
+        state.position = Vector3(
+            10.0 * std::cos(angle),
+            10.0 * std::sin(angle),
+            5.0
+        );
         
         // Identity rotation matrix (no rotation)
-        state.rotation_matrix = Matrix3x3(); // Identity by default
+        state.rotation_matrix = Matrix3x3::Identity();
         
         data.trajectory.push_back(state);
     }
@@ -34,9 +36,11 @@ int main() {
     for (int i = 0; i < 10; ++i) {
         Landmark lm;
         lm.id = i;
-        lm.position.x = i * 2.0 - 9.0;
-        lm.position.y = i * 1.5 - 7.0;
-        lm.position.z = 0.0;
+        lm.position = Vector3(
+            i * 2.0 - 9.0,
+            i * 1.5 - 7.0,
+            0.0
+        );
         data.landmarks.push_back(lm);
     }
     
@@ -46,14 +50,10 @@ int main() {
         meas.timestamp = i * 0.01;  // 100 Hz
         
         // Gravity vector
-        meas.accelerometer.x = 0.0;
-        meas.accelerometer.y = 0.0;
-        meas.accelerometer.z = 9.81;
+        meas.accelerometer = Vector3(0.0, 0.0, 9.81);
         
         // No rotation
-        meas.gyroscope.x = 0.0;
-        meas.gyroscope.y = 0.0;
-        meas.gyroscope.z = 0.0;
+        meas.gyroscope = Vector3::Zero();
         
         data.imu_measurements.push_back(meas);
     }

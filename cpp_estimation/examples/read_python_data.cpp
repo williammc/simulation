@@ -55,8 +55,8 @@ int main(int argc, char* argv[]) {
             const auto& first = data.trajectory.front();
             std::cout << "    First State:" << std::endl;
             std::cout << "      t=" << first.timestamp 
-                      << ", pos=[" << first.position.x << ", " 
-                      << first.position.y << ", " << first.position.z << "]" << std::endl;
+                      << ", pos=[" << first.position.x() << ", " 
+                      << first.position.y() << ", " << first.position.z() << "]" << std::endl;
         }
         std::cout << "  Landmarks: " << data.landmarks.size() << std::endl;
         

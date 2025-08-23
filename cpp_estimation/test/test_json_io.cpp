@@ -41,7 +41,7 @@ SimulationData create_sample_data() {
     cam_calib.intrinsics.cy = 240.0;
     cam_calib.intrinsics.distortion = {0.1, -0.2, 0.0, 0.0, 0.0};
     // Identity transformation for simplicity
-    cam_calib.T_BC = Matrix4x4();
+    cam_calib.T_BC = Matrix4x4::Identity();
     data.camera_calibrations.push_back(cam_calib);
     
     // Add IMU calibration
@@ -62,21 +62,17 @@ SimulationData create_sample_data() {
         
         // Figure-8 trajectory
         double omega = 2.0 * M_PI / 10.0;  // One cycle in 10 seconds
-        state.position.x = 5.0 * std::sin(omega * t);
-        state.position.y = 5.0 * std::sin(2.0 * omega * t);
-        state.position.z = 2.0 + 0.5 * std::sin(3.0 * omega * t);
+        state.position = Vector3(
+            5.0 * std::sin(omega * t),
+            5.0 * std::sin(2.0 * omega * t),
+            2.0 + 0.5 * std::sin(3.0 * omega * t)
+        );
         
         // Simple rotation matrix (rotating around z-axis)
         double angle = omega * t;
-        state.rotation_matrix.data[0][0] = std::cos(angle);
-        state.rotation_matrix.data[0][1] = -std::sin(angle);
-        state.rotation_matrix.data[0][2] = 0.0;
-        state.rotation_matrix.data[1][0] = std::sin(angle);
-        state.rotation_matrix.data[1][1] = std::cos(angle);
-        state.rotation_matrix.data[1][2] = 0.0;
-        state.rotation_matrix.data[2][0] = 0.0;
-        state.rotation_matrix.data[2][1] = 0.0;
-        state.rotation_matrix.data[2][2] = 1.0;
+        state.rotation_matrix << std::cos(angle), -std::sin(angle), 0.0,
+                                  std::sin(angle), std::cos(angle), 0.0,
+                                  0.0, 0.0, 1.0;
         
         // Velocity (derivative of position)
         state.velocity = Vector3(
@@ -96,9 +92,11 @@ SimulationData create_sample_data() {
         Landmark lm;
         lm.id = i;
         // Random positions in a cube
-        lm.position.x = -10.0 + 20.0 * (i % 5) / 4.0;
-        lm.position.y = -10.0 + 20.0 * ((i / 5) % 5) / 4.0;
-        lm.position.z = 0.0 + 5.0 * ((i / 25) % 2);
+        lm.position = Vector3(
+            -10.0 + 20.0 * (i % 5) / 4.0,
+            -10.0 + 20.0 * ((i / 5) % 5) / 4.0,
+            0.0 + 5.0 * ((i / 25) % 2)
+        );
         
         // Add a simple descriptor
         lm.descriptor = std::vector<double>(128, 0.0);
@@ -115,14 +113,18 @@ SimulationData create_sample_data() {
         meas.timestamp = i * 0.005;
         
         // Simulated accelerometer (gravity + motion)
-        meas.accelerometer.x = 0.1 * std::sin(meas.timestamp);
-        meas.accelerometer.y = 0.1 * std::cos(meas.timestamp);
-        meas.accelerometer.z = 9.81 + 0.05 * std::sin(2.0 * meas.timestamp);
+        meas.accelerometer = Vector3(
+            0.1 * std::sin(meas.timestamp),
+            0.1 * std::cos(meas.timestamp),
+            9.81 + 0.05 * std::sin(2.0 * meas.timestamp)
+        );
         
         // Simulated gyroscope
-        meas.gyroscope.x = 0.01 * std::sin(meas.timestamp);
-        meas.gyroscope.y = 0.01 * std::cos(meas.timestamp);
-        meas.gyroscope.z = 2.0 * M_PI / 10.0;  // Constant rotation around z
+        meas.gyroscope = Vector3(
+            0.01 * std::sin(meas.timestamp),
+            0.01 * std::cos(meas.timestamp),
+            2.0 * M_PI / 10.0  // Constant rotation around z
+        );
         
         data.imu_measurements.push_back(meas);
     }
@@ -175,20 +177,14 @@ SimulationData create_sample_data() {
         
         // Simple rotation matrix
         double angle = 0.1;
-        preint.delta_rotation.data[0][0] = std::cos(angle);
-        preint.delta_rotation.data[0][1] = -std::sin(angle);
-        preint.delta_rotation.data[0][2] = 0.0;
-        preint.delta_rotation.data[1][0] = std::sin(angle);
-        preint.delta_rotation.data[1][1] = std::cos(angle);
-        preint.delta_rotation.data[1][2] = 0.0;
-        preint.delta_rotation.data[2][0] = 0.0;
-        preint.delta_rotation.data[2][1] = 0.0;
-        preint.delta_rotation.data[2][2] = 1.0;
+        preint.delta_rotation << std::cos(angle), -std::sin(angle), 0.0,
+                                  std::sin(angle), std::cos(angle), 0.0,
+                                  0.0, 0.0, 1.0;
         
         // Covariance (15x15 flattened)
-        preint.covariance = std::vector<double>(225, 0.0);
+        preint.covariance = VectorX::Zero(225);
         for (int i = 0; i < 15; ++i) {
-            preint.covariance[i * 15 + i] = 0.001;  // Diagonal elements
+            preint.covariance(i * 15 + i) = 0.001;  // Diagonal elements
         }
         
         preint.dt = 1.0;  // 1 second between keyframes
@@ -196,9 +192,9 @@ SimulationData create_sample_data() {
         
         // Add optional jacobian
         if (kf_idx % 2 == 0) {
-            preint.jacobian = std::vector<double>(225, 0.0);
+            preint.jacobian = VectorX::Zero(225);
             for (int i = 0; i < 15; ++i) {
-                preint.jacobian.value()[i * 15 + i] = 1.0;  // Identity jacobian
+                preint.jacobian.value()(i * 15 + i) = 1.0;  // Identity jacobian
             }
         }
         
@@ -253,15 +249,9 @@ void verify_data(const SimulationData& original, const SimulationData& loaded) {
         const auto& orig = original.trajectory[i];
         const auto& load = loaded.trajectory[i];
         assert(std::abs(orig.timestamp - load.timestamp) < 1e-6);
-        assert(std::abs(orig.position.x - load.position.x) < 1e-6);
-        assert(std::abs(orig.position.y - load.position.y) < 1e-6);
-        assert(std::abs(orig.position.z - load.position.z) < 1e-6);
+        assert((orig.position - load.position).norm() < 1e-6);
         // Check rotation matrix
-        for (int r = 0; r < 3; ++r) {
-            for (int c = 0; c < 3; ++c) {
-                assert(std::abs(orig.rotation_matrix.data[r][c] - load.rotation_matrix.data[r][c]) < 1e-6);
-            }
-        }
+        assert((orig.rotation_matrix - load.rotation_matrix).norm() < 1e-6);
     }
     
     // Check landmarks
@@ -270,9 +260,7 @@ void verify_data(const SimulationData& original, const SimulationData& loaded) {
         const auto& orig = original.landmarks[i];
         const auto& load = loaded.landmarks[i];
         assert(orig.id == load.id);
-        assert(std::abs(orig.position.x - load.position.x) < 1e-6);
-        assert(std::abs(orig.position.y - load.position.y) < 1e-6);
-        assert(std::abs(orig.position.z - load.position.z) < 1e-6);
+        assert((orig.position - load.position).norm() < 1e-6);
     }
     
     // Check IMU measurements
@@ -281,12 +269,8 @@ void verify_data(const SimulationData& original, const SimulationData& loaded) {
         const auto& orig = original.imu_measurements[i];
         const auto& load = loaded.imu_measurements[i];
         assert(std::abs(orig.timestamp - load.timestamp) < 1e-6);
-        assert(std::abs(orig.accelerometer.x - load.accelerometer.x) < 1e-6);
-        assert(std::abs(orig.accelerometer.y - load.accelerometer.y) < 1e-6);
-        assert(std::abs(orig.accelerometer.z - load.accelerometer.z) < 1e-6);
-        assert(std::abs(orig.gyroscope.x - load.gyroscope.x) < 1e-6);
-        assert(std::abs(orig.gyroscope.y - load.gyroscope.y) < 1e-6);
-        assert(std::abs(orig.gyroscope.z - load.gyroscope.z) < 1e-6);
+        assert((orig.accelerometer - load.accelerometer).norm() < 1e-6);
+        assert((orig.gyroscope - load.gyroscope).norm() < 1e-6);
     }
     
     // Check camera frames
@@ -311,12 +295,8 @@ void verify_data(const SimulationData& original, const SimulationData& loaded) {
         const auto& load = loaded.preintegrated_imu[i];
         assert(orig.from_keyframe_id == load.from_keyframe_id);
         assert(orig.to_keyframe_id == load.to_keyframe_id);
-        assert(std::abs(orig.delta_position.x - load.delta_position.x) < 1e-6);
-        assert(std::abs(orig.delta_position.y - load.delta_position.y) < 1e-6);
-        assert(std::abs(orig.delta_position.z - load.delta_position.z) < 1e-6);
-        assert(std::abs(orig.delta_velocity.x - load.delta_velocity.x) < 1e-6);
-        assert(std::abs(orig.delta_velocity.y - load.delta_velocity.y) < 1e-6);
-        assert(std::abs(orig.delta_velocity.z - load.delta_velocity.z) < 1e-6);
+        assert((orig.delta_position - load.delta_position).norm() < 1e-6);
+        assert((orig.delta_velocity - load.delta_velocity).norm() < 1e-6);
         assert(std::abs(orig.dt - load.dt) < 1e-6);
         assert(orig.num_measurements == load.num_measurements);
         assert(orig.covariance.size() == load.covariance.size());
@@ -385,18 +365,18 @@ int main() {
         if (!loaded_data.trajectory.empty()) {
             const auto& state = loaded_data.trajectory[0];
             std::cout << "  Timestamp: " << state.timestamp << std::endl;
-            std::cout << "  Position: [" << state.position.x << ", " 
-                      << state.position.y << ", " << state.position.z << "]" << std::endl;
-            std::cout << "  Rotation Matrix: [" << state.rotation_matrix.data[0][0] << ", " 
-                      << state.rotation_matrix.data[0][1] << ", " << state.rotation_matrix.data[0][2] << "]" << std::endl;
+            std::cout << "  Position: [" << state.position.x() << ", " 
+                      << state.position.y() << ", " << state.position.z() << "]" << std::endl;
+            std::cout << "  Rotation Matrix: [" << state.rotation_matrix(0,0) << ", " 
+                      << state.rotation_matrix(0,1) << ", " << state.rotation_matrix(0,2) << "]" << std::endl;
         }
         
         std::cout << "\nSample landmark:" << std::endl;
         if (!loaded_data.landmarks.empty()) {
             const auto& lm = loaded_data.landmarks[0];
             std::cout << "  ID: " << lm.id << std::endl;
-            std::cout << "  Position: [" << lm.position.x << ", " 
-                      << lm.position.y << ", " << lm.position.z << "]" << std::endl;
+            std::cout << "  Position: [" << lm.position.x() << ", " 
+                      << lm.position.y() << ", " << lm.position.z() << "]" << std::endl;
         }
         
         std::cout << "\nAll tests passed successfully!" << std::endl;

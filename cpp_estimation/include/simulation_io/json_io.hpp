@@ -3,6 +3,7 @@
 
 #include "data_structures.hpp"
 #include <nlohmann/json.hpp>
+#include <Eigen/Core>
 #include <fstream>
 #include <iostream>
 #include <iomanip>
@@ -11,11 +12,11 @@ namespace simulation_io {
 
 using json = nlohmann::json;
 
-// JSON conversion helpers
+// JSON conversion helpers for Eigen types
 namespace detail {
 
 inline json vector3_to_json(const Vector3& v) {
-    return json::array({v.x, v.y, v.z});
+    return json::array({v.x(), v.y(), v.z()});
 }
 
 inline Vector3 json_to_vector3(const json& j) {
@@ -30,7 +31,7 @@ inline json matrix3x3_to_json(const Matrix3x3& m) {
     for (int i = 0; i < 3; ++i) {
         json row = json::array();
         for (int j = 0; j < 3; ++j) {
-            row.push_back(m.data[i][j]);
+            row.push_back(m(i, j));
         }
         result.push_back(row);
     }
@@ -47,7 +48,7 @@ inline Matrix3x3 json_to_matrix3x3(const json& j) {
             throw std::runtime_error("Invalid Matrix3x3 row format");
         }
         for (int j_ = 0; j_ < 3; ++j_) {
-            m.data[i][j_] = j[i][j_];
+            m(i, j_) = j[i][j_];
         }
     }
     return m;
@@ -58,7 +59,7 @@ inline json matrix4x4_to_json(const Matrix4x4& m) {
     for (int i = 0; i < 4; ++i) {
         json row = json::array();
         for (int j = 0; j < 4; ++j) {
-            row.push_back(m.data[i][j]);
+            row.push_back(m(i, j));
         }
         result.push_back(row);
     }
@@ -75,10 +76,39 @@ inline Matrix4x4 json_to_matrix4x4(const json& j) {
             throw std::runtime_error("Invalid Matrix4x4 row format");
         }
         for (int j_ = 0; j_ < 4; ++j_) {
-            m.data[i][j_] = j[i][j_];
+            m(i, j_) = j[i][j_];
         }
     }
     return m;
+}
+
+inline VectorX json_to_vectorx(const json& j, int expected_size = -1) {
+    if (!j.is_array()) {
+        throw std::runtime_error("Invalid VectorX JSON format");
+    }
+    
+    // Handle 2D array (needs flattening) or 1D array
+    if (!j.empty() && j[0].is_array()) {
+        // It's a 2D array, flatten it
+        std::vector<double> flat;
+        for (const auto& row : j) {
+            for (const auto& val : row) {
+                flat.push_back(val);
+            }
+        }
+        VectorX v(flat.size());
+        for (size_t i = 0; i < flat.size(); ++i) {
+            v(i) = flat[i];
+        }
+        return v;
+    } else {
+        // It's already a 1D array
+        VectorX v(j.size());
+        for (size_t i = 0; i < j.size(); ++i) {
+            v(i) = j[i];
+        }
+        return v;
+    }
 }
 
 } // namespace detail
@@ -222,11 +252,19 @@ public:
                 preint_json["delta_position"] = detail::vector3_to_json(preint.delta_position);
                 preint_json["delta_velocity"] = detail::vector3_to_json(preint.delta_velocity);
                 preint_json["delta_rotation"] = detail::matrix3x3_to_json(preint.delta_rotation);
-                preint_json["covariance"] = preint.covariance;
+                
+                // Convert VectorX to std::vector for JSON
+                std::vector<double> cov_vec(preint.covariance.data(), 
+                                           preint.covariance.data() + preint.covariance.size());
+                preint_json["covariance"] = cov_vec;
+                
                 preint_json["dt"] = preint.dt;
                 preint_json["num_measurements"] = preint.num_measurements;
+                
                 if (preint.jacobian.has_value()) {
-                    preint_json["jacobian"] = preint.jacobian.value();
+                    std::vector<double> jac_vec(preint.jacobian.value().data(),
+                                               preint.jacobian.value().data() + preint.jacobian.value().size());
+                    preint_json["jacobian"] = jac_vec;
                 }
                 j["measurements"]["preintegrated_imu"].push_back(preint_json);
             }
@@ -331,10 +369,8 @@ public:
                         state.rotation_matrix = detail::json_to_matrix3x3(state_json["rotation_matrix"]);
                     } else if (state_json.contains("quaternion")) {
                         // Legacy quaternion support - convert to rotation matrix
-                        // For simplicity, we'll just use identity matrix for legacy files
-                        // In production, you'd want to implement quaternion_to_rotation_matrix
                         std::cerr << "Warning: Legacy quaternion format detected, using identity rotation" << std::endl;
-                        state.rotation_matrix = Matrix3x3(); // Identity
+                        state.rotation_matrix = Matrix3x3::Identity();
                     }
                     
                     if (state_json.contains("velocity")) {
@@ -418,9 +454,10 @@ public:
                     preint.delta_position = detail::json_to_vector3(preint_json["delta_position"]);
                     preint.delta_velocity = detail::json_to_vector3(preint_json["delta_velocity"]);
                     
-                    // Handle delta_rotation which could be a matrix or a list
+                    // Handle delta_rotation 
                     if (preint_json["delta_rotation"].is_array()) {
-                        if (preint_json["delta_rotation"][0].is_array()) {
+                        if (!preint_json["delta_rotation"].empty() && 
+                            preint_json["delta_rotation"][0].is_array()) {
                             // It's a matrix
                             preint.delta_rotation = detail::json_to_matrix3x3(preint_json["delta_rotation"]);
                         } else if (preint_json["delta_rotation"].size() == 9) {
@@ -429,49 +466,22 @@ public:
                             const auto& flat = preint_json["delta_rotation"];
                             for (int i = 0; i < 3; ++i) {
                                 for (int j = 0; j < 3; ++j) {
-                                    m.data[i][j] = flat[i * 3 + j];
+                                    m(i, j) = flat[i * 3 + j];
                                 }
                             }
                             preint.delta_rotation = m;
                         }
                     }
                     
-                    // Handle covariance which could be 2D or flattened
-                    if (preint_json["covariance"].is_array()) {
-                        const auto& cov = preint_json["covariance"];
-                        if (!cov.empty() && cov[0].is_array()) {
-                            // It's a 2D array, flatten it
-                            preint.covariance.clear();
-                            for (const auto& row : cov) {
-                                for (const auto& val : row) {
-                                    preint.covariance.push_back(val);
-                                }
-                            }
-                        } else {
-                            // It's already flattened
-                            preint.covariance = cov.get<std::vector<double>>();
-                        }
-                    }
+                    // Handle covariance (could be 2D or flattened)
+                    preint.covariance = detail::json_to_vectorx(preint_json["covariance"], 225);
+                    
                     preint.dt = preint_json["dt"];
                     preint.num_measurements = preint_json["num_measurements"];
                     
+                    // Handle jacobian if present
                     if (preint_json.contains("jacobian") && !preint_json["jacobian"].is_null()) {
-                        const auto& jac = preint_json["jacobian"];
-                        if (jac.is_array()) {
-                            if (!jac.empty() && jac[0].is_array()) {
-                                // It's a 2D array, flatten it
-                                std::vector<double> flattened;
-                                for (const auto& row : jac) {
-                                    for (const auto& val : row) {
-                                        flattened.push_back(val);
-                                    }
-                                }
-                                preint.jacobian = flattened;
-                            } else {
-                                // It's already flattened
-                                preint.jacobian = jac.get<std::vector<double>>();
-                            }
-                        }
+                        preint.jacobian = detail::json_to_vectorx(preint_json["jacobian"], 225);
                     }
                     
                     data.preintegrated_imu.push_back(preint);
