@@ -20,6 +20,9 @@ pandas>=2.0.0  # For data manipulation
 transforms3d>=0.4.1  # For rotation conversions
 sympy>=1.12  # For symbolic math (useful for Jacobians)
 
+# for comparing IMU integration
+gtsam
+
 # Testing
 pytest>=7.3.0
 pytest-cov>=4.0.0
