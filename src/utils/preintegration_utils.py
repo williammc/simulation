@@ -76,7 +76,8 @@ def preintegrate_between_keyframes(
     keyframe_ids: List[int],
     keyframe_times: List[float],
     preintegrator: Optional[IMUPreintegrator] = None,
-    cache: Optional[PreintegrationCache] = None
+    cache: Optional[PreintegrationCache] = None,
+    keyframe_orientations: Optional[List[np.ndarray]] = None
 ) -> Dict[int, PreintegratedIMUData]:
     """
     Preintegrate IMU measurements between consecutive keyframes.
@@ -87,6 +88,7 @@ def preintegrate_between_keyframes(
         keyframe_times: Corresponding keyframe timestamps
         preintegrator: IMU preintegrator (creates default if None)
         cache: Optional cache for storing results
+        keyframe_orientations: Optional list of rotation matrices (3x3) at keyframes
         
     Returns:
         Dictionary mapping target keyframe ID to preintegrated data
@@ -137,11 +139,17 @@ def preintegrate_between_keyframes(
             logger.warning(f"No IMU measurements between keyframes {from_id} and {to_id}")
             continue
         
-        # Preintegrate measurements
+        # Get initial orientation for this interval if available
+        initial_orientation = None
+        if keyframe_orientations is not None and i < len(keyframe_orientations):
+            initial_orientation = keyframe_orientations[i]
+        
+        # Preintegrate measurements with initial orientation
         preintegrated_data = preintegrator.batch_process(
             interval_measurements,
             from_id,
-            to_id
+            to_id,
+            initial_orientation
         )
         
         # Store in cache

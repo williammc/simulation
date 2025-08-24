@@ -235,19 +235,20 @@ class EKFSlam(BaseEstimator):
             preintegrated: Preintegrated IMU data between keyframes
         """
         # Update position using preintegrated delta
-        # p_new = p_old + v_old * dt + R_old * delta_p + 0.5 * g * dt^2
+        # The preintegrated values are gravity-free, so we need to add gravity effects
         R_old = self.state.rotation_matrix
+        gravity_contribution = 0.5 * self.gravity * preintegrated.dt**2
         self.state.position += (
             self.state.velocity * preintegrated.dt + 
             R_old @ preintegrated.delta_position + 
-            0.5 * self.gravity * preintegrated.dt**2
+            gravity_contribution  # Add gravity effect
         )
         
         # Update velocity using preintegrated delta
-        # v_new = v_old + R_old * delta_v + g * dt
+        # Also add gravity effect to velocity
         self.state.velocity += (
             R_old @ preintegrated.delta_velocity + 
-            self.gravity * preintegrated.dt
+            self.gravity * preintegrated.dt  # Add gravity effect
         )
         
         # Update rotation using preintegrated delta

@@ -225,16 +225,30 @@ def compute_ate(
     if align:
         estimated, _ = align_trajectories(estimated, ground_truth)
     
-    # Ensure same length
-    min_len = min(len(estimated.states), len(ground_truth.states))
-    
-    # Compute position errors
+    # Match estimated poses to ground truth by timestamp
     errors = []
-    for i in range(min_len):
-        est_pos = estimated.states[i].pose.position
-        gt_pos = ground_truth.states[i].pose.position
+    
+    # Build ground truth lookup by timestamp for efficiency
+    gt_by_time = {state.pose.timestamp: state for state in ground_truth.states}
+    
+    # For each estimated pose, find closest ground truth
+    for est_state in estimated.states:
+        est_pos = est_state.pose.position
+        est_time = est_state.pose.timestamp
+        
+        # Find exact or closest ground truth match
+        if est_time in gt_by_time:
+            gt_state = gt_by_time[est_time]
+        else:
+            # Find closest timestamp
+            closest_time = min(gt_by_time.keys(), key=lambda t: abs(t - est_time))
+            gt_state = gt_by_time[closest_time]
+        
+        gt_pos = gt_state.pose.position
         error = np.linalg.norm(est_pos - gt_pos)
         errors.append(error)
+    
+    min_len = len(estimated.states)  # Use estimated length for metrics
     
     errors = np.array(errors)
     

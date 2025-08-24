@@ -377,17 +377,27 @@ class IMUPreintegrator:
         self.gyro_random_walk = gyro_random_walk
         self.gravity = gravity
         
+        # Initial orientation (will be set when reset is called)
+        self.R_init = None
+        
         # Reset preintegration
         self.reset()
     
-    def reset(self, bias_accel: Optional[np.ndarray] = None, bias_gyro: Optional[np.ndarray] = None):
+    def reset(self, bias_accel: Optional[np.ndarray] = None, bias_gyro: Optional[np.ndarray] = None, initial_orientation: Optional[np.ndarray] = None):
         """
         Reset preintegration.
         
         Args:
             bias_accel: Initial accelerometer bias
             bias_gyro: Initial gyroscope bias
+            initial_orientation: Initial rotation matrix (3x3) for gravity compensation
         """
+        # Store initial orientation for gravity compensation
+        if initial_orientation is not None:
+            self.R_init = initial_orientation.copy()
+        else:
+            self.R_init = np.eye(3)  # Default to identity
+        
         # Preintegrated values
         self.delta_R = np.eye(3)  # Rotation
         self.delta_v = np.zeros(3)  # Velocity
@@ -419,6 +429,9 @@ class IMUPreintegrator:
         """
         Add IMU measurement to preintegration.
         
+        NOTE: The IMU model already provides specific force (acceleration without gravity),
+        so we don't need to remove gravity here.
+        
         Args:
             measurement: IMU measurement
             dt: Time step since last measurement
@@ -439,11 +452,16 @@ class IMUPreintegrator:
         delta_R_dt = exp_so3(omega_dt)
         self.delta_R = self.delta_R @ delta_R_dt
         
-        # Update velocity
+        # The accelerometer already measures specific force (without gravity)
+        # Just rotate it to accumulate in the initial body frame
+        # accel is already in the current body frame
+        # We need to rotate it by delta_R_prev to express it in the initial body frame
+        
+        # Update velocity (acceleration is already gravity-free)
         self.delta_v = self.delta_v + delta_R_prev @ accel * dt
         
         # Update position
-        self.delta_p = self.delta_p + self.delta_v * dt + 0.5 * delta_R_prev @ accel * dt**2
+        self.delta_p = self.delta_p + delta_v_prev * dt + 0.5 * delta_R_prev @ accel * dt**2
         
         # Update Jacobians (simplified first-order approximation)
         A_dt = exp_so3(-omega_dt)
@@ -502,7 +520,8 @@ class IMUPreintegrator:
         self,
         measurements: List[IMUMeasurement],
         from_keyframe_id: int,
-        to_keyframe_id: int
+        to_keyframe_id: int,
+        initial_orientation: Optional[np.ndarray] = None
     ) -> 'PreintegratedIMUData':
         """
         Batch process IMU measurements between two keyframes.
@@ -511,14 +530,15 @@ class IMUPreintegrator:
             measurements: List of IMU measurements between keyframes
             from_keyframe_id: Source keyframe ID
             to_keyframe_id: Target keyframe ID
+            initial_orientation: Initial rotation matrix (3x3) for gravity compensation
         
         Returns:
             PreintegratedIMUData ready for use in estimators
         """
         from src.common.data_structures import PreintegratedIMUData
         
-        # Reset preintegrator before processing
-        self.reset(self.bias_accel, self.bias_gyro)
+        # Reset preintegrator before processing with initial orientation
+        self.reset(self.bias_accel, self.bias_gyro, initial_orientation)
         
         # Process all measurements
         for i, meas in enumerate(measurements):

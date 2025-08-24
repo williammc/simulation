@@ -271,8 +271,8 @@ class TestIMUPreintegrator:
         # With constant acceleration of 1 m/s^2 for 1 second:
         # delta_v should be ~1 m/s
         assert np.abs(result.delta_velocity[0] - 1.0) < 0.01
-        # delta_p accumulates with discrete integration, so it's slightly higher than 0.5
-        assert np.abs(result.delta_position[0] - 0.6) < 0.01
+        # delta_p = 0.5 * a * t^2 = 0.5 * 1 * 1^2 = 0.5
+        assert np.abs(result.delta_position[0] - 0.5) < 0.01
     
     def test_bias_correction(self):
         """Test bias correction in preintegration."""

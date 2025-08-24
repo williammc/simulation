@@ -260,7 +260,11 @@ class TestIMUModel:
         assert np.std(gyros[:, 0]) > 0
         
         # But should be bounded
-        assert np.all(np.abs(accels) < 100)  # Reasonable bounds
+        # For circle with r=1m and period=0.5s: omega = 2*pi/0.5 = 12.6 rad/s
+        # Centripetal acceleration = omega^2 * r = 158 m/s^2
+        # Plus gravity (~10 m/s^2), total magnitude ~160 m/s^2
+        # With noise, allow some margin
+        assert np.all(np.abs(accels) < 200)  # Centripetal + gravity + noise margin
         # For circle trajectory with 0.5s period, angular velocity is ~12.6 rad/s
         assert np.all(np.abs(gyros) < 20)  # Allow for fast rotations
     

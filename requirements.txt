@@ -29,6 +29,13 @@ black>=23.0.0  # Code formatting
 isort>=5.12.0  # Import sorting
 mypy>=1.3.0  # Type checking
 
+# Jupyter notebooks
+jupyter 
+notebook 
+ipykernel 
+matplotlib 
+ipywidgets 
+
 # Optional but useful
 tqdm>=4.65.0  # Progress bars
 joblib>=1.3.0  # Parallel processing

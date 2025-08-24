@@ -264,10 +264,27 @@ def plot_trajectory_comparison(
         opacity=0.7
     ), row=1 if show_error else None, col=1 if show_error else None)
     
-    if show_error and len(gt_positions) == len(est_positions):
-        # Calculate errors
-        errors = np.linalg.norm(gt_positions - est_positions, axis=1)
-        timestamps = [state.pose.timestamp for state in ground_truth.states]
+    if show_error and len(est_positions) > 0:
+        # Calculate errors at estimated timestamps
+        est_timestamps = [state.pose.timestamp for state in estimated.states]
+        errors = []
+        
+        # For each estimated state, find closest ground truth and compute error
+        for est_state in estimated.states:
+            est_pos = est_state.pose.position
+            est_time = est_state.pose.timestamp
+            
+            # Find closest ground truth state by timestamp
+            closest_gt_state = min(ground_truth.states, 
+                                   key=lambda s: abs(s.pose.timestamp - est_time))
+            gt_pos = closest_gt_state.pose.position
+            
+            # Compute error
+            error = np.linalg.norm(est_pos - gt_pos)
+            errors.append(error)
+        
+        errors = np.array(errors)
+        timestamps = est_timestamps
         
         # Add error histogram
         fig.add_trace(go.Histogram(

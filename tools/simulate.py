@@ -297,6 +297,16 @@ def run_simulation(
                     keyframe_ids = [kf[0] for kf in keyframe_schedule]
                     keyframe_times = [kf[1] for kf in keyframe_schedule]
                     
+                    # Get orientations at keyframes from trajectory
+                    keyframe_orientations = []
+                    for kf_time in keyframe_times:
+                        pose = traj.get_pose_at_time(kf_time)
+                        if pose is not None:
+                            keyframe_orientations.append(pose.rotation_matrix)
+                        else:
+                            # Default to identity if pose not found
+                            keyframe_orientations.append(np.eye(3))
+                    
                     # Create preintegrator with IMU calibration parameters
                     preintegrator = IMUPreintegrator(
                         accel_noise_density=imu_calib.accelerometer_noise_density,
@@ -309,13 +319,14 @@ def run_simulation(
                     # Create cache for efficiency
                     cache = PreintegrationCache()
                     
-                    # Preintegrate between keyframes
+                    # Preintegrate between keyframes with initial orientations
                     preintegrated_imu_data = preintegrate_between_keyframes(
                         imu_data.measurements,
                         keyframe_ids,
                         keyframe_times,
                         preintegrator,
-                        cache
+                        cache,
+                        keyframe_orientations
                     )
                     
                     # Attach preintegrated data to camera frames

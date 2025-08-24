@@ -326,6 +326,11 @@ class SimulationData:
                 # Default to flattened array if shape unclear
                 cov_shape = cov_array.shape
             
+            # Load jacobian if present
+            jacobian = None
+            if "jacobian" in preint_dict and preint_dict["jacobian"] is not None:
+                jacobian = np.array(preint_dict["jacobian"])
+            
             preint = PreintegratedIMUData(
                 from_keyframe_id=preint_dict["from_keyframe_id"],
                 to_keyframe_id=preint_dict["to_keyframe_id"],
@@ -334,7 +339,8 @@ class SimulationData:
                 delta_rotation=np.array(preint_dict["delta_rotation"]).reshape(3, 3),
                 covariance=cov_array.reshape(cov_shape),
                 dt=preint_dict["dt"],
-                num_measurements=preint_dict["num_measurements"]
+                num_measurements=preint_dict["num_measurements"],
+                jacobian=jacobian
             )
             preintegrated_data.append(preint)
         
@@ -371,7 +377,9 @@ class SimulationData:
             frame = CameraFrame(
                 timestamp=frame_dict["timestamp"],
                 camera_id=cam_id,
-                observations=observations
+                observations=observations,
+                is_keyframe=frame_dict.get("is_keyframe", False),
+                keyframe_id=frame_dict.get("keyframe_id", None)
             )
             camera_frames[cam_id].append(frame)
         
@@ -529,14 +537,28 @@ def load_simulation_data(filepath: Union[str, Path]) -> Dict[str, Any]:
             if hasattr(sim_data.calibration, 'imus'):
                 imu_calibrations = sim_data.calibration.imus
     
+    # Get camera data and preintegrated IMU
+    camera_data = sim_data.get_camera_data()
+    preintegrated_imu = sim_data.get_preintegrated_imu()
+    
+    # Reattach preintegrated IMU to keyframes if both exist
+    if camera_data and preintegrated_imu:
+        # Create a dictionary mapping keyframe_id to preintegrated data
+        preint_dict = {data.to_keyframe_id: data for data in preintegrated_imu}
+        
+        # Attach to frames
+        for frame in camera_data.frames:
+            if frame.is_keyframe and frame.keyframe_id in preint_dict:
+                frame.preintegrated_imu = preint_dict[frame.keyframe_id]
+    
     return {
         "metadata": sim_data.metadata,
         "trajectory": sim_data.get_trajectory(),
         "landmarks": sim_data.get_map(),
         "imu_data": sim_data.get_imu_data(),
-        "camera_data": sim_data.get_camera_data(),
+        "camera_data": camera_data,
         "camera_calibrations": camera_calibrations,
         "imu_calibrations": imu_calibrations,
-        "preintegrated_imu": sim_data.get_preintegrated_imu(),
+        "preintegrated_imu": preintegrated_imu,
         "raw": sim_data
     }

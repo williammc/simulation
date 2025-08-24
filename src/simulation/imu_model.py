@@ -107,6 +107,7 @@ class IMUModel:
         traj_start, traj_end = trajectory.get_time_range()
         imu_timestamps = np.arange(traj_start, traj_end, self.dt)
         
+        prev_state = None
         for t in imu_timestamps:
             # Interpolate trajectory state at IMU timestamp
             state = self._interpolate_state(trajectory, t)
@@ -114,8 +115,9 @@ class IMUModel:
             if state is None:
                 continue
             
-            # Compute IMU measurements
-            accel, gyro = self._compute_imu_measurements(state)
+            # Compute IMU measurements with previous state for acceleration
+            accel, gyro = self._compute_imu_measurements(state, prev_state)
+            prev_state = state
             
             # Create measurement
             measurement = IMUMeasurement(
@@ -246,13 +248,15 @@ class IMUModel:
     
     def _compute_imu_measurements(
         self,
-        state: TrajectoryState
+        state: TrajectoryState,
+        prev_state: Optional[TrajectoryState] = None
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Compute IMU measurements from trajectory state.
         
         Args:
             state: Current trajectory state
+            prev_state: Previous state for computing acceleration
         
         Returns:
             (accelerometer, gyroscope) measurements in body frame
@@ -264,28 +268,33 @@ class IMUModel:
         # Angular velocity is already in body frame
         gyroscope = state.angular_velocity if state.angular_velocity is not None else np.zeros(3)
         
-        # Compute acceleration
-        if state.velocity is not None:
-            # For now, use finite differences for acceleration
-            # In a more sophisticated model, we'd compute this from the trajectory
-            # or store acceleration in the state
-            
-            # Specific force: a_specific = a_total - g
-            # In world frame: a_world = dv/dt (from trajectory)
-            # We need to add gravity and transform to body frame
-            
-            # For simplicity, assume zero acceleration (constant velocity)
-            # This is reasonable for smooth trajectories
-            accel_world = np.zeros(3)  # Could be computed from trajectory
-            
-            # Specific force in world frame (remove gravity)
-            specific_force_world = accel_world - self.gravity_world
-            
-            # Transform to body frame
-            accelerometer = R_BW @ specific_force_world
-        else:
-            # If no velocity, just measure gravity
-            accelerometer = R_BW @ (-self.gravity_world)
+        # Compute acceleration from velocity change if possible
+        accel_world = np.zeros(3)
+        
+        if prev_state is not None and state.velocity is not None and prev_state.velocity is not None:
+            # Compute acceleration using finite differences
+            # For circular motion, this already includes centripetal acceleration
+            dt = state.pose.timestamp - prev_state.pose.timestamp
+            if dt > 0:
+                accel_world = (state.velocity - prev_state.velocity) / dt
+        elif prev_state is None and state.velocity is not None and state.angular_velocity is not None:
+            # First measurement: no prev_state for finite difference
+            # For circular/rotating motion, compute centripetal acceleration analytically
+            # a_c = ω × v (in world frame)
+            omega_world = R_WB @ state.angular_velocity
+            if np.linalg.norm(omega_world) > 0 and np.linalg.norm(state.velocity) > 0:
+                # Centripetal acceleration for circular motion
+                accel_world = np.cross(omega_world, state.velocity)
+        
+        # Note: For subsequent measurements, finite difference of velocities
+        # already captures the centripetal acceleration.
+        
+        # Specific force in world frame (remove gravity)
+        # The accelerometer measures: a_measured = a_actual - g
+        specific_force_world = accel_world - self.gravity_world
+        
+        # Transform to body frame
+        accelerometer = R_BW @ specific_force_world
         
         return accelerometer, gyroscope
 
