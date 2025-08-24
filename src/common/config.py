@@ -33,6 +33,8 @@ class EstimatorType(str, Enum):
     EKF = "ekf"
     SRIF = "srif"
     CPP_BINARY = "cpp_binary"
+    GTSAM_EKF = "gtsam_ekf"
+    GTSAM_SWBA = "gtsam_swba"
     UNKNOWN = "unknown"
 
 

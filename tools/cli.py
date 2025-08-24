@@ -138,7 +138,7 @@ def simulate(
 def slam(
     estimator: str = typer.Argument(
         "ekf",
-        help="Estimator type: ekf, swba, srif"
+        help="Estimator type: ekf, swba, srif, gtsam-ekf, gtsam-swba"
     ),
     input_data: Path = typer.Option(
         ...,

@@ -1,0 +1,33 @@
+# GTSAM Sliding Window Bundle Adjustment Configuration
+# Uses batch optimization within a sliding window
+
+gtsam_swba:
+  estimator_type: gtsam_swba
+  max_landmarks: 1000
+  max_iterations: 100
+  convergence_threshold: 1.0e-6
+  outlier_threshold: 5.0
+  enable_marginalization: true
+  marginalization_window: 10
+  verbose: false
+  save_intermediate: false
+  seed: 42
+  
+  # SWBA specific parameters
+  swba:
+    window_size: 10              # Number of poses in window
+    optimization_iterations: 5    # Levenberg-Marquardt iterations per window
+    relative_error_tol: 1.0e-5
+    absolute_error_tol: 1.0e-5
+    
+  # Noise model parameters (standard deviations)
+  noise:
+    prior_pose_translation: 0.1  # meters
+    prior_pose_rotation: 0.1     # radians
+    prior_velocity: 0.1           # m/s
+    prior_bias_acc: 0.01          # m/s^2
+    prior_bias_gyro: 0.001        # rad/s
+    
+    imu_factor_translation: 0.1
+    imu_factor_rotation: 0.1
+    imu_factor_velocity: 0.1

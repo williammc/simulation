@@ -12,6 +12,7 @@ import tracemalloc
 from rich.console import Console
 from rich.progress import Progress, BarColumn, TaskProgressColumn, TimeRemainingColumn
 from src.utils.config_loader import ConfigLoader
+from src.common.config import EstimatorType
 
 console = Console()
 
@@ -38,6 +39,9 @@ def run_slam(
     from src.estimation.ekf_slam import EKFSlam
     from src.estimation.swba_slam import SlidingWindowBA
     from src.estimation.srif_slam import SRIFSlam
+    from src.estimation.gtsam_ekf_estimator import GtsamEkfEstimator
+    from src.estimation.gtsam_swba_estimator import GtsamSWBAEstimator
+    from src.estimation.base_estimator import EstimatorConfig
     from src.common.json_io import load_simulation_data
     from src.common.config import EKFConfig, SWBAConfig, SRIFConfig
     
@@ -48,9 +52,10 @@ def run_slam(
     
     # Validate estimator type
     estimator_lower = estimator.lower()
-    if estimator_lower not in ['ekf', 'swba', 'srif']:
+    valid_estimators = ['ekf', 'swba', 'srif', 'gtsam-ekf', 'gtsam-swba']
+    if estimator_lower not in valid_estimators:
         console.print(f"[red]✗ Error: Unknown estimator: {estimator}[/red]")
-        console.print("  Available estimators: ekf, swba, srif")
+        console.print(f"  Available estimators: {', '.join(valid_estimators)}")
         return None
     
     console.print(f"\n[bold]Running {estimator.upper()} Estimator[/bold]")
@@ -139,6 +144,48 @@ def run_slam(
             # Create SRIF config
             srif_config = SRIFConfig(**config_data.get('srif', {}))
             estimator_instance = SRIFSlam(srif_config, camera_calib, imu_calib)
+        
+        elif estimator_lower == 'gtsam-ekf':
+            # Create GTSAM EKF config
+            gtsam_ekf_config = config_data.get('gtsam_ekf', {})
+            # Extract base config fields
+            base_config_fields = {
+                'estimator_type': EstimatorType.GTSAM_EKF,
+                'max_landmarks': gtsam_ekf_config.get('max_landmarks', 1000),
+                'max_iterations': gtsam_ekf_config.get('max_iterations', 100),
+                'convergence_threshold': gtsam_ekf_config.get('convergence_threshold', 1e-6),
+                'outlier_threshold': gtsam_ekf_config.get('outlier_threshold', 5.0),
+                'enable_marginalization': gtsam_ekf_config.get('enable_marginalization', False),
+                'marginalization_window': gtsam_ekf_config.get('marginalization_window', 10),
+                'verbose': gtsam_ekf_config.get('verbose', False),
+                'save_intermediate': gtsam_ekf_config.get('save_intermediate', False),
+                'seed': gtsam_ekf_config.get('seed', 42)
+            }
+            estimator_config = EstimatorConfig(**base_config_fields)
+            # Add ISAM2 specific config as attribute
+            estimator_config.isam2 = gtsam_ekf_config.get('isam2', {})
+            estimator_instance = GtsamEkfEstimator(estimator_config)
+            
+        elif estimator_lower == 'gtsam-swba':
+            # Create GTSAM SWBA config
+            gtsam_swba_config = config_data.get('gtsam_swba', {})
+            # Extract base config fields
+            base_config_fields = {
+                'estimator_type': EstimatorType.GTSAM_SWBA,
+                'max_landmarks': gtsam_swba_config.get('max_landmarks', 1000),
+                'max_iterations': gtsam_swba_config.get('max_iterations', 100),
+                'convergence_threshold': gtsam_swba_config.get('convergence_threshold', 1e-6),
+                'outlier_threshold': gtsam_swba_config.get('outlier_threshold', 5.0),
+                'enable_marginalization': gtsam_swba_config.get('enable_marginalization', True),
+                'marginalization_window': gtsam_swba_config.get('marginalization_window', 10),
+                'verbose': gtsam_swba_config.get('verbose', False),
+                'save_intermediate': gtsam_swba_config.get('save_intermediate', False),
+                'seed': gtsam_swba_config.get('seed', 42)
+            }
+            estimator_config = EstimatorConfig(**base_config_fields)
+            # Add SWBA specific config as attribute
+            estimator_config.swba = gtsam_swba_config.get('swba', {})
+            estimator_instance = GtsamSWBAEstimator(estimator_config)
         
     except Exception as e:
         console.print(f"[red]✗ Error creating estimator: {e}[/red]")
