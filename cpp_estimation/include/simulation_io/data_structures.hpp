@@ -64,14 +64,47 @@ struct TrajectoryState {
     TrajectoryState() : timestamp(0), position(Vector3::Zero()), rotation_matrix(Matrix3x3::Identity()) {}
 };
 
+// Forward declaration
+struct ImagePoint;
+
+// Observation reference for landmarks (populated during JSON loading)
+struct ObservationRef {
+    std::string camera_id;       // Which camera observed this landmark
+    double timestamp;             // When it was observed
+    int frame_index;             // Index in camera_frames vector
+    int observation_index;       // Index in frame.observations vector
+    std::optional<int> keyframe_id;  // Keyframe ID if this is a keyframe observation
+    
+    // We'll store pixel coordinates directly to avoid dependency issues
+    double pixel_u, pixel_v;
+    
+    ObservationRef() : timestamp(0), frame_index(-1), observation_index(-1), pixel_u(0), pixel_v(0) {}
+};
+
 // Landmark structure
 struct Landmark {
     int id;
     Vector3 position;
     std::optional<std::vector<double>> descriptor;
     
+    // Temporary member for tracking observations (populated during JSON loading)
+    // This makes it easier to access all observations of this landmark
+    std::vector<ObservationRef> observation_refs;
+    
     Landmark() : id(-1), position(Vector3::Zero()) {}
     Landmark(int id_, const Vector3& pos) : id(id_), position(pos) {}
+    
+    // Helper to get total observation count
+    size_t observation_count() const { return observation_refs.size(); }
+    
+    // Helper to get keyframe observation count
+    size_t keyframe_observation_count() const {
+        size_t count = 0;
+        for (const auto& ref : observation_refs) {
+            if (ref.keyframe_id.has_value()) count++;
+        }
+        return count;
+    }
 };
 
 // Measurement structures

@@ -6,3 +6,6 @@ target_link_libraries(read_python_data PRIVATE simulation_io)
 
 add_executable(save_estimator_result save_estimator_result.cpp)
 target_link_libraries(save_estimator_result PRIVATE simulation_io)
+
+add_executable(verify_landmark_observations verify_landmark_observations.cpp)
+target_link_libraries(verify_landmark_observations PRIVATE simulation_io)

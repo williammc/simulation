@@ -7,6 +7,8 @@
 #include <fstream>
 #include <iostream>
 #include <iomanip>
+#include <unordered_map>
+#include <limits>
 
 namespace simulation_io {
 
@@ -414,6 +416,7 @@ public:
             
             // Camera frames
             if (meas.contains("camera_frames") && meas["camera_frames"].is_array()) {
+                int frame_index = 0;
                 for (const auto& frame_json : meas["camera_frames"]) {
                     CameraFrame frame;
                     frame.timestamp = frame_json["timestamp"];
@@ -430,6 +433,7 @@ public:
                     }
                     
                     if (frame_json.contains("observations") && frame_json["observations"].is_array()) {
+                        int obs_index = 0;
                         for (const auto& obs_json : frame_json["observations"]) {
                             CameraObservation obs;
                             obs.landmark_id = obs_json["landmark_id"];
@@ -439,9 +443,11 @@ public:
                                 obs.descriptor = obs_json["descriptor"].get<std::vector<double>>();
                             }
                             frame.observations.push_back(obs);
+                            obs_index++;
                         }
                     }
                     data.camera_frames.push_back(frame);
+                    frame_index++;
                 }
             }
             
@@ -489,7 +495,79 @@ public:
             }
         }
         
+        // Post-process: Populate observation references in landmarks
+        // This creates a reverse mapping from landmarks to their observations
+        populateLandmarkObservations(data);
+        
         return data;
+    }
+    
+private:
+    static void populateLandmarkObservations(SimulationData& data) {
+        // Create a map from landmark_id to landmark index for quick lookup
+        std::unordered_map<int, size_t> landmark_id_to_index;
+        for (size_t i = 0; i < data.landmarks.size(); ++i) {
+            landmark_id_to_index[data.landmarks[i].id] = i;
+        }
+        
+        // Clear any existing observation references
+        for (auto& landmark : data.landmarks) {
+            landmark.observation_refs.clear();
+        }
+        
+        // Iterate through all camera frames and build observation references
+        for (size_t frame_idx = 0; frame_idx < data.camera_frames.size(); ++frame_idx) {
+            const auto& frame = data.camera_frames[frame_idx];
+            
+            for (size_t obs_idx = 0; obs_idx < frame.observations.size(); ++obs_idx) {
+                const auto& obs = frame.observations[obs_idx];
+                
+                // Find the corresponding landmark
+                auto it = landmark_id_to_index.find(obs.landmark_id);
+                if (it != landmark_id_to_index.end()) {
+                    // Create observation reference
+                    ObservationRef ref;
+                    ref.camera_id = frame.camera_id;
+                    ref.timestamp = frame.timestamp;
+                    ref.frame_index = static_cast<int>(frame_idx);
+                    ref.observation_index = static_cast<int>(obs_idx);
+                    ref.pixel_u = obs.pixel.u;
+                    ref.pixel_v = obs.pixel.v;
+                    ref.keyframe_id = frame.keyframe_id;
+                    
+                    // Add to landmark's observation list
+                    data.landmarks[it->second].observation_refs.push_back(ref);
+                }
+            }
+        }
+        
+        // Optional: Print statistics about observations
+        if (!data.landmarks.empty()) {
+            size_t total_obs = 0;
+            size_t keyframe_obs = 0;
+            size_t max_obs = 0;
+            size_t min_obs = std::numeric_limits<size_t>::max();
+            
+            for (const auto& landmark : data.landmarks) {
+                size_t obs_count = landmark.observation_count();
+                size_t kf_count = landmark.keyframe_observation_count();
+                
+                total_obs += obs_count;
+                keyframe_obs += kf_count;
+                max_obs = std::max(max_obs, obs_count);
+                min_obs = std::min(min_obs, obs_count);
+            }
+            
+            double avg_obs = static_cast<double>(total_obs) / data.landmarks.size();
+            
+            std::cout << "Landmark observation statistics:" << std::endl;
+            std::cout << "  Total landmarks: " << data.landmarks.size() << std::endl;
+            std::cout << "  Total observations: " << total_obs << std::endl;
+            std::cout << "  Keyframe observations: " << keyframe_obs << std::endl;
+            std::cout << "  Average observations per landmark: " << avg_obs << std::endl;
+            std::cout << "  Max observations: " << max_obs << std::endl;
+            std::cout << "  Min observations: " << min_obs << std::endl;
+        }
     }
 };
 
