@@ -1,0 +1,70 @@
+# Drone Survey Scenario
+# Aerial survey mission with downward-facing camera
+
+name: "Drone Survey"
+description: "UAV performing aerial photogrammetry survey"
+
+# Lawnmower pattern for coverage
+trajectory:
+  type: "lawnmower"
+  parameters:
+    area_width: 100.0
+    area_length: 100.0
+    line_spacing: 10.0
+    altitude: 50.0
+    speed: 8.0  # m/s
+    overlap: 0.7  # 70% image overlap
+
+# High-resolution survey camera
+camera:
+  type: "pinhole"
+  calibration:
+    width: 4000
+    height: 3000
+    fx: 3500.0
+    fy: 3500.0
+    cx: 2000.0
+    cy: 1500.0
+  orientation: "nadir"  # Downward facing
+  frame_rate: 2.0  # Hz
+
+# MEMS IMU common in drones
+imu:
+  type: "mems"
+  noise:
+    accelerometer:
+      white_noise: 0.005
+      bias_instability: 0.00005
+    gyroscope:
+      white_noise: 0.0005
+      bias_instability: 0.000005
+  sampling_rate: 400.0  # Hz
+
+# Ground control points
+landmarks:
+  type: "survey_markers"
+  parameters:
+    grid: [10, 10]
+    spacing: 10.0
+    marker_size: 0.5
+    altitude: 0.0  # Ground level
+
+# SRIF for robust estimation
+estimator: !include ../estimators/srif.yaml
+
+duration: 180.0  # 3 minutes
+seed: 300
+
+# Drone-specific settings
+vehicle:
+  type: "quadcopter"
+  max_speed: 15.0
+  max_acceleration: 5.0
+  battery_time: 1200  # seconds
+
+# Wind simulation
+wind:
+  enabled: true
+  speed: 3.0  # m/s
+  direction: 45  # degrees
+  turbulence: 0.2

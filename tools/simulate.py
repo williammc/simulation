@@ -7,7 +7,7 @@ import json
 import yaml
 from pathlib import Path
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Dict, Any
 
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
@@ -29,6 +29,7 @@ from src.utils.preintegration_utils import (
 )
 from src.simulation.keyframe_selector import mark_keyframes_in_camera_data
 from src.common.config import KeyframeSelectionConfig
+from src.utils.config_loader import ConfigLoader
 import numpy as np
 
 console = Console()
@@ -44,6 +45,7 @@ def run_simulation(
     add_noise: bool = False,
     enable_preintegration: bool = False,
     keyframe_config: Optional[KeyframeSelectionConfig] = None,
+    component_overrides: Optional[Dict[str, Path]] = None,
 ) -> int:
     """
     Run simulation to generate synthetic SLAM data.
@@ -76,25 +78,25 @@ def run_simulation(
     output_dir = output or Path("output")
     output_dir.mkdir(exist_ok=True)
     
+    # Initialize ConfigLoader
+    loader = ConfigLoader(base_path=Path.cwd())
+    
     # Load noise configuration
     noise_params = {}
     if noise_config and noise_config.exists():
-        with open(noise_config, 'r') as f:
-            noise_params = yaml.safe_load(f)
+        noise_params = loader.load(noise_config)
     elif add_noise:
         # Use default noise config file if it exists
         default_noise_config = Path("config/noise_config.yaml")
         if default_noise_config.exists():
-            with open(default_noise_config, 'r') as f:
-                noise_params = yaml.safe_load(f)
+            noise_params = loader.load(default_noise_config)
     
     # Load config or use defaults
     if config and config.exists():
-        with open(config, 'r') as f:
-            params = yaml.safe_load(f)
-            # Override preintegration setting from config if present
-            if 'preintegration' in params and 'enabled' in params['preintegration']:
-                enable_preintegration = params['preintegration']['enabled']
+        params = loader.load(config)
+        # Override preintegration setting from config if present
+        if 'preintegration' in params and 'enabled' in params['preintegration']:
+            enable_preintegration = params['preintegration']['enabled']
     else:
         # Default parameters for each trajectory type
         if trajectory == "circle":
@@ -123,6 +125,22 @@ def run_simulation(
         else:
             console.print(f"[red]Error: Unknown trajectory type: {trajectory}[/red]")
             return 1
+    
+    # Apply component overrides if provided
+    if component_overrides:
+        for component, override_path in component_overrides.items():
+            if override_path and override_path.exists():
+                console.print(f"  Override {component}: [cyan]{override_path}[/cyan]")
+                override_config = loader.load(override_path)
+                
+                # Deep merge the override config
+                if component in params:
+                    if isinstance(params[component], dict):
+                        params[component].update(override_config)
+                    else:
+                        params[component] = override_config
+                else:
+                    params[component] = override_config
     
     # Add common parameters
     params["duration"] = duration

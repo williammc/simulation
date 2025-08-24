@@ -1,0 +1,68 @@
+# Outdoor Navigation Scenario
+# Simulates autonomous vehicle navigation in urban environment
+
+name: "Outdoor Navigation"
+description: "Autonomous vehicle navigating urban streets with GPS/IMU/Camera fusion"
+
+# Complex trajectory for street navigation
+trajectory:
+  type: "waypoint"
+  parameters:
+    waypoints:
+      - [0, 0, 0]
+      - [50, 0, 0]
+      - [50, 50, 0]
+      - [100, 50, 0]
+      - [100, 100, 0]
+    speed: 5.0  # m/s (18 km/h)
+    smooth_turns: true
+    turn_radius: 5.0
+
+# Wide angle camera for outdoor
+camera:
+  type: "pinhole"
+  calibration:
+    width: 1920
+    height: 1080
+    fx: 800.0
+    fy: 800.0
+    cx: 960.0
+    cy: 540.0
+    fov: 90  # degrees
+  max_range: 100.0  # meters
+
+# Tactical grade IMU for vehicles
+imu: !include ../imus/tactical_grade.yaml
+
+# Urban landmark distribution
+landmarks:
+  type: "random"
+  parameters:
+    count: 1000
+    distribution: "clustered"
+    clusters: 10
+    bounds:
+      x: [0, 150]
+      y: [0, 150]
+      z: [0, 20]  # Buildings/poles
+
+# SWBA for accurate mapping
+estimator: !include ../estimators/swba.yaml
+
+# Extended duration for navigation
+duration: 300.0  # 5 minutes
+seed: 200
+
+# GPS simulation
+gps:
+  enabled: true
+  rate: 1.0  # Hz
+  noise:
+    position: 2.0  # meters
+    hdop: 1.5
+
+# Environmental conditions
+environment:
+  type: "outdoor"
+  weather: "clear"
+  time_of_day: "noon"

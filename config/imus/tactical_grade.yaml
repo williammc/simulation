@@ -1,0 +1,38 @@
+# Tactical Grade IMU Configuration
+# High-performance IMU for precision applications
+
+type: "tactical"
+model: "High-Performance FOG/RLG IMU"
+
+# Low noise characteristics
+noise:
+  accelerometer:
+    white_noise: 0.0001  # m/s²/√Hz
+    bias_instability: 0.000001  # m/s²
+    random_walk: 0.000002  # m/s²/√s
+    scale_factor: 0.0001  # fraction
+    misalignment: 0.0001  # radians
+  
+  gyroscope:
+    white_noise: 0.00001  # rad/s/√Hz
+    bias_instability: 0.0000001  # rad/s
+    random_walk: 0.0000002  # rad/s/√s
+    scale_factor: 0.0001  # fraction
+    misalignment: 0.0001  # radians
+
+# High-rate sampling
+sampling:
+  rate: 1000.0  # Hz
+  synchronization: "hardware"  # Precise hardware sync
+
+# Temperature compensation
+temperature:
+  compensated: true
+  sensitivity: 0.001  # % per degree C
+  model: "polynomial"  # linear or polynomial
+
+# Calibration
+calibration:
+  factory_calibrated: true
+  online_calibration: true
+  calibration_interval: 3600  # seconds

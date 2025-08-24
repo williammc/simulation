@@ -6,11 +6,12 @@ Runs EKF, SWBA, or SRIF estimators on simulation data.
 import yaml
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict, Any
 import tracemalloc
 
 from rich.console import Console
 from rich.progress import Progress, BarColumn, TaskProgressColumn, TimeRemainingColumn
+from src.utils.config_loader import ConfigLoader
 
 console = Console()
 
@@ -55,18 +56,19 @@ def run_slam(
     console.print(f"\n[bold]Running {estimator.upper()} Estimator[/bold]")
     console.print(f"  Input: {input_data}")
     
+    # Initialize ConfigLoader
+    loader = ConfigLoader(base_path=Path.cwd())
+    
     # Load configuration
     if config and config.exists():
         console.print(f"  Config: {config}")
-        with open(config, 'r') as f:
-            config_data = yaml.safe_load(f)
+        config_data = loader.load(config)
     else:
         # Use default config
-        config = Path(f"config/{estimator_lower}_default.yaml")
+        config = Path(f"config/estimators/{estimator_lower}.yaml")
         if config.exists():
             console.print(f"  Config: {config} (default)")
-            with open(config, 'r') as f:
-                config_data = yaml.safe_load(f)
+            config_data = loader.load(config)
         else:
             console.print("  Config: Using built-in defaults")
             config_data = {}

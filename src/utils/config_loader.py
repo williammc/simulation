@@ -4,6 +4,7 @@ Enhanced configuration loader with file inclusion support.
 
 import os
 import yaml
+import time
 from pathlib import Path
 from typing import Dict, Any, Union, Set, Optional
 from functools import lru_cache
@@ -17,17 +18,20 @@ class CircularIncludeError(Exception):
 class ConfigLoader:
     """Configuration loader with support for !include tags and caching."""
     
-    def __init__(self, base_path: Optional[Path] = None):
+    def __init__(self, base_path: Optional[Path] = None, enable_cache: bool = True):
         """
         Initialize the config loader.
         
         Args:
             base_path: Base directory for resolving relative paths.
                       Defaults to current working directory.
+            enable_cache: Enable caching of loaded configs for performance.
         """
         self.base_path = Path(base_path) if base_path else Path.cwd()
         self.cache: Dict[Path, Dict] = {}
         self._include_stack: Set[Path] = set()
+        self.enable_cache = enable_cache
+        self._load_times: Dict[Path, float] = {}
         self._setup_yaml_loader()
     
     def _setup_yaml_loader(self):
@@ -76,6 +80,7 @@ class ConfigLoader:
             FileNotFoundError: If config file doesn't exist.
             CircularIncludeError: If circular includes are detected.
         """
+        start_time = time.time()
         config_path = Path(config_path)
         
         # Resolve to absolute path
@@ -92,7 +97,16 @@ class ConfigLoader:
         self._include_stack.clear()
         
         # Load the configuration
-        return self._load_file(config_path)
+        result = self._load_file(config_path)
+        
+        # Track load time
+        self._load_times[config_path] = time.time() - start_time
+        
+        return result
+    
+    def load(self, config_path: Union[str, Path]) -> Dict[str, Any]:
+        """Alias for load_config for convenience."""
+        return self.load_config(config_path)
     
     def _load_file(self, file_path: Path) -> Dict[str, Any]:
         """
@@ -115,9 +129,13 @@ class ConfigLoader:
             cycle += f' -> {file_path}'
             raise CircularIncludeError(f"Circular include detected: {cycle}")
         
-        # Check cache
-        if file_path in self.cache:
-            return self.cache[file_path].copy()
+        # Check cache (if enabled)
+        if self.enable_cache and file_path in self.cache:
+            # Check if file hasn't been modified since cached
+            cached_mtime = self.cache.get(f"{file_path}_mtime", 0)
+            current_mtime = file_path.stat().st_mtime
+            if current_mtime <= cached_mtime:
+                return self.cache[file_path].copy()
         
         # Add to include stack
         self._include_stack.add(file_path)
@@ -141,8 +159,10 @@ class ConfigLoader:
             if config is None:
                 config = {}
             
-            # Cache the result
-            self.cache[file_path] = config
+            # Cache the result (if enabled)
+            if self.enable_cache:
+                self.cache[file_path] = config
+                self.cache[f"{file_path}_mtime"] = file_path.stat().st_mtime
             
             return config.copy()
         
@@ -184,6 +204,26 @@ class ConfigLoader:
     def clear_cache(self):
         """Clear the configuration cache."""
         self.cache.clear()
+        self._load_times.clear()
+    
+    def get_performance_metrics(self) -> Dict[str, Any]:
+        """
+        Get performance metrics for config loading.
+        
+        Returns:
+            Dictionary with performance metrics.
+        """
+        if not self._load_times:
+            return {"total_loads": 0, "avg_load_time_ms": 0, "cache_size": len(self.cache)}
+        
+        return {
+            "total_loads": len(self._load_times),
+            "avg_load_time_ms": sum(self._load_times.values()) * 1000 / len(self._load_times),
+            "max_load_time_ms": max(self._load_times.values()) * 1000,
+            "min_load_time_ms": min(self._load_times.values()) * 1000,
+            "cache_size": len([k for k in self.cache.keys() if not str(k).endswith("_mtime")]),
+            "cache_enabled": self.enable_cache
+        }
     
     def merge_configs(self, base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
         """

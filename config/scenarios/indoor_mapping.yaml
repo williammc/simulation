@@ -1,0 +1,41 @@
+# Indoor Mapping Scenario
+# Simulates a robot mapping an indoor environment with structured features
+
+name: "Indoor Mapping"
+description: "Robot mapping indoor office environment with walls and furniture"
+
+# Motion pattern suitable for indoor exploration
+trajectory: !include ../trajectories/spiral.yaml
+
+# Standard camera for indoor use
+camera: !include ../cameras/pinhole_640x480.yaml
+
+# Consumer-grade IMU typical in indoor robots
+imu: !include ../imus/consumer_grade.yaml
+
+# Structured landmark pattern for indoor
+landmarks:
+  type: "grid"
+  parameters:
+    grid_size: [10, 10, 3]  # 10x10 grid, 3 levels
+    spacing: 2.0  # 2 meters between landmarks
+    offset: [-10, -10, 0]
+    noise: 0.2  # Small position noise
+
+# Use EKF for real-time performance
+estimator: !include ../estimators/ekf.yaml
+
+# Simulation parameters
+duration: 120.0  # 2 minutes
+seed: 100
+add_noise: true
+
+# Keyframe selection for mapping
+keyframe_strategy: "hybrid"
+keyframe_interval: 15
+
+# Indoor-specific parameters
+environment:
+  type: "indoor"
+  lighting: "artificial"
+  occlusions: true

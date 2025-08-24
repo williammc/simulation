@@ -80,6 +80,26 @@ def simulate(
         "--keyframe-interval", "-ki",
         help="Interval for fixed keyframe selection"
     ),
+    override_trajectory: Optional[Path] = typer.Option(
+        None,
+        "--override-trajectory",
+        help="Override trajectory config with file"
+    ),
+    override_camera: Optional[Path] = typer.Option(
+        None,
+        "--override-camera",
+        help="Override camera config with file"
+    ),
+    override_imu: Optional[Path] = typer.Option(
+        None,
+        "--override-imu",
+        help="Override IMU config with file"
+    ),
+    override_landmarks: Optional[Path] = typer.Option(
+        None,
+        "--override-landmarks",
+        help="Override landmarks config with file"
+    ),
 ):
     """Run simulation to generate synthetic SLAM data."""
     from src.common.config import KeyframeSelectionConfig, KeyframeSelectionStrategy
@@ -96,9 +116,19 @@ def simulate(
         fixed_interval=keyframe_interval
     )
     
+    # Create dictionary of component overrides
+    component_overrides = {
+        'trajectory': override_trajectory,
+        'camera': override_camera,
+        'imu': override_imu,
+        'landmarks': override_landmarks
+    }
+    # Remove None values
+    component_overrides = {k: v for k, v in component_overrides.items() if v is not None}
+    
     exit_code = run_simulation(
         trajectory, config, duration, output, seed, noise_config, add_noise,
-        enable_preintegration, keyframe_config
+        enable_preintegration, keyframe_config, component_overrides
     )
     if exit_code != 0:
         raise typer.Exit(exit_code)

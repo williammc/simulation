@@ -1,0 +1,105 @@
+# Challenging Conditions Scenario
+# Tests robustness under difficult conditions
+
+name: "Challenging Conditions"
+description: "SLAM under high noise, occlusions, and dynamic elements"
+
+# Erratic trajectory
+trajectory:
+  type: "random_walk"
+  parameters:
+    step_size: 0.5
+    turn_variance: 0.3
+    bounds:
+      x: [-20, 20]
+      y: [-20, 20]
+      z: [0, 5]
+    smooth_factor: 0.7
+
+# Camera with distortion
+camera:
+  type: "pinhole"
+  calibration:
+    width: 640
+    height: 480
+    fx: 400.0  # Wide angle
+    fy: 400.0
+    cx: 320.0
+    cy: 240.0
+    distortion: [0.2, -0.3, 0.01, 0.01, 0.15]  # High distortion
+  noise:
+    pixel_std: 2.0  # High measurement noise
+  artifacts:
+    motion_blur: true
+    lens_flare: true
+    vignetting: true
+
+# Noisy IMU
+imu:
+  type: "low_cost"
+  noise:
+    accelerometer:
+      white_noise: 0.05  # Very noisy
+      bias_instability: 0.001
+      random_walk: 0.002
+      scale_factor: 0.02
+      misalignment: 0.01
+    gyroscope:
+      white_noise: 0.01
+      bias_instability: 0.0001
+      random_walk: 0.0002
+      scale_factor: 0.02
+  temperature_effects: true
+  vibration_noise: true
+
+# Sparse and ambiguous landmarks
+landmarks:
+  type: "sparse_clustered"
+  parameters:
+    clusters: 5
+    per_cluster: 10
+    cluster_radius: 2.0
+    ambiguity_factor: 0.3  # Similar looking landmarks
+    dynamic_fraction: 0.1  # 10% moving landmarks
+
+# Robust estimator configuration
+estimator:
+  type: "swba"
+  parameters:
+    window_size: 30
+    robust_kernel: "huber"
+    outlier_threshold: 3.0
+    max_iterations: 200
+    enable_loop_closure: true
+    loop_closure_threshold: 0.3
+
+duration: 180.0
+seed: 600
+
+# Challenging conditions
+conditions:
+  occlusions:
+    enabled: true
+    probability: 0.2  # 20% chance of occlusion
+    duration: [0.5, 2.0]  # seconds
+  
+  sensor_failures:
+    enabled: true
+    camera_dropout: 0.05  # 5% frame loss
+    imu_glitches: 0.01
+  
+  lighting_changes:
+    enabled: true
+    variation: 0.5
+    shadows: true
+  
+  dynamic_elements:
+    enabled: true
+    moving_objects: 10
+    false_positives: 0.1
+
+# Recovery strategies
+recovery:
+  reinitialize_on_failure: true
+  fallback_to_prediction: true
+  adaptive_noise_model: true

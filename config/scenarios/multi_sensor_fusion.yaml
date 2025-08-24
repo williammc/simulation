@@ -1,0 +1,75 @@
+# Multi-Sensor Fusion Scenario
+# Complex scenario with multiple cameras and IMUs
+
+name: "Multi-Sensor Fusion"
+description: "Robot with stereo cameras, multiple IMUs, and lidar"
+
+# Figure-8 for diverse motion
+trajectory: !include ../trajectories/figure8.yaml
+
+# Stereo camera configuration
+cameras:
+  - name: "left_camera"
+    config: !include ../cameras/pinhole_640x480.yaml
+    extrinsics:
+      position: [-0.06, 0, 0.1]
+      rotation: [1, 0, 0, 0]
+  
+  - name: "right_camera"  
+    config: !include ../cameras/pinhole_640x480.yaml
+    extrinsics:
+      position: [0.06, 0, 0.1]
+      rotation: [1, 0, 0, 0]
+  
+  - name: "rear_camera"
+    config: !include ../cameras/fisheye_wide.yaml
+    extrinsics:
+      position: [0, -0.1, 0.05]
+      rotation: [0.707, 0, 0, -0.707]  # 180 degree yaw
+
+# Multiple IMUs for redundancy
+imus:
+  - name: "primary_imu"
+    config: !include ../imus/tactical_grade.yaml
+    position: [0, 0, 0]
+  
+  - name: "backup_imu"
+    config: !include ../imus/consumer_grade.yaml
+    position: [0, 0.05, 0]
+
+# Dense landmarks for testing
+landmarks: !include ../landmarks/dense_urban.yaml
+
+# Advanced estimator for fusion
+estimator:
+  type: "swba"
+  parameters:
+    window_size: 20
+    optimization:
+      max_iterations: 100
+      convergence_threshold: 1e-6
+    sensor_fusion:
+      strategy: "tight_coupling"
+      outlier_rejection: true
+      chi2_threshold: 5.991  # 95% confidence
+
+duration: 240.0  # 4 minutes
+seed: 400
+
+# Sensor synchronization
+synchronization:
+  method: "hardware_trigger"
+  master: "primary_imu"
+  max_delay: 0.005  # 5ms
+
+# Data association
+data_association:
+  method: "multi_hypothesis"
+  max_hypotheses: 10
+  pruning_threshold: 0.01
+
+# Calibration
+calibration:
+  extrinsic_calibration: true
+  temporal_calibration: true
+  online_refinement: true

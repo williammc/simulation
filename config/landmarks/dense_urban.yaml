@@ -1,0 +1,40 @@
+# Dense Urban Landmarks Configuration
+# High density landmarks typical of urban environments
+
+type: "random"
+description: "Dense urban environment with buildings and infrastructure"
+
+parameters:
+  count: 500
+  distribution: "clustered"  # uniform, clustered, or gaussian
+  
+  # Spatial bounds
+  bounds:
+    x: [-50, 50]
+    y: [-50, 50]
+    z: [0, 30]  # Ground to building height
+  
+  # Clustering parameters
+  clusters: 20
+  cluster_radius: 5.0
+  cluster_density: 0.8
+  
+  # Minimum separation
+  min_distance: 0.5  # meters
+  
+  # Landmark types (for semantic SLAM)
+  types:
+    - name: "building_corner"
+      probability: 0.4
+    - name: "pole"
+      probability: 0.3
+    - name: "sign"
+      probability: 0.2
+    - name: "misc"
+      probability: 0.1
+
+# Visibility parameters
+visibility:
+  max_range: 50.0
+  min_observations: 3
+  occlusion_probability: 0.2

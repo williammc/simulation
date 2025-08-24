@@ -1,0 +1,64 @@
+# C++ Estimator Integration Demo
+# Demonstrates integration with external C++ SLAM estimator
+
+name: "C++ Estimator Demo"
+description: "Testing external C++ binary estimator integration"
+
+# Simple trajectory for testing
+trajectory: !include ../trajectories/circle.yaml
+
+# Standard camera
+camera: !include ../cameras/pinhole_640x480.yaml
+
+# Standard IMU
+imu: !include ../imus/consumer_grade.yaml
+
+# Moderate landmark density
+landmarks:
+  type: "random"
+  parameters:
+    count: 100
+    distribution: "uniform"
+    bounds:
+      x: [-5, 5]
+      y: [-5, 5]
+      z: [0, 3]
+
+# Use C++ binary estimator
+estimator:
+  type: "cpp_binary"
+  parameters:
+    executable: "cpp_estimation/build/examples/mock_estimator"
+    args:
+      - "--noise"
+      - "0.02"
+      - "--delay"
+      - "100"
+    timeout: 60  # seconds
+    input_file: "sim_data.json"
+    output_file: "cpp_result.json"
+    working_dir: "output/cpp_temp"
+    env:
+      OMP_NUM_THREADS: "8"
+      EIGEN_NUM_THREADS: "4"
+    retry_on_failure: true
+    max_retries: 2
+
+# Short duration for quick testing
+duration: 30.0
+seed: 500
+
+# Output settings
+output:
+  format: "json"
+  include_covariances: true
+  save_intermediate: true
+  
+# Validation
+validation:
+  compare_with: "ekf"  # Run EKF for comparison
+  metrics:
+    - "ate"  # Absolute Trajectory Error
+    - "rpe"  # Relative Pose Error
+    - "landmark_error"
+    - "runtime"

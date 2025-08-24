@@ -1,0 +1,36 @@
+# Consumer Grade IMU Configuration
+# Typical MEMS IMU found in smartphones and consumer robots
+
+type: "consumer"
+model: "Generic MEMS IMU"
+
+# Noise characteristics based on typical MEMS sensors
+noise:
+  accelerometer:
+    white_noise: 0.01  # m/s²/√Hz
+    bias_instability: 0.0001  # m/s²
+    random_walk: 0.0002  # m/s²/√s
+    scale_factor: 0.001  # fraction
+    misalignment: 0.001  # radians
+  
+  gyroscope:
+    white_noise: 0.001  # rad/s/√Hz
+    bias_instability: 0.00001  # rad/s
+    random_walk: 0.00002  # rad/s/√s
+    scale_factor: 0.001  # fraction
+    misalignment: 0.001  # radians
+
+# Sampling configuration
+sampling:
+  rate: 200.0  # Hz
+  synchronization: "software"  # software or hardware
+
+# Temperature compensation
+temperature:
+  compensated: false
+  sensitivity: 0.01  # % per degree C
+
+# Initial bias values (will be estimated)
+initial_bias:
+  accelerometer: [0.0, 0.0, 0.0]
+  gyroscope: [0.0, 0.0, 0.0]
