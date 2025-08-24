@@ -1,0 +1,10 @@
+# Standard noise model configuration
+accelerometer_noise_density: 0.00018
+accelerometer_random_walk: 0.001
+accelerometer_bias_stability: 0.0001
+
+gyroscope_noise_density: 0.00026
+gyroscope_random_walk: 0.0001
+gyroscope_bias_stability: 0.0001
+
+camera_noise_std: 1.0  # pixels

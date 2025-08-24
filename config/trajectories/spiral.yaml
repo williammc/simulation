@@ -1,0 +1,6 @@
+type: "spiral"
+params:
+  radius: 2.0
+  pitch: 0.5
+  turns: 3
+duration: 45.0

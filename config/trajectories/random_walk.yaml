@@ -1,0 +1,7 @@
+type: "random_walk"
+params:
+  bounds_x: 5.0
+  bounds_y: 5.0
+  bounds_z: 2.0
+  step_size: 0.1
+duration: 30.0

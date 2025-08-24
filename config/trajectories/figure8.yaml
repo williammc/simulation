@@ -1,0 +1,6 @@
+type: "figure8"
+params:
+  width: 4.0
+  height: 2.0
+  period: 15.0
+duration: 60.0

@@ -1,0 +1,10 @@
+# Low noise model configuration
+accelerometer_noise_density: 0.00009
+accelerometer_random_walk: 0.0005
+accelerometer_bias_stability: 0.00005
+
+gyroscope_noise_density: 0.00013
+gyroscope_random_walk: 0.00005
+gyroscope_bias_stability: 0.00005
+
+camera_noise_std: 0.5  # pixels

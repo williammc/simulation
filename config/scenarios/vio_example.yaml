@@ -1,0 +1,41 @@
+# Example Visual-Inertial Odometry scenario using modular configs
+name: "VIO Example Scenario"
+version: "1.0"
+
+# Include component configurations
+trajectory: !include ../trajectories/figure8.yaml
+
+cameras:
+  - !include ../cameras/pinhole_640x480.yaml
+
+imus:
+  - !include ../imus/mpu6050.yaml
+
+# Environment configuration
+environment:
+  num_landmarks: 500
+  landmark_range: [10.0, 10.0, 5.0]
+  min_distance: 0.5
+  max_distance: 20.0
+
+# Coordinate system
+coordinate_system: "ENU"
+
+# Random seed for reproducibility
+seed: 42
+
+# Preintegration settings
+enable_preintegration: true
+
+# Keyframe selection
+keyframe_selection:
+  strategy: "fixed_interval"
+  fixed_interval: 10
+  min_time_gap: 0.1
+
+# Optional overrides for included configs
+overrides:
+  trajectory:
+    duration: 30.0  # Override duration from figure8.yaml
+  cameras:
+    - rate: 20.0  # Override camera frame rate

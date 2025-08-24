@@ -1,0 +1,19 @@
+# Standard pinhole camera configuration
+id: "cam0"
+model: "pinhole-radtan"
+rate: 30.0  # Hz
+
+intrinsics:
+  fx: 460.0
+  fy: 460.0
+  cx: 320.0
+  cy: 240.0
+  width: 640
+  height: 480
+  distortion: [0.0, 0.0, 0.0, 0.0, 0.0]  # [k1, k2, p1, p2, k3]
+
+extrinsics:
+  translation: [0.0, 0.0, 0.0]  # [x, y, z] in meters
+  quaternion: [1.0, 0.0, 0.0, 0.0]  # [w, x, y, z]
+
+noise_std: 1.0  # pixels

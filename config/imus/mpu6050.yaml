@@ -1,0 +1,17 @@
+# MPU6050 IMU sensor configuration
+id: "imu0"
+rate: 200.0  # Hz
+
+noise_params:
+  # Based on MPU6050 datasheet
+  accelerometer_noise_density: 0.00018
+  accelerometer_random_walk: 0.001
+  accelerometer_bias_stability: 0.0001
+  
+  gyroscope_noise_density: 0.00026
+  gyroscope_random_walk: 0.0001
+  gyroscope_bias_stability: 0.0001
+
+# Sensor limits
+max_acceleration: 156.96  # m/s^2 (16g)
+max_angular_velocity: 34.91  # rad/s (2000 deg/s)

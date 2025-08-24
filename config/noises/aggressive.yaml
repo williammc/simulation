@@ -1,0 +1,10 @@
+# Aggressive (high) noise model configuration
+accelerometer_noise_density: 0.00036
+accelerometer_random_walk: 0.002
+accelerometer_bias_stability: 0.0002
+
+gyroscope_noise_density: 0.00052
+gyroscope_random_walk: 0.0002
+gyroscope_bias_stability: 0.0002
+
+camera_noise_std: 2.0  # pixels

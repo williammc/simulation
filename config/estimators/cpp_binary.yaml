@@ -1,0 +1,24 @@
+type: "cpp_binary"
+parameters:
+  executable: "cpp_estimation/build/estimator"
+  input_format: "json"
+  output_format: "json"
+  args:
+    - "--config"
+    - "cpp_config.yaml"
+  timeout: 300  # seconds
+  
+  # Environment variables (optional)
+  env:
+    OMP_NUM_THREADS: "4"
+    
+  # Working directory (optional, defaults to current)
+  working_dir: null
+  
+  # Input/output file handling
+  input_file: "simulation_data.json"
+  output_file: "estimation_result.json"
+  
+  # Error handling
+  retry_on_failure: false
+  max_retries: 1

@@ -1,0 +1,6 @@
+type: "circle"
+params:
+  radius: 2.0
+  height: 1.5
+  angular_velocity: 0.5
+duration: 60.0

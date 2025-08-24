@@ -1,0 +1,5 @@
+type: "line"
+params:
+  length: 10.0
+  velocity: 0.5
+duration: 20.0

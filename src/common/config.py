@@ -535,17 +535,31 @@ class EstimatorConfig(BaseModel):
 
 def load_simulation_config(path: Union[str, Path]) -> SimulationConfig:
     """Load simulation configuration from YAML file."""
-    path = Path(path)
-    with open(path, 'r') as f:
-        data = yaml.safe_load(f)
+    # Try to use ConfigLoader if available, fallback to simple loading
+    try:
+        from ..utils.config_loader import ConfigLoader
+        loader = ConfigLoader()
+        data = loader.load_config(path)
+    except (ImportError, Exception):
+        # Fallback to simple YAML loading for backward compatibility
+        path = Path(path)
+        with open(path, 'r') as f:
+            data = yaml.safe_load(f)
     return SimulationConfig(**data)
 
 
 def load_estimator_config(path: Union[str, Path]) -> EstimatorConfig:
     """Load estimator configuration from YAML file."""
-    path = Path(path)
-    with open(path, 'r') as f:
-        data = yaml.safe_load(f)
+    # Try to use ConfigLoader if available, fallback to simple loading
+    try:
+        from ..utils.config_loader import ConfigLoader
+        loader = ConfigLoader()
+        data = loader.load_config(path)
+    except (ImportError, Exception):
+        # Fallback to simple YAML loading for backward compatibility
+        path = Path(path)
+        with open(path, 'r') as f:
+            data = yaml.safe_load(f)
     return EstimatorConfig(**data)
 
 

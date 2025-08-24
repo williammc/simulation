@@ -1,0 +1,30 @@
+type: "swba"
+swba:
+  # Window parameters
+  window_size: 10
+  keyframe_translation_threshold: 0.5
+  keyframe_rotation_threshold: 0.3
+  keyframe_time_threshold: 0.5
+  
+  # Optimization
+  max_iterations: 20
+  convergence_threshold: 1.0e-6
+  lambda_init: 1.0e-4
+  lambda_factor: 10.0
+  lambda_min: 1.0e-8
+  lambda_max: 1.0e8
+  
+  # Robust cost
+  robust_kernel: "huber"
+  huber_threshold: 1.0
+  
+  # Weights
+  imu_weight: 1.0
+  camera_weight: 1.0
+  prior_weight: 1.0
+  
+  # Features
+  use_preintegrated_imu: true
+  use_keyframes_only: true
+  marginalize_old_keyframes: true
+  min_observations_per_landmark: 2
