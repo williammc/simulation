@@ -61,7 +61,7 @@ class EstimatorResultStorage:
             # Metadata
             "run_id": run_id,
             "timestamp": datetime.now().isoformat(),
-            "algorithm": config.estimator_type.value,
+            "algorithm": config.type.value if hasattr(config, 'type') else config.estimator_type.value,
             
             # Configuration - handle different config types
             "configuration": EstimatorResultStorage._config_to_dict(config),
@@ -125,15 +125,31 @@ class EstimatorResultStorage:
         
         # Convert trajectory from dict
         if "estimated_trajectory" in data:
-            data["trajectory"] = EstimatorResultStorage._dict_to_trajectory(
-                data["estimated_trajectory"]
-            )
+            # Check if it's the old format (just a list of poses) or new format (dict with frame_id)
+            if isinstance(data["estimated_trajectory"], list):
+                # Old format - wrap in dict
+                trajectory_data = {
+                    "frame_id": "world",
+                    "poses": data["estimated_trajectory"]
+                }
+            else:
+                trajectory_data = data["estimated_trajectory"]
+            
+            data["trajectory"] = EstimatorResultStorage._dict_to_trajectory(trajectory_data)
         
         # Convert landmarks from dict
         if "estimated_landmarks" in data:
-            data["landmarks"] = EstimatorResultStorage._dict_to_landmarks(
-                data["estimated_landmarks"]
-            )
+            # Check if it's the old format (just a list) or new format (dict with frame_id)
+            if isinstance(data["estimated_landmarks"], list):
+                # Old format - wrap in dict
+                landmarks_data = {
+                    "frame_id": "world",
+                    "landmarks": data["estimated_landmarks"]
+                }
+            else:
+                landmarks_data = data["estimated_landmarks"]
+            
+            data["landmarks"] = EstimatorResultStorage._dict_to_landmarks(landmarks_data)
         
         return data
     

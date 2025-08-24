@@ -286,3 +286,6 @@ $RECYCLE.BIN/
 .directory
 .Trash-*
 .nfs*
+
+tests/gtsam-comparison/outputs/
+cpp_estimation/build

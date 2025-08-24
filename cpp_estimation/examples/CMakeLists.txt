@@ -9,3 +9,9 @@ target_link_libraries(save_estimator_result PRIVATE simulation_io)
 
 add_executable(verify_landmark_observations verify_landmark_observations.cpp)
 target_link_libraries(verify_landmark_observations PRIVATE simulation_io)
+
+add_executable(mock_estimator mock_estimator.cpp)
+target_link_libraries(mock_estimator PRIVATE simulation_io)
+# Add thread support for sleep_for
+find_package(Threads REQUIRED)
+target_link_libraries(mock_estimator PRIVATE Threads::Threads)

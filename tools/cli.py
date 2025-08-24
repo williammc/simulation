@@ -240,24 +240,103 @@ def test(
         "--gtsam/--no-gtsam",
         help="Include GTSAM comparison tests"
     ),
+    cpp: bool = typer.Option(
+        True,
+        "--cpp/--no-cpp",
+        help="Build and test C++ code"
+    ),
+    cpp_only: bool = typer.Option(
+        False,
+        "--cpp-only",
+        help="Only build and test C++ code, skip Python tests"
+    ),
 ):
-    """Run unit tests."""
+    """Run unit tests (Python and optionally C++)."""
     import subprocess
     
-    if include_gtsam:
-        cmd = [sys.executable, "-m", "pytest", "tests/"]
-        console.print("[green]Running all tests (including GTSAM comparisons)...[/green]")
-    else:
-        cmd = [sys.executable, "-m", "pytest", "tests/", "--ignore=tests/gtsam-comparison"]
-        console.print("[green]Running tests (excluding GTSAM comparisons)...[/green]")
+    # Track overall success
+    all_passed = True
     
-    if verbose:
-        cmd.append("-v")
-    if coverage:
-        cmd.extend(["--cov=src", "--cov=tools", "--cov-report=term-missing"])
+    # Build and test C++ if requested
+    if cpp or cpp_only:
+        console.print("[bold cyan]Building C++ code...[/bold cyan]")
+        
+        # Check if cpp_estimation exists
+        cpp_dir = Path("cpp_estimation")
+        if not cpp_dir.exists():
+            console.print("[yellow]Warning: cpp_estimation directory not found, skipping C++ tests[/yellow]")
+        else:
+            # Create build directory
+            build_dir = cpp_dir / "build"
+            build_dir.mkdir(exist_ok=True)
+            
+            # Run cmake
+            console.print("[green]Running cmake...[/green]")
+            cmake_result = subprocess.run(
+                ["cmake", ".."],
+                cwd=build_dir,
+                capture_output=True,
+                text=True
+            )
+            
+            if cmake_result.returncode != 0:
+                console.print(f"[red]CMake failed:[/red]\n{cmake_result.stderr}")
+                all_passed = False
+            else:
+                # Build
+                console.print("[green]Building C++ project...[/green]")
+                make_result = subprocess.run(
+                    ["make", "-j4"],
+                    cwd=build_dir,
+                    capture_output=True,
+                    text=True
+                )
+                
+                if make_result.returncode != 0:
+                    console.print(f"[red]Build failed:[/red]\n{make_result.stderr}")
+                    all_passed = False
+                else:
+                    console.print("[green]✓ C++ build successful[/green]")
+                    
+                    # Run C++ tests if they exist
+                    test_exe = build_dir / "tests" / "test_simulation_io"
+                    if test_exe.exists():
+                        console.print("[green]Running C++ tests...[/green]")
+                        test_result = subprocess.run(
+                            [str(test_exe)],
+                            cwd=build_dir,
+                            capture_output=True,
+                            text=True
+                        )
+                        
+                        if test_result.returncode != 0:
+                            console.print(f"[red]C++ tests failed:[/red]\n{test_result.stdout}")
+                            all_passed = False
+                        else:
+                            console.print(f"[green]✓ C++ tests passed[/green]\n{test_result.stdout}")
     
-    result = subprocess.run(cmd)
-    raise typer.Exit(result.returncode)
+    # Run Python tests unless --cpp-only was specified
+    if not cpp_only:
+        console.print("\n[bold cyan]Running Python tests...[/bold cyan]")
+        
+        if include_gtsam:
+            cmd = [sys.executable, "-m", "pytest", "tests/"]
+            console.print("[green]Running all tests (including GTSAM comparisons)...[/green]")
+        else:
+            cmd = [sys.executable, "-m", "pytest", "tests/", "--ignore=tests/gtsam-comparison"]
+            console.print("[green]Running tests (excluding GTSAM comparisons)...[/green]")
+        
+        if verbose:
+            cmd.append("-v")
+        if coverage:
+            cmd.extend(["--cov=src", "--cov=tools", "--cov-report=term-missing"])
+        
+        result = subprocess.run(cmd)
+        if result.returncode != 0:
+            all_passed = False
+    
+    # Exit with appropriate code
+    raise typer.Exit(0 if all_passed else 1)
 
 
 @app.command()

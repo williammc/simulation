@@ -4,7 +4,7 @@ Configuration models using Pydantic for type safety and validation.
 
 from enum import Enum
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Tuple, Union, Any
 
 import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -32,6 +32,7 @@ class EstimatorType(str, Enum):
     SWBA = "swba"
     EKF = "ekf"
     SRIF = "srif"
+    CPP_BINARY = "cpp_binary"
     UNKNOWN = "unknown"
 
 
@@ -505,6 +506,37 @@ class SRIFConfig(BaseEstimatorConfig):
     integration_method: str = Field("rk4", description="IMU integration method (euler, rk4, midpoint)")
 
 
+class CppBinaryConfig(BaseEstimatorConfig):
+    """C++ Binary Estimator configuration."""
+    # Set default estimator type
+    estimator_type: EstimatorType = Field(
+        default=EstimatorType.CPP_BINARY,
+        description="Type of estimator"
+    )
+    
+    # Binary execution parameters
+    parameters: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Parameters for binary execution"
+    )
+    
+    # Required parameters with defaults
+    executable: str = Field(
+        "cpp_estimation/build/estimator",
+        description="Path to the executable binary"
+    )
+    timeout: int = Field(300, gt=0, description="Execution timeout in seconds")
+    input_file: str = Field("simulation_data.json", description="Input JSON filename")
+    output_file: str = Field("estimation_result.json", description="Output JSON filename")
+    
+    # Optional parameters
+    working_dir: Optional[str] = Field(None, description="Working directory for execution")
+    args: List[str] = Field(default_factory=list, description="Command line arguments")
+    env: Dict[str, str] = Field(default_factory=dict, description="Environment variables")
+    retry_on_failure: bool = Field(False, description="Retry on failure")
+    max_retries: int = Field(1, ge=0, description="Maximum number of retries")
+
+
 class EstimatorConfig(BaseModel):
     """General estimator configuration."""
     type: EstimatorType = Field(
@@ -514,6 +546,7 @@ class EstimatorConfig(BaseModel):
     swba: Optional[SWBAConfig] = None
     ekf: Optional[EKFConfig] = None
     srif: Optional[SRIFConfig] = None
+    cpp_binary: Optional[CppBinaryConfig] = None
     
     output_rate: float = Field(
         100.0,
@@ -530,6 +563,8 @@ class EstimatorConfig(BaseModel):
             self.ekf = EKFConfig()
         elif self.type == EstimatorType.SRIF and self.srif is None:
             self.srif = SRIFConfig()
+        elif self.type == EstimatorType.CPP_BINARY and self.cpp_binary is None:
+            self.cpp_binary = CppBinaryConfig()
         return self
 
 

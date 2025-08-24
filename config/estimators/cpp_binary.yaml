@@ -1,6 +1,6 @@
 type: "cpp_binary"
 parameters:
-  executable: "cpp_estimation/build/estimator"
+  executable: "cpp_estimation/build/examples/mock_estimator"
   input_format: "json"
   output_format: "json"
   args:
