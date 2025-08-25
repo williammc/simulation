@@ -1,6 +1,9 @@
 """
 Simplified Sliding Window Bundle Adjustment (SWBA) for trajectory estimation.
 
+DEPRECATED: This implementation is maintained for backward compatibility only.
+Please use GtsamSWBAEstimator instead for better performance and stability.
+
 Minimal implementation that:
 - Maintains a sliding window of keyframes
 - Uses preintegrated IMU between keyframes
@@ -9,6 +12,7 @@ Minimal implementation that:
 """
 
 import numpy as np
+import warnings
 from typing import List, Dict, Optional, Tuple, Set, Union
 from dataclasses import dataclass, field
 from enum import Enum
@@ -126,6 +130,15 @@ class SlidingWindowBA(BaseEstimator):
             camera_calibration: Camera calibration
             imu_calibration: Optional IMU calibration
         """
+        # Issue deprecation warning
+        warnings.warn(
+            "SlidingWindowBA is deprecated and will be removed in a future version. "
+            "Please use GtsamSWBAEstimator instead by specifying 'gtsam-swba' as the estimator type. "
+            "The GTSAM implementation provides better numerical stability and performance.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        
         super().__init__(config)
         self.config = config
         self.camera_calib = camera_calibration

@@ -16,8 +16,8 @@ from src.common.data_structures import (
     CameraCalibration, CameraIntrinsics, CameraExtrinsics, CameraModel,
     IMUCalibration, PreintegratedIMUData, Trajectory, TrajectoryState
 )
-from src.estimation.ekf_slam import EKFSlam
-from src.estimation.swba_slam import SlidingWindowBA
+from src.estimation.legacy.ekf_slam import EKFSlam
+from src.estimation.legacy.swba_slam import SlidingWindowBA
 from src.simulation.keyframe_selector import mark_keyframes_in_camera_data
 from src.utils.preintegration_utils import preintegrate_between_keyframes
 from src.estimation.imu_integration import IMUPreintegrator

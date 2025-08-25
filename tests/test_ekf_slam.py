@@ -7,7 +7,7 @@ import numpy as np
 from pathlib import Path
 import tempfile
 
-from src.estimation.ekf_slam import (
+from src.estimation.legacy.ekf_slam import (
     EKFSlam, EKFState
 )
 from src.common.config import EKFConfig

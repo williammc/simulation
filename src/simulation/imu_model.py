@@ -326,7 +326,8 @@ class IMUPreintegrator:
     def integrate(
         self,
         measurement: IMUMeasurement,
-        dt: float
+        dt: float,
+        remove_gravity: bool = True
     ):
         """
         Integrate single IMU measurement.
@@ -334,6 +335,7 @@ class IMUPreintegrator:
         Args:
             measurement: IMU measurement
             dt: Time step
+            remove_gravity: Whether to remove gravity from accelerometer (default: True)
         """
         # Store measurement
         self.measurements.append((measurement, dt))
@@ -342,13 +344,24 @@ class IMUPreintegrator:
         acc = measurement.accelerometer
         gyro = measurement.gyroscope
         
+        # IMPORTANT: Remove gravity from accelerometer measurements
+        # The IMU measures specific force which includes gravity
+        # For preintegration, we need to remove gravity in the world frame
+        if remove_gravity:
+            # Transform gravity to body frame and remove it
+            # gravity_body = R^T @ gravity_world
+            gravity_body = self.delta_R.T @ self.gravity
+            acc_corrected = acc - gravity_body
+        else:
+            acc_corrected = acc
+        
         # Update rotation (first-order integration)
         from src.utils.math_utils import so3_exp
         dR = so3_exp(gyro * dt)
         
-        # Update position and velocity
-        self.delta_p += self.delta_v * dt + 0.5 * self.delta_R @ acc * dt * dt
-        self.delta_v += self.delta_R @ acc * dt
+        # Update position and velocity using gravity-compensated acceleration
+        self.delta_p += self.delta_v * dt + 0.5 * self.delta_R @ acc_corrected * dt * dt
+        self.delta_v += self.delta_R @ acc_corrected * dt
         self.delta_R = self.delta_R @ dR
         self.delta_t += dt
     

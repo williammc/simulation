@@ -6,7 +6,7 @@ import pytest
 import numpy as np
 from pathlib import Path
 
-from src.estimation.swba_slam import (
+from src.estimation.legacy.swba_slam import (
     SlidingWindowBA, Keyframe, RobustCostType
 )
 from src.common.config import SWBAConfig

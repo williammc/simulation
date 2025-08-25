@@ -159,19 +159,19 @@ class GtsamSWBAEstimator(GtsamBaseEstimator):
         # Predict next pose using preintegrated values
         dt = preintegrated_imu.dt
         
-        # Position prediction
+        # Position prediction: p_next = p_prev + v_prev*dt + R_prev*delta_p
         new_position = (
             prev_pose_est.translation() + 
             prev_vel_est * dt +
             prev_pose_est.rotation().matrix() @ preintegrated_imu.delta_position
         )
         
-        # Rotation prediction
+        # Rotation prediction: R_next = R_prev * delta_R
         new_rotation = gtsam.Rot3(
             prev_pose_est.rotation().matrix() @ preintegrated_imu.delta_rotation
         )
         
-        # Velocity prediction
+        # Velocity prediction: v_next = v_prev + R_prev*delta_v
         new_velocity = (
             prev_vel_est + 
             prev_pose_est.rotation().matrix() @ preintegrated_imu.delta_velocity

@@ -6,10 +6,10 @@ import pytest
 import numpy as np
 from pathlib import Path
 
-from src.estimation.srif_slam import (
+from src.estimation.legacy.srif_slam import (
     SRIFSlam, SRIFState
 )
-from src.estimation.ekf_slam import EKFSlam
+from src.estimation.legacy.ekf_slam import EKFSlam
 from src.common.config import SRIFConfig, EKFConfig
 from src.estimation.base_estimator import EstimatorType
 from src.common.data_structures import (

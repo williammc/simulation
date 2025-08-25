@@ -429,8 +429,9 @@ class IMUPreintegrator:
         """
         Add IMU measurement to preintegration.
         
-        NOTE: The IMU model already provides specific force (acceleration without gravity),
-        so we don't need to remove gravity here.
+        NOTE: The IMU model already provides specific force (acceleration with gravity removed),
+        so we don't need to remove gravity here. The accelerometer measures:
+        a_measured = a_actual - g (in world frame, then transformed to body frame)
         
         Args:
             measurement: IMU measurement
@@ -452,15 +453,13 @@ class IMUPreintegrator:
         delta_R_dt = exp_so3(omega_dt)
         self.delta_R = self.delta_R @ delta_R_dt
         
-        # The accelerometer already measures specific force (without gravity)
-        # Just rotate it to accumulate in the initial body frame
-        # accel is already in the current body frame
-        # We need to rotate it by delta_R_prev to express it in the initial body frame
+        # The accelerometer already measures specific force (gravity removed)
+        # So we can use it directly for integration
         
-        # Update velocity (acceleration is already gravity-free)
+        # Update velocity 
         self.delta_v = self.delta_v + delta_R_prev @ accel * dt
         
-        # Update position
+        # Update position 
         self.delta_p = self.delta_p + delta_v_prev * dt + 0.5 * delta_R_prev @ accel * dt**2
         
         # Update Jacobians (simplified first-order approximation)

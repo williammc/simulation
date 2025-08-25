@@ -1,11 +1,15 @@
 """
 Square Root Information Filter (SRIF) for Visual-Inertial SLAM.
 
+DEPRECATED: This implementation is maintained for backward compatibility only.
+There is no direct GTSAM replacement. Please use GtsamEkfEstimator instead.
+
 Implements a numerically stable variant of the Extended Kalman Filter
 using QR factorization to maintain the square root of the information matrix.
 """
 
 import numpy as np
+import warnings
 from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass, field
 import logging
@@ -172,6 +176,15 @@ class SRIFSlam(BaseEstimator):
             camera_calibration: Camera calibration
             imu_calibration: Optional IMU calibration
         """
+        # Issue deprecation warning
+        warnings.warn(
+            "SRIFSlam is deprecated and will be removed in a future version. "
+            "There is no direct GTSAM replacement for SRIF. "
+            "Please use GtsamEkfEstimator instead by specifying 'gtsam-ekf' as the estimator type.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        
         super().__init__(config)
         self.config = config
         self.camera_calib = camera_calibration

@@ -16,7 +16,7 @@ except ImportError:
     GTSAM_AVAILABLE = False
     pytest.skip("GTSAM not installed", allow_module_level=True)
 
-from src.estimation.gtsam_ekf_estimator import GtsamEkfEstimator
+from src.estimation.gtsam_ekf_estimator import GTSAMEKFEstimatorV2 as GtsamEkfEstimator
 from src.estimation.base_estimator import EstimatorConfig, EstimatorResult
 from src.common.data_structures import (
     Pose, Trajectory, Map, Landmark,

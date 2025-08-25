@@ -36,10 +36,12 @@ def run_slam(
         Path to output file if successful, None if error
     """
     # Import estimators
-    from src.estimation.ekf_slam import EKFSlam
-    from src.estimation.swba_slam import SlidingWindowBA
-    from src.estimation.srif_slam import SRIFSlam
-    from src.estimation.gtsam_ekf_estimator import GtsamEkfEstimator
+    # Legacy estimators (deprecated - will show warnings)
+    from src.estimation.legacy.ekf_slam import EKFSlam
+    from src.estimation.legacy.swba_slam import SlidingWindowBA
+    from src.estimation.legacy.srif_slam import SRIFSlam
+    # Modern GTSAM-based estimators (preferred)
+    from src.estimation.gtsam_ekf_estimator import GTSAMEKFEstimatorV2 as GtsamEkfEstimator
     from src.estimation.gtsam_swba_estimator import GtsamSWBAEstimator
     from src.estimation.base_estimator import EstimatorConfig
     from src.common.json_io import load_simulation_data
@@ -57,6 +59,11 @@ def run_slam(
         console.print(f"[red]✗ Error: Unknown estimator: {estimator}[/red]")
         console.print(f"  Available estimators: {', '.join(valid_estimators)}")
         return None
+    
+    # Warn about legacy estimators
+    if estimator_lower in ['ekf', 'swba', 'srif']:
+        console.print(f"[yellow]⚠ Warning: '{estimator}' is a legacy estimator.[/yellow]")
+        console.print(f"[yellow]  Consider using 'gtsam-{estimator_lower}' instead for better performance.[/yellow]")
     
     console.print(f"\n[bold]Running {estimator.upper()} Estimator[/bold]")
     console.print(f"  Input: {input_data}")
@@ -146,11 +153,10 @@ def run_slam(
             estimator_instance = SRIFSlam(srif_config, camera_calib, imu_calib)
         
         elif estimator_lower == 'gtsam-ekf':
-            # Create GTSAM EKF config
+            # Create GTSAM EKF config (uses V2 implementation with CombinedImuFactor)
             gtsam_ekf_config = config_data.get('gtsam_ekf', {})
-            # Extract base config fields
-            base_config_fields = {
-                'estimator_type': EstimatorType.GTSAM_EKF,
+            # V2 expects a dictionary, not EstimatorConfig object
+            v2_config = {
                 'max_landmarks': gtsam_ekf_config.get('max_landmarks', 1000),
                 'max_iterations': gtsam_ekf_config.get('max_iterations', 100),
                 'convergence_threshold': gtsam_ekf_config.get('convergence_threshold', 1e-6),
@@ -159,12 +165,26 @@ def run_slam(
                 'marginalization_window': gtsam_ekf_config.get('marginalization_window', 10),
                 'verbose': gtsam_ekf_config.get('verbose', False),
                 'save_intermediate': gtsam_ekf_config.get('save_intermediate', False),
-                'seed': gtsam_ekf_config.get('seed', 42)
+                'seed': gtsam_ekf_config.get('seed', 42),
+                'relinearize_threshold': gtsam_ekf_config.get('relinearize_threshold', 0.01),
+                'relinearize_skip': gtsam_ekf_config.get('relinearize_skip', 1)
             }
-            estimator_config = EstimatorConfig(**base_config_fields)
-            # Add ISAM2 specific config as attribute
-            estimator_config.isam2 = gtsam_ekf_config.get('isam2', {})
-            estimator_instance = GtsamEkfEstimator(estimator_config)
+            # Pass dictionary to V2, but create EstimatorConfig for compatibility
+            estimator_instance = GtsamEkfEstimator(v2_config)
+            # Set config attribute for result saving compatibility
+            base_config_fields = {
+                'estimator_type': EstimatorType.GTSAM_EKF,
+                'max_landmarks': v2_config['max_landmarks'],
+                'max_iterations': v2_config['max_iterations'],
+                'convergence_threshold': v2_config['convergence_threshold'],
+                'outlier_threshold': v2_config['outlier_threshold'],
+                'enable_marginalization': v2_config['enable_marginalization'],
+                'marginalization_window': v2_config['marginalization_window'],
+                'verbose': v2_config['verbose'],
+                'save_intermediate': v2_config['save_intermediate'],
+                'seed': v2_config['seed']
+            }
+            estimator_instance.config = EstimatorConfig(**base_config_fields)
             
         elif estimator_lower == 'gtsam-swba':
             # Create GTSAM SWBA config

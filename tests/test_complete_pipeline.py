@@ -11,8 +11,8 @@ import pytest
 from tools.simulate import run_simulation
 from src.common.config import KeyframeSelectionConfig, KeyframeSelectionStrategy
 from src.common.json_io import load_simulation_data
-from src.estimation.ekf_slam import EKFSlam
-from src.estimation.swba_slam import SlidingWindowBA
+from src.estimation.legacy.ekf_slam import EKFSlam
+from src.estimation.legacy.swba_slam import SlidingWindowBA
 from src.common.config import EKFConfig, SWBAConfig
 from src.common.data_structures import (
     CameraCalibration, CameraIntrinsics, CameraModel, CameraExtrinsics,

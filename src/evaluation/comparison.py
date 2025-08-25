@@ -12,9 +12,9 @@ import json
 import pandas as pd
 from scipy import stats
 
-from src.estimation.ekf_slam import EKFSlam
-from src.estimation.swba_slam import SlidingWindowBA
-from src.estimation.srif_slam import SRIFSlam
+from src.estimation.legacy.ekf_slam import EKFSlam
+from src.estimation.legacy.swba_slam import SlidingWindowBA
+from src.estimation.legacy.srif_slam import SRIFSlam
 from src.common.config import EKFConfig, SWBAConfig, SRIFConfig
 from src.estimation.base_estimator import (
     BaseEstimator, EstimatorType, EstimatorResult

@@ -1,6 +1,9 @@
 """
 Simplified Extended Kalman Filter (EKF) for keyframe-based trajectory estimation.
 
+DEPRECATED: This implementation is maintained for backward compatibility only.
+Please use GtsamEkfEstimator instead for better performance and stability.
+
 This is a minimal implementation that:
 - Processes only preintegrated IMU data between keyframes
 - Updates state at keyframes (visual updates optional)
@@ -9,6 +12,7 @@ This is a minimal implementation that:
 """
 
 import numpy as np
+import warnings
 from typing import Optional, Dict, List
 from dataclasses import dataclass
 from enum import Enum
@@ -144,6 +148,15 @@ class EKFSlam(BaseEstimator):
             camera_calibration: Camera calibration parameters
             imu_calibration: Optional IMU calibration
         """
+        # Issue deprecation warning
+        warnings.warn(
+            "EKFSlam is deprecated and will be removed in a future version. "
+            "Please use GtsamEkfEstimator instead by specifying 'gtsam-ekf' as the estimator type. "
+            "The GTSAM implementation provides better numerical stability and performance.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        
         super().__init__(config)
         self.config = config
         self.camera_calib = camera_calibration
