@@ -1,14 +1,20 @@
 # SLAM Simulation System
 
-A comprehensive Visual-Inertial SLAM simulation and evaluation framework supporting multiple estimation algorithms (EKF, Sliding Window Bundle Adjustment, Square Root Information Filter).
+A comprehensive Visual-Inertial SLAM simulation and evaluation framework supporting multiple estimation algorithms including GTSAM-based implementations with IMU preintegration.
 
 ## Features
 
-- **Simulation**: Generate synthetic sensor data with configurable noise models
-- **Multiple Estimators**: EKF, SWBA (optimization-based), SRIF (numerically stable)
-- **Sensor Support**: Monocular/stereo cameras, single/multi-IMU configurations
-- **Evaluation**: ATE, RPE, NEES metrics with statistical comparison
-- **Visualization**: Interactive 3D trajectories and performance dashboards
+- **Simulation**: Generate synthetic sensor data with realistic noise models and trajectories
+- **Multiple Estimators**: 
+  - EKF-SLAM: Classic Extended Kalman Filter
+  - GTSAM-EKF: GTSAM with IMU preintegration and iSAM2
+  - GTSAM-SWBA: Sliding Window Bundle Adjustment with GTSAM
+  - SRIF: Square Root Information Filter (numerically stable)
+- **IMU Preintegration**: Full support for GTSAM's CombinedImuFactor with bias estimation
+- **Sensor Support**: Monocular/stereo cameras, IMU with realistic noise models
+- **Evaluation**: Comprehensive metrics (ATE, RPE, runtime, memory) with statistical analysis
+- **Visualization**: Interactive 3D trajectories, error plots, and performance dashboards
+- **Benchmarking**: Automated evaluation pipeline with parallel execution
 
 ## Sensor Conventions
 
@@ -21,6 +27,22 @@ The IMU is modeled as a single integrated sensor with co-located accelerometer a
 
 This simplification is valid for most applications as the distance between accelerometer and gyroscope in MEMS chips is negligible (<1mm).
 
+### IMU Preintegration (GTSAM)
+The GTSAM-based estimators use IMU preintegration for efficient and accurate state estimation:
+
+- **Specific Force**: IMU measures acceleration minus gravity (f = a - g)
+- **Preintegration**: Combines multiple IMU measurements between keyframes into a single constraint
+- **CombinedImuFactor**: GTSAM factor that handles:
+  - Gravity compensation automatically
+  - IMU bias estimation (accelerometer and gyroscope biases)
+  - Proper covariance propagation
+- **Benefits**:
+  - O(1) computational complexity per keyframe (vs O(n) for raw integration)
+  - Bias estimation improves long-term accuracy
+  - Numerically stable through manifold-based integration
+
+For detailed IMU preintegration documentation, see [docs/imu.md](docs/imu.md).
+
 ## Quick Start
 
 ### Setup
@@ -30,6 +52,24 @@ This simplification is valid for most applications as the distance between accel
 
 # Run tests to verify installation
 ./run.sh test
+```
+
+### Quick Command Reference
+```bash
+# Generate simulation data
+./run.sh simulate circle --duration 10 --output sim.json
+
+# Run GTSAM-EKF (recommended for IMU-heavy scenarios)
+./run.sh slam gtsam-ekf --input sim.json --output result.json
+
+# Evaluate results
+./run.sh evaluate --result result.json --ground-truth sim.json
+
+# Generate interactive plots
+./run.sh plot sim.json --compare result.json
+
+# Run complete benchmark
+./run.sh e2e-simple --trajectory circle --estimator gtsam-ekf
 ```
 
 ### Example Workflows
@@ -173,10 +213,21 @@ This approach ensures consistent, reproducible benchmarks without requiring actu
 
 ### SLAM Estimation
 ```bash
-./run.sh slam [ekf|swba|srif] --input FILE [options]
+./run.sh slam [ekf|gtsam-ekf|gtsam-swba|srif] --input FILE [options]
   --config FILE       Estimator config YAML
   --output FILE       Output trajectory JSON
   --visualize         Show live visualization
+  --verbose          Verbose output
+
+# Available estimators:
+# - ekf: Classic Extended Kalman Filter
+# - gtsam-ekf: GTSAM with IMU preintegration (CombinedImuFactor)
+# - gtsam-swba: GTSAM Sliding Window Bundle Adjustment
+# - srif: Square Root Information Filter
+
+# Examples:
+./run.sh slam gtsam-ekf --input output/circle_sim.json --output output/gtsam_result.json
+./run.sh slam gtsam-swba --input output/complex_sim.json --config config/estimators/swba.yaml
 ```
 
 ### Comparison
@@ -387,13 +438,35 @@ print(f"ATE RMSE: {metrics.ate_rmse:.3f} meters")
 ```
 slam_simulation/
 ├── src/
-│   ├── simulation/      # Data generation
-│   ├── estimation/      # SLAM algorithms
-│   ├── evaluation/      # Metrics and comparison
-│   └── visualization/   # Plotting and dashboard
-├── config/             # YAML configurations
-├── tools/              # CLI and utilities
-└── tests/              # Unit tests
+│   ├── common/          # Shared data structures and utilities
+│   ├── simulation/      # Trajectory and sensor data generation
+│   ├── estimation/      # SLAM algorithms (EKF, GTSAM, SRIF)
+│   ├── evaluation/      # Metrics, benchmarking, and analysis
+│   ├── plotting/        # Visualization and dashboards
+│   ├── utils/           # Math utilities and helpers
+│   └── io/              # Data I/O and serialization
+├── config/              # YAML configurations
+│   ├── simulation/      # Trajectory and sensor configs
+│   ├── estimators/      # Algorithm-specific configs
+│   └── evaluation/      # Benchmark configurations
+├── tools/               # CLI and utilities
+│   ├── cli.py          # Main command interface
+│   ├── simulate.py     # Simulation command
+│   ├── slam.py         # SLAM estimation command
+│   └── evaluate.py     # Evaluation command
+├── tests/               # Unit and integration tests
+│   ├── test_gtsam_ekf.py # GTSAM-EKF tests
+│   ├── test_preintegration.py # IMU preintegration tests
+│   └── gtsam-comparison/ # GTSAM validation tests
+├── docs/                # Documentation
+│   ├── architecture.md # System architecture
+│   ├── imu.md          # IMU and preintegration guide
+│   ├── simulation.md   # Simulation module docs
+│   ├── estimation.md   # Estimator documentation
+│   ├── plotting.md     # Visualization guide
+│   ├── evaluation.md   # Metrics and benchmarking
+│   └── tooling.md      # CLI and tools guide
+└── notebooks/           # Jupyter notebooks for analysis
 ```
 
 ## Testing
@@ -405,9 +478,28 @@ slam_simulation/
 # Run specific test suite
 ./run.sh test tests/test_ekf_slam.py
 
+# Run GTSAM-specific tests
+./run.sh test tests/test_gtsam_ekf.py
+./run.sh test-gtsam  # Run GTSAM comparison tests
+
 # Run with coverage
 ./run.sh test --coverage
+
+# Run C++ tests (if built)
+./run.sh test --cpp
 ```
+
+## Documentation
+
+Comprehensive documentation is available in the `docs/` directory:
+
+- **[architecture.md](docs/architecture.md)**: System architecture, design patterns, and data flow
+- **[imu.md](docs/imu.md)**: IMU fundamentals, preintegration theory, and GTSAM integration
+- **[simulation.md](docs/simulation.md)**: Trajectory generation, sensor simulation, and configuration
+- **[estimation.md](docs/estimation.md)**: SLAM algorithms, implementation details, and usage
+- **[evaluation.md](docs/evaluation.md)**: Metrics (ATE/RPE), benchmarking, and statistical analysis
+- **[plotting.md](docs/plotting.md)**: Visualization tools, interactive plots, and dashboards
+- **[tooling.md](docs/tooling.md)**: CLI commands, batch processing, and automation
 
 ## Development
 
@@ -444,6 +536,55 @@ The `./run.sh cmd` wrapper ensures:
 ./run.sh cmd "python3 -m pytest tests/test_multi_imu.py tests/test_stereo_camera.py -v"
 ```
 
+## Requirements
+
+### Software Dependencies
+- Python 3.8+
+- NumPy, SciPy, Matplotlib
+- GTSAM Python bindings (`pip install gtsam`)
+- Plotly for interactive visualization
+- PyYAML for configuration
+- Click for CLI
+
+### Optional Dependencies
+- C++ compiler (for C++ tests and binaries)
+- Jupyter for notebooks
+- pytest for testing
+
+### Installation
+```bash
+# Create virtual environment
+python3 -m venv .venv
+source .venv/bin/activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Or use the setup script
+./run.sh setup
+```
+
+## Contributing
+
+Contributions are welcome! Please ensure:
+1. All tests pass (`./run.sh test`)
+2. Code follows existing style conventions
+3. New features include tests and documentation
+4. IMU-related changes validate against GTSAM
+
 ## License
 
 MIT License - See LICENSE file for details
+
+## Citation
+
+If you use this software in your research, please cite:
+```bibtex
+@software{slam_simulation_2025,
+  title = {SLAM Simulation System with GTSAM Integration},
+  author = {Your Name},
+  year = {2025},
+  version = {2.0.0},
+  url = {https://github.com/yourusername/slam-simulation}
+}
+```

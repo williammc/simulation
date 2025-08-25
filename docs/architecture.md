@@ -62,38 +62,50 @@ The SLAM Simulation System is a comprehensive framework for evaluating Visual-In
 slam_simulation/
 ├── src/                      # Core source code
 │   ├── common/              # Shared data structures and utilities
+│   │   ├── data_structures.py # Core data structures
+│   │   ├── config.py       # Configuration classes
 │   │   ├── json_io.py      # JSON serialization/deserialization
-│   │   ├── state.py        # State representations
 │   │   └── transforms.py   # SE(3) transformations
 │   │
 │   ├── simulation/          # Data generation
-│   │   ├── trajectory.py   # Trajectory generators
-│   │   ├── sensors.py      # Sensor models
-│   │   ├── landmarks.py    # Landmark generation
-│   │   └── noise.py        # Noise models
+│   │   ├── simulator.py    # Main simulation orchestrator
+│   │   ├── trajectory_generator.py # Trajectory generators
+│   │   ├── imu_simulator.py # IMU sensor simulation
+│   │   ├── camera_simulator.py # Camera simulation
+│   │   ├── landmark_generator.py # 3D landmark generation
+│   │   └── sensor_sync.py  # Multi-sensor synchronization
 │   │
 │   ├── estimation/          # SLAM algorithms
-│   │   ├── base.py         # Abstract estimator interface
+│   │   ├── base_estimator.py # Abstract estimator interface
 │   │   ├── ekf_slam.py     # Extended Kalman Filter
-│   │   ├── swba_slam.py    # Sliding Window Bundle Adjustment
-│   │   └── srif_slam.py    # Square Root Information Filter
+│   │   ├── gtsam_ekf_estimator.py # GTSAM-based EKF with IMU preintegration
+│   │   ├── gtsam_swba_estimator.py # GTSAM Sliding Window Bundle Adjustment
+│   │   ├── srif_slam.py    # Square Root Information Filter
+│   │   ├── gtsam_imu_preintegration.py # IMU preintegration utilities
+│   │   └── factory.py      # Estimator factory
 │   │
 │   ├── evaluation/          # Metrics and comparison
-│   │   ├── metrics.py      # ATE, RPE, NEES calculations
-│   │   ├── comparison.py   # Multi-estimator comparison
-│   │   └── orchestrator.py # Pipeline orchestration
+│   │   ├── trajectory_evaluator.py # Trajectory metrics (ATE, RPE)
+│   │   ├── landmark_evaluator.py # Map quality assessment
+│   │   ├── metrics.py      # Core metric implementations
+│   │   ├── statistical_analysis.py # Statistical tools
+│   │   └── benchmark.py    # Benchmarking framework
 │   │
 │   ├── plotting/            # Visualization
-│   │   ├── plots.py        # Basic plotting functions
-│   │   ├── dashboard.py    # Interactive dashboards
-│   │   └── enhanced_plots.py # Advanced visualizations
+│   │   ├── trajectory_plotter.py # 3D trajectory visualization
+│   │   ├── sensor_plotter.py # IMU/camera data plots
+│   │   ├── error_plotter.py # Error metrics visualization
+│   │   ├── dashboard_generator.py # Multi-panel dashboards
+│   │   └── interactive_viewer.py # Real-time visualization
 │   │
 │   ├── utils/               # Utilities
 │   │   ├── math_utils.py   # Mathematical operations
-│   │   └── tumvie_converter.py # Dataset converters
+│   │   ├── config_loader.py # Configuration loading
+│   │   └── gtsam_integration_utils.py # GTSAM conversion utilities
 │   │
 │   └── io/                  # Input/Output
-│       └── tum_vie_reader.py # Dataset readers
+│       ├── result_io.py    # Result serialization
+│       └── dataset_loader.py # Dataset loading utilities
 │
 ├── tools/                   # CLI and scripts
 │   ├── cli.py              # Main command-line interface
@@ -209,18 +221,22 @@ P_C = T_CW @ P_W
 
 #### Estimator Interface
 ```python
-class SLAMEstimator(ABC):
+class BaseEstimator(ABC):
     @abstractmethod
-    def process_imu(self, timestamp: float, accel: np.ndarray, gyro: np.ndarray):
-        """Process IMU measurement"""
+    def initialize(self, initial_pose: Pose) -> None:
+        """Initialize estimator with initial pose"""
         
     @abstractmethod
-    def process_camera(self, timestamp: float, observations: List[Observation]):
-        """Process camera observations"""
+    def predict(self, imu_data) -> None:
+        """Predict next state using IMU data"""
         
     @abstractmethod
-    def get_current_state(self) -> State:
-        """Get current estimated state"""
+    def update(self, frame: CameraFrame, landmarks: Map) -> None:
+        """Update state with camera observations"""
+        
+    @abstractmethod
+    def get_result(self) -> EstimatorResult:
+        """Get current estimation result"""
 ```
 
 #### EKF-SLAM
@@ -229,11 +245,19 @@ class SLAMEstimator(ABC):
 - **Update**: Sequential measurement updates
 - **Complexity**: O(n²) for n landmarks
 
-#### Sliding Window Bundle Adjustment (SWBA)
+#### GTSAM-EKF (IMU Preintegration)
+- **Backend**: GTSAM with iSAM2 incremental optimization
+- **IMU Handling**: CombinedImuFactor with preintegration
+- **Bias Estimation**: Joint estimation of IMU biases
+- **Gravity**: Automatic compensation
+- **Complexity**: O(1) per keyframe update
+
+#### GTSAM-SWBA (Sliding Window Bundle Adjustment)
 - **Window Size**: Configurable (default 10 keyframes)
-- **Optimization**: Gauss-Newton or Levenberg-Marquardt
-- **Marginalization**: Schur complement for old states
-- **Complexity**: O(m³) for m window size
+- **Optimization**: Levenberg-Marquardt with GTSAM
+- **Marginalization**: Proper marginalization of old states
+- **Smart Factors**: Efficient projection factors
+- **Complexity**: O(w³) for w window size
 
 #### Square Root Information Filter (SRIF)
 - **Representation**: R^T R form of information matrix
@@ -402,14 +426,18 @@ ate = compute_ate(result, groundtruth)
 | Component | Complexity | Bottleneck |
 |-----------|-----------|------------|
 | EKF-SLAM | O(n²) | Covariance update |
-| SWBA | O(m³) | Bundle adjustment |
+| GTSAM-EKF | O(1) per keyframe | iSAM2 update |
+| GTSAM-SWBA | O(w³) | Bundle adjustment (w=window) |
 | SRIF | O(n²) | QR factorization |
+| IMU Preintegration | O(m) | m measurements between keyframes |
 | ATE/RPE | O(n) | Alignment step |
 
 ### Memory Requirements
 - **EKF**: O(n²) for covariance matrix
-- **SWBA**: O(m×n) for Jacobians
+- **GTSAM-EKF**: O(k) for k active variables in iSAM2
+- **GTSAM-SWBA**: O(w×n) for window Jacobians
 - **SRIF**: O(n²) for R matrix
+- **Preintegration**: O(1) per IMU segment (consolidated)
 - **Trajectory**: O(t) for t timesteps
 
 ### Optimization Strategies
@@ -479,5 +507,21 @@ ate = compute_ate(result, groundtruth)
 
 ---
 
+## Recent Updates
+
+### Version 2.0.0 (January 2025)
+- **GTSAM Integration**: Full support for GTSAM-based estimators
+- **IMU Preintegration**: CombinedImuFactor with bias estimation
+- **Improved Testing**: Comprehensive test suite with GTSAM validation
+- **Documentation**: Complete module documentation in `docs/`
+- **Performance**: O(1) keyframe updates with iSAM2
+
+### Version 1.0.0 (December 2024)
+- Initial release with EKF, SWBA, SRIF estimators
+- Basic simulation and evaluation pipeline
+- Interactive visualization tools
+
+---
+
 *Last Updated: January 2025*
-*Version: 1.0.0*
+*Version: 2.0.0*
