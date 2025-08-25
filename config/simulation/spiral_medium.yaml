@@ -5,13 +5,13 @@ description: Spiral trajectory with medium noise - non-planar motion
 # Trajectory configuration
 trajectory:
   type: spiral
-  duration: 20.0
+  duration: 35.0  # Increased for slower, more realistic motion
   frequency: 100.0  # Hz
   initial_radius: 0.5
-  final_radius: 3.0
+  final_radius: 2.5  # Slightly smaller final radius
   initial_height: 0.5
-  final_height: 3.0
-  velocity: 1.0
+  final_height: 2.5  # Slightly lower final height
+  velocity: 0.75  # Slower velocity to prevent drift
 
 # Sensor configuration
 sensors:

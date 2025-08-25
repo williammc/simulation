@@ -5,10 +5,10 @@ description: Circle trajectory with medium noise - standard difficulty
 # Trajectory configuration
 trajectory:
   type: circle
-  duration: 20.0
+  duration: 30.0  # Increased for slower, more realistic motion
   frequency: 100.0  # Hz
-  radius: 5.0
-  velocity: 1.0
+  radius: 4.0  # Slightly smaller radius
+  velocity: 0.8  # Slower velocity to prevent drift
 
 # Sensor configuration
 sensors:

@@ -305,7 +305,7 @@ The evaluation system:
 
 ### Evaluation Config
 ```yaml
-# config/evaluation_config.yaml
+# config/e2e_config.yaml
 evaluation:
   name: "SLAM Evaluation Pipeline"
   output_dir: "output/evaluation"
@@ -575,16 +575,3 @@ Contributions are welcome! Please ensure:
 ## License
 
 MIT License - See LICENSE file for details
-
-## Citation
-
-If you use this software in your research, please cite:
-```bibtex
-@software{slam_simulation_2025,
-  title = {SLAM Simulation System with GTSAM Integration},
-  author = {Your Name},
-  year = {2025},
-  version = {2.0.0},
-  url = {https://github.com/yourusername/slam-simulation}
-}
-```

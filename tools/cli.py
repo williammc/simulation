@@ -597,8 +597,8 @@ def info():
 @app.command(name="e2e")
 def e2e_command(
     config_file: Path = typer.Argument(
-        Path("config/evaluation_config.yaml"),
-        help="Path to evaluation configuration YAML file"
+        Path("config/e2e_config.yaml"),
+        help="Path to e2e configuration YAML file"
     ),
     output_dir: Optional[Path] = typer.Option(
         None,

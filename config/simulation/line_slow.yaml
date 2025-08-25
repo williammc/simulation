@@ -1,0 +1,59 @@
+# Line Slow - Realistic slow linear motion to prevent EKF drift
+name: line_slow
+description: Slow linear trajectory with realistic motion - prevents EKF drift
+
+# Trajectory configuration
+trajectory:
+  type: line
+  duration: 30.0  # 30 seconds for 15m distance = 0.5 m/s
+  frequency: 100.0  # Hz
+  start_position: [0.0, 0.0, 1.5]
+  end_position: [15.0, 0.0, 1.5]  # 15 meters distance
+  velocity: 0.5  # Very slow velocity ~0.5 m/s
+
+# Sensor configuration
+sensors:
+  imu:
+    frequency: 200.0  # Hz
+    noise:
+      accelerometer_noise_density: 0.0002  # Realistic low noise
+      gyroscope_noise_density: 0.00002
+      accelerometer_random_walk: 0.00002
+      gyroscope_random_walk: 0.000002
+  
+  camera:
+    frequency: 10.0  # Hz
+    noise:
+      pixel_noise: 0.05  # Moderate pixel noise
+    calibration:
+      fx: 500.0
+      fy: 500.0
+      cx: 320.0
+      cy: 240.0
+      width: 640
+      height: 480
+
+# Landmark configuration
+landmarks:
+  num_landmarks: 100  # More landmarks for better tracking
+  x_range: [-5.0, 20.0]  # Extended range along path
+  y_range: [-10.0, 10.0]
+  z_range: [0.0, 5.0]
+
+# Keyframe selection
+keyframes:
+  strategy: fixed_interval
+  interval: 10  # Every 10th camera frame (1 Hz keyframes)
+
+# IMU Preintegration
+preintegration:
+  enabled: true
+
+# Random seed for reproducibility
+seed: 47
+
+# Output configuration
+output:
+  save_raw_imu: false
+  save_preintegrated: true
+  save_visualization: false

@@ -5,12 +5,12 @@ description: Figure-8 trajectory with high noise - stress testing
 # Trajectory configuration
 trajectory:
   type: figure8
-  duration: 20.0
+  duration: 35.0  # Increased for slower, more realistic motion
   frequency: 100.0  # Hz
-  scale_x: 3.0
-  scale_y: 2.0
+  scale_x: 2.5  # Slightly smaller scale
+  scale_y: 1.5  # Slightly smaller scale
   height: 1.5
-  velocity: 1.0
+  velocity: 0.7  # Slower velocity to prevent drift
 
 # Sensor configuration
 sensors:

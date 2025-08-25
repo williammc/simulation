@@ -47,8 +47,8 @@ def run_e2e(
     # Check if config file exists
     if not config_file.exists():
         console.print(f"[red]Error: Configuration file not found: {config_file}[/red]")
-        console.print("\n[yellow]Tip: Use the default config at config/evaluation_config.yaml[/yellow]")
-        console.print("[yellow]Or try the educational config: config/evaluation_educational.yaml[/yellow]")
+        console.print("\n[yellow]Tip: Use the default config at config/e2e_config.yaml[/yellow]")
+        console.print("[yellow]Or try the educational config: config/e2e_educational.yaml[/yellow]")
         return 1
     
     # Load and potentially modify config

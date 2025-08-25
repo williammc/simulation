@@ -1,0 +1,162 @@
+# Global Evaluation Configuration
+# This config orchestrates the full evaluation pipeline across all datasets and estimators
+
+evaluation:
+  name: "SLAM Evaluation Pipeline"
+  output_dir: "output/evaluation"
+  parallel_jobs: 4  # Number of parallel estimation jobs
+  overwrite: false  # Whether to regenerate existing data
+  
+  # Key Performance Indicators to track
+  kpis:
+    - ate_rmse
+    - rpe_translation_rmse
+    - runtime_ms
+    - peak_memory_mb
+    - convergence_rate
+
+# Datasets configuration
+datasets:
+  simulated:
+    # Generate synthetic datasets if they don't exist
+    generate_if_missing: true
+    cache_dir: data/trajectories  # Use pre-generated trajectories when available
+    types:
+      - name: "circle_easy"
+        config: "config/simulation/circle_easy.yaml"
+        description: "Simple circle with low noise"
+            
+      - name: "circle_medium"
+        config: "config/simulation/circle_medium.yaml"
+        description: "Circle with medium noise"
+            
+      - name: "figure8_easy"
+        config: "config/simulation/figure8_easy.yaml"
+        description: "Figure-8 with low noise"
+            
+      - name: "figure8_hard"
+        config: "config/simulation/figure8_hard.yaml"
+        description: "Figure-8 with high noise"
+            
+      - name: "spiral_medium"
+        config: "config/simulation/spiral_medium.yaml"
+        description: "Spiral with medium noise"
+
+# Estimator configurations
+estimators:
+  ekf:
+    enabled: true
+    config:
+      use_preintegrated_imu: true
+      use_keyframes_only: true
+      process_noise:
+        position: 0.01
+        orientation: 0.001
+        velocity: 0.1
+        bias_accel: 0.001
+        bias_gyro: 0.0001
+      measurement_noise:
+        position: 0.1
+        orientation: 0.01
+      initial_uncertainty:
+        position: 0.1
+        orientation: 0.01
+        velocity: 0.1
+        bias_accel: 0.01
+        bias_gyro: 0.001
+  
+  gtsam-ekf:
+    enabled: true
+    config:
+      use_preintegrated_imu: true
+      use_keyframes_only: true
+      imu_params:
+        accel_noise_sigma: 0.01
+        gyro_noise_sigma: 0.001
+        accel_bias_rw_sigma: 0.001
+        gyro_bias_rw_sigma: 0.0001
+        integration_error_cov: 1e-7
+      prior_noise:
+        pose_rotation: 0.1
+        pose_translation: 0.1
+        velocity: 1.0
+        bias: 1.0
+      
+  swba:
+    enabled: true
+    config:
+      use_preintegrated_imu: true
+      use_keyframes_only: true
+      window_size: 10
+      optimization:
+        max_iterations: 100
+        convergence_threshold: 1e-6
+      process_noise:
+        position: 0.01
+        orientation: 0.001
+        velocity: 0.1
+      measurement_noise:
+        position: 0.1
+        orientation: 0.01
+        
+  gtsam-swba:
+    enabled: true
+    config:
+      use_preintegrated_imu: true
+      use_keyframes_only: true
+      window_size: 10
+      lag: 2.0
+      isam2_params:
+        relinearize_threshold: 0.1
+        relinearize_skip: 10
+        cache_linearized_factors: false
+        enable_detailed_results: false
+        factorization: "CHOLESKY"
+      imu_params:
+        accel_noise_sigma: 0.01
+        gyro_noise_sigma: 0.001
+        accel_bias_rw_sigma: 0.001
+        gyro_bias_rw_sigma: 0.0001
+      prior_noise:
+        pose_rotation: 0.1
+        pose_translation: 0.1
+        velocity: 1.0
+        bias: 1.0
+        
+  srif:
+    enabled: true
+    config:
+      use_preintegrated_imu: true
+      use_keyframes_only: true
+      qr_threshold: 1e-9
+      process_noise:
+        position: 0.01
+        orientation: 0.001
+        velocity: 0.1
+      measurement_noise:
+        position: 0.1
+        orientation: 0.01
+
+# Dashboard configuration
+dashboard:
+  title: "SLAM Evaluation Dashboard"
+  sections:
+    - type: trajectory_comparison
+      title: "Trajectory Comparison"
+    - type: error_metrics
+      title: "Error Metrics"
+    - type: runtime_performance
+      title: "Runtime Performance"
+    - type: convergence_analysis
+      title: "Convergence Analysis"
+  
+  plot_settings:
+    figure_size: [10, 6]
+    line_width: 2
+    marker_size: 6
+    
+# Logging configuration
+logging:
+  level: "INFO"
+  console: true
+  file: "evaluation.log"

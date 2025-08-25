@@ -115,7 +115,7 @@ slam_simulation/
 ├── config/                  # Configuration files
 │   ├── simulation.yaml     # Simulation parameters
 │   ├── estimators.yaml     # Estimator configurations
-│   └── evaluation_config.yaml # Evaluation pipeline config
+│   └── e2e_config.yaml     # E2E pipeline config
 │
 ├── tests/                   # Unit and integration tests
 │   ├── test_*.py           # Test modules

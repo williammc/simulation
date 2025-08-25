@@ -1,0 +1,58 @@
+# Minimal Evaluation Configuration
+# Quick testing with just one dataset and selected estimators
+
+evaluation:
+  name: "Minimal SLAM Evaluation"
+  output_dir: "output/evaluation_minimal"
+  parallel_jobs: 2
+  overwrite: false
+  
+  # Key Performance Indicators to track
+  kpis:
+    - ate_rmse
+    - runtime_ms
+
+# Datasets configuration
+datasets:
+  simulated:
+    generate_if_missing: true
+    cache_dir: data/trajectories  # Use pre-generated trajectories when available
+    types:
+      - name: "circle_easy"
+        config: "config/simulation/circle_easy.yaml"
+        description: "Simple circle with low noise - quick test"
+
+# Estimator configurations (minimal set)
+estimators:
+  ekf:
+    enabled: true
+    config:
+      use_preintegrated_imu: true
+      use_keyframes_only: true
+      process_noise:
+        position: 0.01
+        orientation: 0.001
+        velocity: 0.1
+  
+  gtsam-ekf:
+    enabled: true
+    config:
+      use_preintegrated_imu: true
+      use_keyframes_only: true
+      imu_params:
+        accel_noise_sigma: 0.01
+        gyro_noise_sigma: 0.001
+
+# Dashboard configuration
+dashboard:
+  title: "Minimal Evaluation"
+  sections:
+    - type: trajectory_comparison
+      title: "Trajectory Comparison"
+    - type: error_metrics
+      title: "Error Metrics"
+  
+# Logging configuration
+logging:
+  level: "INFO"
+  console: true
