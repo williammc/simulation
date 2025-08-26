@@ -1,0 +1,53 @@
+# Configuration for EKF with raw IMU processing (no preintegration)
+# This estimator processes each IMU measurement individually
+
+type: ekf
+use_preintegrated_imu: false  # Process raw IMU measurements
+
+# Gravity magnitude (m/s^2)
+gravity_magnitude: 9.81
+
+# Process noise parameters
+process_noise:
+  position: 0.01        # Position drift noise
+  velocity: 0.1         # Velocity drift noise
+  orientation: 0.001    # Rotation drift noise
+  accelerometer_bias: 1e-4  # Accelerometer bias random walk
+  gyroscope_bias: 1e-5      # Gyroscope bias random walk
+
+# Measurement noise parameters
+measurement_noise:
+  pixel: 1.0           # Camera pixel noise (pixels)
+  range: 0.1           # Range measurement noise (meters)
+  imu_accel: 0.01      # Accelerometer noise (m/s^2)
+  imu_gyro: 0.001      # Gyroscope noise (rad/s)
+
+# Initial state uncertainty
+initial_covariance:
+  position: 0.1        # Initial position uncertainty (m)
+  velocity: 0.01       # Initial velocity uncertainty (m/s)
+  orientation: 0.001   # Initial orientation uncertainty (rad)
+  accel_bias: 0.01     # Initial accelerometer bias uncertainty
+  gyro_bias: 0.001     # Initial gyroscope bias uncertainty
+
+# IMU noise model parameters (for raw processing)
+imu_noise:
+  accelerometer_noise_density: 0.01   # m/s²/√Hz - continuous-time noise
+  gyroscope_noise_density: 0.001      # rad/s/√Hz - continuous-time noise
+  accelerometer_random_walk: 0.0001   # m/s³/√Hz - bias drift
+  gyroscope_random_walk: 0.00001      # rad/s²/√Hz - bias drift
+
+# Outlier rejection
+chi2_threshold: 5.991          # Chi-squared test threshold (95% for 2 DOF)
+innovation_threshold: 3.0       # Innovation threshold for outlier detection
+
+# Filter parameters
+max_landmarks: 500             # Maximum number of landmarks to track
+enable_marginalization: false  # No marginalization in basic EKF
+verbose: false                 # Verbose output
+
+# Additional raw IMU processing parameters
+raw_imu:
+  integration_method: "euler"  # Integration method: "euler" or "rk4"
+  max_dt: 0.01                 # Maximum dt for single integration step (s)
+  min_dt: 0.0001              # Minimum dt to process (ignore smaller)
