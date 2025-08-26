@@ -242,8 +242,8 @@ def run_slam(
         initial_pose = trajectory_gt.states[0].pose
         initial_velocity = trajectory_gt.states[0].velocity if hasattr(trajectory_gt.states[0], 'velocity') else None
         
-        # Check if estimator supports initial velocity (EKF does after our fix)
-        if estimator_lower == 'ekf' and initial_velocity is not None:
+        # Check if estimator supports initial velocity (EKF, SWBA, SRIF now all support it)
+        if estimator_lower in ['ekf', 'swba', 'srif'] and initial_velocity is not None:
             estimator_instance.initialize(initial_pose, initial_velocity=initial_velocity)
             console.print(f"[cyan]Initialized with velocity: [{initial_velocity[0]:.2f}, {initial_velocity[1]:.2f}, {initial_velocity[2]:.2f}] m/s[/cyan]")
         else:
@@ -325,12 +325,47 @@ def run_slam(
                 
                 # Generate visual observations for this timestep if we have landmarks
                 # Only do visual updates every 10th keyframe (twice per trajectory)
-                if i % 10 == 0 and landmarks and hasattr(landmarks, 'landmarks'):
+                # Note: Visual observation generation is only implemented for EKF
+                if i % 10 == 0 and landmarks and hasattr(landmarks, 'landmarks') and estimator_lower == 'ekf':
                     # Create a mock camera frame with observations
                     from src.common.data_structures import CameraFrame, CameraObservation, ImagePoint
                     
                     # Get current state estimate
-                    current_state = estimator_instance.state
+                    # EKF has a 'state' attribute, others use get_state() or get_current_state()
+                    current_state = None
+                    if hasattr(estimator_instance, 'state') and estimator_instance.state is not None:
+                        # EKF case
+                        current_state = estimator_instance.state
+                    elif hasattr(estimator_instance, 'get_state'):
+                        # SWBA/SRIF case
+                        try:
+                            state_obj = estimator_instance.get_state()
+                            # Create a simple object with position and rotation_matrix attributes
+                            class SimpleState:
+                                def __init__(self, pos, rot):
+                                    self.position = pos
+                                    self.rotation_matrix = rot
+                            current_state = SimpleState(
+                                state_obj.robot_pose.position,
+                                state_obj.robot_pose.rotation_matrix
+                            )
+                        except:
+                            pass
+                    elif hasattr(estimator_instance, 'get_current_state'):
+                        # Base estimator case
+                        try:
+                            state_obj = estimator_instance.get_current_state()
+                            class SimpleState:
+                                def __init__(self, pos, rot):
+                                    self.position = pos
+                                    self.rotation_matrix = rot
+                            current_state = SimpleState(
+                                state_obj.robot_pose.position,
+                                state_obj.robot_pose.rotation_matrix
+                            )
+                        except:
+                            pass
+                    
                     if current_state is not None:
                         # Project landmarks and create observations
                         observations = []

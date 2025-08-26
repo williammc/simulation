@@ -144,9 +144,12 @@ class SlidingWindowBA(BaseEstimator):
         self.camera_calib = camera_calibration
         self.imu_calib = imu_calibration
         
-        # Sliding window of keyframes
+        # Sliding window of keyframes for optimization
         self.keyframes: deque[Keyframe] = deque(maxlen=config.window_size)
         self.next_keyframe_id = 0
+        
+        # Full trajectory history (keeps all keyframes)
+        self.trajectory_history: List[Keyframe] = []
         
         # Current (non-keyframe) state
         self.current_state: Optional[IMUState] = None
@@ -175,7 +178,8 @@ class SlidingWindowBA(BaseEstimator):
     def initialize(
         self,
         initial_pose: Pose,
-        initial_covariance: Optional[np.ndarray] = None
+        initial_covariance: Optional[np.ndarray] = None,
+        initial_velocity: Optional[np.ndarray] = None
     ) -> None:
         """
         Initialize SWBA with first keyframe.
@@ -183,11 +187,12 @@ class SlidingWindowBA(BaseEstimator):
         Args:
             initial_pose: Initial robot pose
             initial_covariance: Initial uncertainty (not used in SWBA)
+            initial_velocity: Initial velocity (optional)
         """
         # Create initial state
         initial_state = IMUState(
             position=initial_pose.position,
-            velocity=np.zeros(3),
+            velocity=initial_velocity.copy() if initial_velocity is not None else np.zeros(3),
             rotation_matrix=initial_pose.rotation_matrix,
             accel_bias=np.zeros(3),
             gyro_bias=np.zeros(3),
@@ -201,6 +206,7 @@ class SlidingWindowBA(BaseEstimator):
             state=initial_state
         )
         self.keyframes.append(first_kf)
+        self.trajectory_history.append(first_kf)  # Add to full history
         self.next_keyframe_id += 1
         
         # Set current state
@@ -239,20 +245,29 @@ class SlidingWindowBA(BaseEstimator):
         # Create keyframes if they don't exist yet
         # This happens when we have preintegrated IMU but no camera frames
         while self.next_keyframe_id <= preintegrated.to_keyframe_id:
+            # Calculate timestamp for this keyframe based on its ID
+            # Assuming keyframes are evenly spaced in time
+            if self.next_keyframe_id == 0:
+                kf_timestamp = self.current_state.timestamp
+            else:
+                # Use the preintegration dt to space keyframes
+                kf_timestamp = self.current_state.timestamp + (self.next_keyframe_id - preintegrated.from_keyframe_id) * preintegrated.dt
+            
             # Create a new keyframe at the current state
             kf = Keyframe(
                 id=self.next_keyframe_id,
-                timestamp=self.current_state.timestamp,
+                timestamp=kf_timestamp,
                 state=IMUState(
                     position=self.current_state.position.copy(),
                     velocity=self.current_state.velocity.copy(),
                     rotation_matrix=self.current_state.rotation_matrix.copy(),
                     accel_bias=self.current_state.accel_bias.copy(),
                     gyro_bias=self.current_state.gyro_bias.copy(),
-                    timestamp=self.current_state.timestamp
+                    timestamp=kf_timestamp
                 )
             )
             self.keyframes.append(kf)
+            self.trajectory_history.append(kf)  # Add to full history
             self.next_keyframe_id += 1
         
         # Find the keyframes this preintegration corresponds to
@@ -426,8 +441,9 @@ class SlidingWindowBA(BaseEstimator):
                 if obs.landmark_id in landmarks.landmarks:
                     self.landmarks[obs.landmark_id] = landmarks.landmarks[obs.landmark_id]
         
-        # Add keyframe to window
+        # Add keyframe to window and history
         self.keyframes.append(new_kf)
+        self.trajectory_history.append(new_kf)
         
         # Marginalize old keyframe if window is full
         if self.config.marginalize_old_keyframes and len(self.keyframes) > self.config.window_size:
@@ -458,10 +474,12 @@ class SlidingWindowBA(BaseEstimator):
         )
         
         self.keyframes.append(new_kf)
+        self.trajectory_history.append(new_kf)  # Add to full history
         self.next_keyframe_id += 1
         
         # Trigger optimization if enough keyframes (use window_size/2 as threshold)
         if len(self.keyframes) >= max(2, self.config.window_size // 2):
+            print(f"DEBUG: Triggering optimization with {len(self.keyframes)} keyframes")
             self.optimize()
         
         # Marginalize old keyframe if window is full
@@ -480,6 +498,9 @@ class SlidingWindowBA(BaseEstimator):
         if len(self.keyframes) < 2:
             return
         
+        # Track initial positions for debugging
+        initial_positions = [kf.state.position.copy() for kf in self.keyframes]
+        
         # Build optimization problem
         problem = self._build_optimization_problem()
         
@@ -489,6 +510,12 @@ class SlidingWindowBA(BaseEstimator):
         # Update states from solution
         if converged:
             self._update_states_from_solution(problem)
+            
+            # Check if optimization actually changed anything
+            final_positions = [kf.state.position for kf in self.keyframes]
+            max_change = max(np.linalg.norm(f - i) for f, i in zip(final_positions, initial_positions))
+            if self.config.verbose:
+                logger.info(f"Optimization {self.num_optimizations}: max position change = {max_change:.6f}m")
         
         self.num_optimizations += 1
     
@@ -783,10 +810,14 @@ class SlidingWindowBA(BaseEstimator):
             # Check for empty problem
             if len(r) == 0:
                 logger.warning("No residuals in optimization problem")
+                print(f"DEBUG: No residuals in optimization!")
                 return False
             
             # Compute cost
             cost = 0.5 * np.dot(r, r)
+            
+            if iteration == 0:
+                print(f"DEBUG: Optimization starting with {len(r)} residuals, initial cost = {cost:.6f}")
             
             # Gauss-Newton normal equations: J^T J dx = -J^T r
             JtJ = J.T @ J
@@ -838,7 +869,7 @@ class SlidingWindowBA(BaseEstimator):
         """
         x = problem.state_vector
         
-        # Update keyframe states
+        # Update keyframe states in both window and history
         for i, kf in enumerate(self.keyframes):
             state_i = x[i*15:(i+1)*15]
             kf.state.position = state_i[0:3].copy()
@@ -846,6 +877,12 @@ class SlidingWindowBA(BaseEstimator):
             kf.state.rotation_matrix = so3_exp(state_i[6:9])
             kf.state.accel_bias = state_i[9:12].copy()
             kf.state.gyro_bias = state_i[12:15].copy()
+            
+            # Also update in trajectory history
+            for hist_kf in self.trajectory_history:
+                if hist_kf.id == kf.id:
+                    hist_kf.state = kf.state.copy()
+                    break
         
         # Update current state to latest keyframe
         if self.keyframes:
@@ -940,10 +977,14 @@ class SlidingWindowBA(BaseEstimator):
         )
     
     def get_trajectory(self) -> Trajectory:
-        """Get estimated trajectory."""
+        """Get estimated trajectory (full history, not just window)."""
         trajectory = Trajectory()
         
-        for kf in self.keyframes:
+        # Sort trajectory history by timestamp to ensure chronological order
+        sorted_history = sorted(self.trajectory_history, key=lambda kf: kf.timestamp)
+        
+        # Use full trajectory history instead of just the window
+        for kf in sorted_history:
             state = TrajectoryState(
                 pose=kf.get_pose(),
                 velocity=kf.state.velocity.copy()
@@ -1014,6 +1055,7 @@ class SlidingWindowBA(BaseEstimator):
     def reset(self) -> None:
         """Reset estimator state."""
         self.keyframes.clear()
+        self.trajectory_history.clear()  # Clear full history
         self.next_keyframe_id = 0
         self.current_state = None
         self.landmarks.clear()

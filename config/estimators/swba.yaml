@@ -28,3 +28,6 @@ swba:
   use_keyframes_only: true
   marginalize_old_keyframes: true
   min_observations_per_landmark: 2
+  
+  # Debug
+  verbose: true

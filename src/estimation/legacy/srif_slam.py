@@ -212,7 +212,8 @@ class SRIFSlam(BaseEstimator):
     def initialize(
         self,
         initial_pose: Pose,
-        initial_covariance: Optional[np.ndarray] = None
+        initial_covariance: Optional[np.ndarray] = None,
+        initial_velocity: Optional[np.ndarray] = None
     ) -> None:
         """
         Initialize SRIF with initial state.
@@ -220,11 +221,12 @@ class SRIFSlam(BaseEstimator):
         Args:
             initial_pose: Initial robot pose
             initial_covariance: Initial uncertainty (will be converted to information form)
+            initial_velocity: Initial velocity (optional)
         """
         # Create initial state
         self.state = SRIFState(
             position=initial_pose.position.copy(),
-            velocity=np.zeros(3),
+            velocity=initial_velocity.copy() if initial_velocity is not None else np.zeros(3),
             rotation_matrix=initial_pose.rotation_matrix.copy(),
             accel_bias=np.zeros(3),
             gyro_bias=np.zeros(3),
