@@ -554,24 +554,32 @@ class EKFSlam(BaseEstimator):
         p_world = landmark_position - robot_position
         p_body = robot_rotation.T @ p_world  # R^T transforms from world to body
         
-        # Check if landmark is in front of camera
-        # In our convention, X is forward (not Z)
-        if p_body[0] <= 0.1:  # Behind or too close (check X instead of Z)
+        # Transform from body to camera frame
+        # Body: X forward, Y left, Z up (ENU)
+        # Camera: Z forward, X right, Y down (optical)
+        # Transform: C_x = -B_y, C_y = -B_z, C_z = B_x
+        p_camera = np.array([
+            -p_body[1],  # Camera X = -Body Y
+            -p_body[2],  # Camera Y = -Body Z
+            p_body[0]    # Camera Z = Body X (depth)
+        ])
+        
+        # Check if landmark is in front of camera (Z > 0 in camera frame)
+        if p_camera[2] <= 0.1:  # Behind or too close
             return None, None
         
-        # Simple pinhole projection (assuming camera at body frame origin)
-        # This is simplified - in practice would use full camera model
+        # Standard pinhole camera projection
         fx = self.camera_calib.intrinsics.fx if self.camera_calib else 500.0
         fy = self.camera_calib.intrinsics.fy if self.camera_calib else 500.0
         cx = self.camera_calib.intrinsics.cx if self.camera_calib else 320.0
         cy = self.camera_calib.intrinsics.cy if self.camera_calib else 240.0
         
         # Project to pixel coordinates
-        # In body frame: X forward, Y right, Z up
-        # In image: u is horizontal (maps to Y), v is vertical (maps to -Z)
-        depth = p_body[0]  # X is forward/depth
-        u = fx * p_body[1] / depth + cx  # Y (right) maps to u
-        v = fy * (-p_body[2]) / depth + cy  # -Z (down) maps to v
+        # u = fx * X_c/Z_c + cx
+        # v = fy * Y_c/Z_c + cy
+        depth = p_camera[2]  # Z is depth in camera frame
+        u = fx * p_camera[0] / depth + cx
+        v = fy * p_camera[1] / depth + cy
         
         # Check image bounds
         width = self.camera_calib.intrinsics.width if self.camera_calib else 640
@@ -585,16 +593,27 @@ class EKFSlam(BaseEstimator):
         # State: [position(3), velocity(3), rotation(3), accel_bias(3), gyro_bias(3)]
         H = np.zeros((2, 15))
         
-        # Jacobian w.r.t. position
-        # With X forward, Y right, Z up:
-        # u = fx * Y/X + cx, v = fy * (-Z)/X + cy
-        x = p_body[0]  # depth
-        x2 = x * x
+        # Jacobian computation in camera frame
+        # u = fx * X_c/Z_c + cx, v = fy * Y_c/Z_c + cy
+        z = p_camera[2]  # depth in camera frame
+        z2 = z * z
         
-        # du/dp_body = [-fx*Y/X², fx/X, 0]
-        # dv/dp_body = [fy*Z/X², 0, -fy/X]
-        dp_du = np.array([-fx*p_body[1]/x2, fx/x, 0])
-        dp_dv = np.array([fy*p_body[2]/x2, 0, -fy/x])
+        # du/dp_camera = [fx/Z, 0, -fx*X/Z²]
+        # dv/dp_camera = [0, fy/Z, -fy*Y/Z²]
+        du_dpc = np.array([fx/z, 0, -fx*p_camera[0]/z2])
+        dv_dpc = np.array([0, fy/z, -fy*p_camera[1]/z2])
+        
+        # dp_camera/dp_body using our transform: C_x = -B_y, C_y = -B_z, C_z = B_x
+        # This gives us the Jacobian matrix:
+        dpc_dpb = np.array([
+            [0, -1, 0],  # dC_x/dB = [0, -1, 0]
+            [0, 0, -1],  # dC_y/dB = [0, 0, -1]
+            [1, 0, 0]    # dC_z/dB = [1, 0, 0]
+        ])
+        
+        # Chain rule: du/dp_body = du/dp_camera * dp_camera/dp_body
+        dp_du = du_dpc @ dpc_dpb
+        dp_dv = dv_dpc @ dpc_dpb
         
         # dp_body/dp_world = -R^T (derivative w.r.t. robot position)
         H[0, 0:3] = -dp_du @ robot_rotation.T

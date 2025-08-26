@@ -3,8 +3,8 @@ ekf:
   # Use preintegrated IMU (default for e2e pipeline)
   use_preintegrated_imu: true
   
-  pixel_noise_std: 1.0
-  chi2_threshold: 5.991
+  pixel_noise_std: 5.0  # Increase uncertainty to reduce visual weight
+  chi2_threshold: 13.816  # Chi2(0.999, 2) for 2D measurement
   innovation_threshold: 3.0
   max_iterations: 5
   

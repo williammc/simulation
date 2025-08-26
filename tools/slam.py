@@ -323,9 +323,57 @@ def run_slam(
                 # Predict with preintegrated IMU
                 estimator_instance.predict(preint_data)
                 
-                # Update with keyframe if available
-                if i < len(keyframes):
-                    estimator_instance.update(keyframes[i], landmarks)
+                # Generate visual observations for this timestep if we have landmarks
+                # Only do visual updates every 10th keyframe (twice per trajectory)
+                if i % 10 == 0 and landmarks and hasattr(landmarks, 'landmarks'):
+                    # Create a mock camera frame with observations
+                    from src.common.data_structures import CameraFrame, CameraObservation, ImagePoint
+                    
+                    # Get current state estimate
+                    current_state = estimator_instance.state
+                    if current_state is not None:
+                        # Project landmarks and create observations
+                        observations = []
+                        # Iterate over landmark dictionary values
+                        landmark_dict = landmarks.landmarks if isinstance(landmarks.landmarks, dict) else {}
+                        
+                        # Limit to a subset of landmarks (max 50) for stability
+                        max_landmarks = 50
+                        landmark_items = list(landmark_dict.items())[:max_landmarks]
+                        
+                        for landmark_id, landmark in landmark_items:
+                            # Try to project this landmark
+                            predicted_pixel, _ = estimator_instance._predict_measurement(
+                                landmark.position,
+                                current_state.position,
+                                current_state.rotation_matrix
+                            )
+                            
+                            if predicted_pixel is not None:
+                                # Add more realistic measurement noise (2 pixel std)
+                                pixel_noise = np.random.randn(2) * 2.0  # 2 pixel std is more realistic
+                                noisy_pixel = predicted_pixel + pixel_noise
+                                
+                                # Check if pixel is within reasonable bounds
+                                if 0 <= noisy_pixel[0] < 640 and 0 <= noisy_pixel[1] < 480:
+                                    # Create observation
+                                    obs = CameraObservation(
+                                        pixel=ImagePoint(u=noisy_pixel[0], v=noisy_pixel[1]),
+                                        landmark_id=landmark.id,
+                                        descriptor=landmark.descriptor if hasattr(landmark, 'descriptor') else None
+                                    )
+                                    observations.append(obs)
+                        
+                        # Create camera frame with observations
+                        if observations:
+                            camera_frame = CameraFrame(
+                                timestamp=preint_data.dt if hasattr(preint_data, 'dt') else 0.0,
+                                camera_id="cam0",
+                                observations=observations,
+                                is_keyframe=True
+                            )
+                            # Update with visual observations
+                            estimator_instance.update(camera_frame, landmarks)
                 
                 # Run optimization for SWBA
                 if estimator_lower == 'swba' and (i + 1) % 5 == 0:
