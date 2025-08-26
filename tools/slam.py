@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 from typing import Optional, Dict, Any
 import tracemalloc
+import numpy as np
 
 from rich.console import Console
 from rich.progress import Progress, BarColumn, TaskProgressColumn, TimeRemainingColumn
@@ -54,7 +55,7 @@ def run_slam(
     
     # Validate estimator type
     estimator_lower = estimator.lower()
-    valid_estimators = ['ekf', 'swba', 'srif', 'gtsam-ekf', 'gtsam-swba']
+    valid_estimators = ['ekf', 'swba', 'srif', 'gtsam-ekf', 'gtsam-swba', 'raw-imu-ekf']
     if estimator_lower not in valid_estimators:
         console.print(f"[red]✗ Error: Unknown estimator: {estimator}[/red]")
         console.print(f"  Available estimators: {', '.join(valid_estimators)}")
@@ -95,6 +96,15 @@ def run_slam(
             landmarks = sim_data.get('landmarks')
             camera_data = sim_data.get('camera_data')
             preintegrated_imu = sim_data.get('preintegrated_imu', [])
+            # Try both possible keys for raw IMU
+            raw_imu_data = sim_data.get('imu_data') or sim_data.get('imu_measurements')
+            raw_imu = []
+            if raw_imu_data:
+                # If it's an IMUData object, get the measurements list
+                if hasattr(raw_imu_data, 'measurements'):
+                    raw_imu = raw_imu_data.measurements
+                elif isinstance(raw_imu_data, list):
+                    raw_imu = raw_imu_data
             camera_calibrations = sim_data.get('camera_calibrations', [])
             imu_calibrations = sim_data.get('imu_calibrations', [])
         else:
@@ -103,6 +113,14 @@ def run_slam(
             landmarks = getattr(sim_data, 'landmarks', None)
             camera_data = getattr(sim_data, 'camera_measurements', None)
             preintegrated_imu = getattr(sim_data, 'preintegrated_imu', [])
+            # Try both possible attributes for raw IMU
+            raw_imu_data = getattr(sim_data, 'imu_data', None) or getattr(sim_data, 'imu_measurements', [])
+            raw_imu = []
+            if raw_imu_data:
+                if hasattr(raw_imu_data, 'measurements'):
+                    raw_imu = raw_imu_data.measurements
+                elif isinstance(raw_imu_data, list):
+                    raw_imu = raw_imu_data
             camera_calibrations = getattr(sim_data, 'camera_calibrations', [])
             imu_calibrations = getattr(sim_data, 'imu_calibrations', [])
         
@@ -207,14 +225,31 @@ def run_slam(
             estimator_config.swba = gtsam_swba_config.get('swba', {})
             estimator_instance = GtsamSWBAEstimator(estimator_config)
         
+        elif estimator_lower == 'raw-imu-ekf':
+            # Create EKF config for raw IMU processing
+            ekf_config = EKFConfig(**config_data.get('ekf', {}))
+            # Override to use raw IMU processing
+            ekf_config.use_preintegrated_imu = False
+            estimator_instance = EKFSlam(ekf_config, camera_calib, imu_calib, use_preintegrated_imu=False)
+            console.print("[cyan]Using raw IMU processing (no preintegration)[/cyan]")
+        
     except Exception as e:
         console.print(f"[red]✗ Error creating estimator: {e}[/red]")
         return None
     
-    # Initialize estimator with first pose
+    # Initialize estimator with first pose and velocity
     if trajectory_gt and len(trajectory_gt.states) > 0:
         initial_pose = trajectory_gt.states[0].pose
-        estimator_instance.initialize(initial_pose)
+        initial_velocity = trajectory_gt.states[0].velocity if hasattr(trajectory_gt.states[0], 'velocity') else None
+        
+        # Check if estimator supports initial velocity (EKF does after our fix)
+        if estimator_lower == 'ekf' and initial_velocity is not None:
+            estimator_instance.initialize(initial_pose, initial_velocity=initial_velocity)
+            console.print(f"[cyan]Initialized with velocity: [{initial_velocity[0]:.2f}, {initial_velocity[1]:.2f}, {initial_velocity[2]:.2f}] m/s[/cyan]")
+        else:
+            estimator_instance.initialize(initial_pose)
+            if initial_velocity is not None and np.linalg.norm(initial_velocity) > 0.1:
+                console.print(f"[yellow]Warning: Initial velocity [{initial_velocity[0]:.2f}, {initial_velocity[1]:.2f}, {initial_velocity[2]:.2f}] m/s not used[/yellow]")
     else:
         console.print("[red]✗ Error: No ground truth trajectory found[/red]")
         return None
@@ -233,9 +268,44 @@ def run_slam(
         console=console,
     ) as progress:
         
-        # Process based on available data
-        if preintegrated_imu:
-            # Use preintegrated IMU data
+        # Process based on available data and estimator type
+        if estimator_lower == 'raw-imu-ekf' and raw_imu:
+            # Use raw IMU measurements for raw-imu-ekf
+            task = progress.add_task(
+                f"Processing {len(raw_imu)} raw IMU measurements...", 
+                total=len(raw_imu)
+            )
+            
+            # Get keyframes if available
+            keyframes = []
+            if camera_data and hasattr(camera_data, 'frames'):
+                keyframes = [f for f in camera_data.frames if f.is_keyframe]
+            elif isinstance(camera_data, list):
+                keyframes = [f for f in camera_data if getattr(f, 'is_keyframe', False)]
+            
+            # Group raw IMU measurements between keyframes
+            imu_idx = 0
+            for kf_idx, keyframe in enumerate(keyframes):
+                # Collect IMU measurements up to this keyframe
+                imu_batch = []
+                while imu_idx < len(raw_imu) and raw_imu[imu_idx].timestamp <= keyframe.timestamp:
+                    imu_batch.append(raw_imu[imu_idx])
+                    progress.update(task, advance=1)
+                    imu_idx += 1
+                
+                # Predict with raw IMU batch
+                if imu_batch:
+                    estimator_instance.predict(imu_batch)
+                
+                # Update with keyframe
+                estimator_instance.update(keyframe, landmarks)
+                
+                # Run optimization if needed
+                if (kf_idx + 1) % 5 == 0:
+                    estimator_instance.optimize()
+            
+        elif preintegrated_imu:
+            # Use preintegrated IMU data for other estimators
             task = progress.add_task(
                 f"Processing {len(preintegrated_imu)} preintegrated IMU factors...", 
                 total=len(preintegrated_imu)
@@ -264,8 +334,11 @@ def run_slam(
                 progress.update(task, advance=1)
         
         else:
-            # Fallback: process raw IMU if available (shouldn't happen with simplified estimators)
-            console.print("[yellow]Warning: No preintegrated IMU found[/yellow]")
+            # Fallback: warn if no appropriate IMU data
+            if estimator_lower == 'raw-imu-ekf':
+                console.print("[yellow]Warning: No raw IMU measurements found[/yellow]")
+            else:
+                console.print("[yellow]Warning: No preintegrated IMU found[/yellow]")
             
             # Process camera frames if available
             if camera_data:

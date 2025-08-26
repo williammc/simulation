@@ -207,7 +207,8 @@ class TestIMUPreintegrator:
             [0, 0, 1]
         ])
         
-        np.testing.assert_allclose(result.delta_rotation, expected_R, atol=0.1)
+        # Tightened tolerance from 0.1 to 0.01 for accurate validation
+        np.testing.assert_allclose(result.delta_rotation, expected_R, atol=0.01)
 
 
 class TestPreintegrationUtils:

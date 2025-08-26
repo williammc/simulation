@@ -154,6 +154,35 @@ def test_imu_model_comparison():
     
     # Test GTSAM preintegration with circular motion
     print("\n\nGTSAM preintegration with circular motion:")
+    
+    # Test 270 degrees (3/4 circle) to avoid ambiguity at 360°
+    print("  Testing 270° rotation (3/4 of circle):")
+    pim_270 = gtsam.PreintegratedImuMeasurements(params_gtsam, bias)
+    
+    # Integrate for 3/4 circle
+    duration_270 = 0.75 * period  # 3.75 seconds for 270 degrees
+    num_meas_270 = int(duration_270 / dt)
+    for i in range(min(num_meas_270, len(circle_imu.measurements))):
+        m = circle_imu.measurements[i]
+        pim_270.integrateMeasurement(m.accelerometer, m.gyroscope, dt)
+    
+    dp_270 = pim_270.deltaPij()
+    dv_270 = pim_270.deltaVij()
+    dr_270 = pim_270.deltaRij()
+    
+    print(f"  After 270° rotation ({duration_270}s):")
+    print(f"    Delta position: {dp_270}")
+    print(f"    Delta velocity: {dv_270}")
+    print(f"    |Delta position|: {np.linalg.norm(dp_270):.3f} m")
+    
+    # Extract rotation angle - should be ~270°
+    angle_rad_270 = np.arccos(np.clip((np.trace(dr_270.matrix()) - 1) / 2, -1, 1))
+    angle_deg_270 = np.degrees(angle_rad_270)
+    print(f"    Total rotation: {angle_deg_270:.1f}°")
+    print(f"    Expected: ~270° for 3/4 circle")
+    
+    # Also test full circle for comparison
+    print("\n  Testing full 360° rotation:")
     pim_circle = gtsam.PreintegratedImuMeasurements(params_gtsam, bias)
     
     # Integrate for one full circle
@@ -163,20 +192,16 @@ def test_imu_model_comparison():
         pim_circle.integrateMeasurement(m.accelerometer, m.gyroscope, dt)
     
     dp = pim_circle.deltaPij()
-    dv = pim_circle.deltaVij()
     dr = pim_circle.deltaRij()
     
     print(f"  After one full rotation ({period}s):")
-    print(f"    Delta position: {dp}")
-    print(f"    Delta velocity: {dv}")
     print(f"    |Delta position|: {np.linalg.norm(dp):.3f} m")
-    print(f"    Expected: Should return close to origin (small error)")
     
     # Extract rotation angle
-    angle_rad = np.arccos((np.trace(dr.matrix()) - 1) / 2)
+    angle_rad = np.arccos(np.clip((np.trace(dr.matrix()) - 1) / 2, -1, 1))
     angle_deg = np.degrees(angle_rad)
     print(f"    Total rotation: {angle_deg:.1f}°")
-    print(f"    Expected: ~360° for one full circle")
+    print(f"    Expected: ~360° (may show as ~0° due to wraparound)")
     
     # Test 3: Compare specific force understanding
     print("\n\nTest 3: Specific Force Model Comparison")

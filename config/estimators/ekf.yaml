@@ -1,5 +1,8 @@
 type: "ekf"
 ekf:
+  # Use preintegrated IMU (default for e2e pipeline)
+  use_preintegrated_imu: true
+  
   pixel_noise_std: 1.0
   chi2_threshold: 5.991
   innovation_threshold: 3.0

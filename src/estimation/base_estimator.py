@@ -74,6 +74,7 @@ class EstimatorConfig:
         verbose: Enable detailed logging
         save_intermediate: Save intermediate results
         seed: Random seed for reproducibility
+        use_preintegrated_imu: Use preintegrated IMU (True) or raw measurements (False)
     """
     estimator_type: EstimatorType = EstimatorType.UNKNOWN
     max_landmarks: int = 1000
@@ -85,6 +86,7 @@ class EstimatorConfig:
     verbose: bool = False
     save_intermediate: bool = False
     seed: Optional[int] = None
+    use_preintegrated_imu: bool = True  # New field for raw vs preintegrated IMU
     
     # Process noise parameters
     process_noise_position: float = 0.01
@@ -208,8 +210,12 @@ class BaseEstimator(ABC):
         Prediction step using IMU measurements.
         
         Args:
-            imu_measurements: List of IMU measurements
+            imu_measurements: List of IMU measurements (raw or preintegrated)
             dt: Time step
+        
+        Note:
+            The type of IMU data (raw vs preintegrated) is determined by
+            the estimator's configuration (use_preintegrated_imu flag).
         """
         pass
     

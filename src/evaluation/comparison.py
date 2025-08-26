@@ -139,8 +139,12 @@ class EstimatorRunner:
         self.enable_profiling = enable_profiling
         
         # Available estimators
+        # EKF should use preintegrated IMU by default for comparison tests
+        ekf_config = EKFConfig()
+        ekf_config.use_preintegrated_imu = True
+        
         self.estimator_configs = {
-            "EKF": EKFConfig(),
+            "EKF": ekf_config,
             "SWBA": SWBAConfig(),
             "SRIF": SRIFConfig()
         }

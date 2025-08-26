@@ -159,6 +159,106 @@ class CircleTrajectory:
         )
 
 
+class QuarterCircleTrajectory:
+    """Generate quarter-circle trajectory (90 degrees of rotation)."""
+    
+    def __init__(
+        self,
+        radius: float = 2.0,
+        height: float = 1.5,
+        angular_velocity: Optional[float] = None,
+        params: Optional[TrajectoryParams] = None
+    ):
+        """
+        Initialize quarter-circle trajectory generator.
+        
+        Args:
+            radius: Circle radius in meters
+            height: Height above ground in meters
+            angular_velocity: Angular velocity in rad/s (if None, uses duration)
+            params: Trajectory parameters
+        """
+        self.radius = radius
+        self.height = height
+        self.params = params or TrajectoryParams()
+        
+        # Set angular velocity for quarter circle (pi/2 radians)
+        if angular_velocity is None:
+            # Duration should complete a quarter circle (pi/2 radians)
+            self.angular_velocity = (np.pi / 2) / self.params.duration
+        else:
+            self.angular_velocity = angular_velocity
+    
+    def generate(self) -> Trajectory:
+        """
+        Generate the quarter-circle trajectory.
+        
+        Returns:
+            Trajectory with poses, velocities, and angular velocities
+        """
+        trajectory = Trajectory(frame_id="world")
+        
+        # Generate timestamps
+        dt = 1.0 / self.params.rate
+        timestamps = np.arange(
+            self.params.start_time,
+            self.params.start_time + self.params.duration,
+            dt
+        )
+        
+        for t in timestamps:
+            # Current angle (limited to quarter circle)
+            theta = min(self.angular_velocity * (t - self.params.start_time), np.pi / 2)
+            
+            # Position on circle
+            x = self.radius * np.cos(theta)
+            y = self.radius * np.sin(theta)
+            z = self.height
+            position = np.array([x, y, z])
+            
+            # Velocity (tangent to circle, zero if reached end)
+            if theta < np.pi / 2:
+                vx = -self.radius * self.angular_velocity * np.sin(theta)
+                vy = self.radius * self.angular_velocity * np.cos(theta)
+                vz = 0.0
+                omega_z = self.angular_velocity
+            else:
+                # Stop at quarter circle
+                vx = vy = vz = 0.0
+                omega_z = 0.0
+            velocity = np.array([vx, vy, vz])
+            
+            # Orientation: facing tangent direction
+            yaw = theta + np.pi / 2
+            
+            # Create rotation matrix
+            R = np.array([
+                [np.cos(yaw), -np.sin(yaw), 0],
+                [np.sin(yaw), np.cos(yaw), 0],
+                [0, 0, 1]
+            ])
+            
+            # Angular velocity
+            angular_velocity = np.array([0, 0, omega_z])
+            
+            # Create pose and state
+            pose = Pose(
+                timestamp=t,
+                position=position,
+                rotation_matrix=R
+            )
+            
+            state = TrajectoryState(
+                pose=pose,
+                velocity=velocity,
+                angular_velocity=angular_velocity
+            )
+            
+            trajectory.add_state(state)
+        
+        return trajectory
+
+
 class Figure8Trajectory:
     """Generate figure-8 trajectory."""
     
@@ -479,7 +579,7 @@ def generate_trajectory(
     Factory function to generate trajectories.
     
     Args:
-        trajectory_type: Type of trajectory ("circle", "figure8", "spiral", "line")
+        trajectory_type: Type of trajectory ("circle", "quarter-circle", "figure8", "spiral", "line")
         params: Parameters for trajectory generation
     
     Returns:
@@ -494,6 +594,13 @@ def generate_trajectory(
     
     if trajectory_type == "circle":
         generator = CircleTrajectory(
+            radius=params.get("radius", 2.0),
+            height=params.get("height", 1.5),
+            angular_velocity=params.get("angular_velocity"),
+            params=traj_params
+        )
+    elif trajectory_type == "quarter-circle":
+        generator = QuarterCircleTrajectory(
             radius=params.get("radius", 2.0),
             height=params.get("height", 1.5),
             angular_velocity=params.get("angular_velocity"),

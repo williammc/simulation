@@ -51,7 +51,7 @@ def run_simulation(
     Run simulation to generate synthetic SLAM data.
     
     Args:
-        trajectory: Trajectory type (circle, figure8, spiral, line)
+        trajectory: Trajectory type (circle, quarter-circle, figure8, spiral, line)
         config: Path to simulation config YAML file
         duration: Simulation duration in seconds
         output: Output directory for simulation data
@@ -100,6 +100,11 @@ def run_simulation(
     else:
         # Default parameters for each trajectory type
         if trajectory == "circle":
+            params = {
+                "radius": 2.0,
+                "height": 1.5,
+            }
+        elif trajectory == "quarter-circle":
             params = {
                 "radius": 2.0,
                 "height": 1.5,

@@ -138,7 +138,7 @@ def simulate(
 def slam(
     estimator: str = typer.Argument(
         "ekf",
-        help="Estimator type: ekf, swba, srif, gtsam-ekf, gtsam-swba"
+        help="Estimator type: ekf, swba, srif, gtsam-ekf, gtsam-swba, raw-imu-ekf"
     ),
     input_data: Path = typer.Option(
         ...,
@@ -667,7 +667,7 @@ def e2e_simple(
     estimator: str = typer.Option(
         "ekf",
         "--estimator", "-e", 
-        help="SLAM estimator: ekf, swba, srif"
+        help="SLAM estimator: ekf, swba, srif, gtsam-ekf, gtsam-swba, raw-imu-ekf"
     ),
     output_dir: Optional[Path] = typer.Option(
         None,

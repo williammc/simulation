@@ -10,7 +10,7 @@ import pytest
 from typing import List
 
 from src.common.data_structures import (
-    IMUMeasurement, CameraFrame, CameraObservation,
+    IMUMeasurement, CameraFrame, CameraObservation, ImagePoint,
     Pose, Map, Landmark, CameraCalibration, IMUCalibration,
     CameraIntrinsics, PreintegratedIMUData
 )
@@ -91,7 +91,7 @@ def simulation_data():
         observations = []
         for lm_id in range(3):  # Observe first 3 landmarks
             obs = CameraObservation(
-                pixel=np.array([320 + lm_id*10, 240 + lm_id*5]),
+                pixel=ImagePoint(u=320 + lm_id*10, v=240 + lm_id*5),
                 landmark_id=lm_id
             )
             observations.append(obs)
