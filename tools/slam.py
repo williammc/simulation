@@ -325,8 +325,8 @@ def run_slam(
                 
                 # Generate visual observations for this timestep if we have landmarks
                 # Only do visual updates every 10th keyframe (twice per trajectory)
-                # Note: Visual observation generation is only implemented for EKF
-                if i % 10 == 0 and landmarks and hasattr(landmarks, 'landmarks') and estimator_lower == 'ekf':
+                # Visual observation generation for EKF and SWBA
+                if i % 10 == 0 and landmarks and hasattr(landmarks, 'landmarks') and estimator_lower in ['ekf', 'swba']:
                     # Create a mock camera frame with observations
                     from src.common.data_structures import CameraFrame, CameraObservation, ImagePoint
                     
@@ -401,8 +401,15 @@ def run_slam(
                         
                         # Create camera frame with observations
                         if observations:
+                            # Get current timestamp from estimator state
+                            current_timestamp = 0.0
+                            if hasattr(estimator_instance, 'current_state') and estimator_instance.current_state:
+                                current_timestamp = estimator_instance.current_state.timestamp
+                            elif hasattr(estimator_instance, 'state') and estimator_instance.state:
+                                current_timestamp = getattr(estimator_instance.state, 'timestamp', 0.0)
+                            
                             camera_frame = CameraFrame(
-                                timestamp=preint_data.dt if hasattr(preint_data, 'dt') else 0.0,
+                                timestamp=current_timestamp,
                                 camera_id="cam0",
                                 observations=observations,
                                 is_keyframe=True

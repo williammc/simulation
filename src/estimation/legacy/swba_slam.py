@@ -174,6 +174,7 @@ class SlidingWindowBA(BaseEstimator):
         # Statistics
         self.num_optimizations = 0
         self.total_iterations = 0
+        self.last_optimization_cost = 0.0
     
     def initialize(
         self,
@@ -304,15 +305,19 @@ class SlidingWindowBA(BaseEstimator):
                 gravity = np.array([0, 0, -9.81])
                 
                 # Update the to_kf state with the propagated values
+                # Add small initialization noise to create non-zero residuals
+                position_noise = np.random.randn(3) * 0.01  # 1cm std
+                velocity_noise = np.random.randn(3) * 0.001  # 1mm/s std
+                
                 to_kf.state.position = from_kf.state.position + (
                     from_kf.state.velocity * preintegrated.dt +
                     R_old @ preintegrated.delta_position +
                     0.5 * gravity * preintegrated.dt**2
-                )
+                ) + position_noise
                 to_kf.state.velocity = from_kf.state.velocity + (
                     R_old @ preintegrated.delta_velocity +
                     gravity * preintegrated.dt
-                )
+                ) + velocity_noise
                 to_kf.state.rotation_matrix = R_old @ preintegrated.delta_rotation
                 to_kf.state.timestamp = from_kf.state.timestamp + preintegrated.dt
                 
@@ -349,13 +354,33 @@ class SlidingWindowBA(BaseEstimator):
             self._create_minimal_keyframe()
             return
         
+        # If we have observations, add them to the most recent keyframe
+        # instead of creating a new one (to avoid timestamp conflicts)
+        if camera_frame.observations and self.keyframes:
+            # Find the keyframe with matching or closest timestamp
+            best_kf = None
+            min_time_diff = float('inf')
+            for kf in self.keyframes:
+                time_diff = abs(kf.timestamp - camera_frame.timestamp)
+                if time_diff < min_time_diff:
+                    min_time_diff = time_diff
+                    best_kf = kf
+            
+            if best_kf and min_time_diff < 0.01:  # Within 10ms - same keyframe
+                # Add observations to existing keyframe
+                self._add_observations_to_keyframe(best_kf, camera_frame.observations, landmarks)
+                if self.config.verbose:
+                    logger.debug(f"Added {len(camera_frame.observations)} observations to keyframe {best_kf.id}")
+                return
+        
         # Check keyframe-only processing
         if self.config.use_keyframes_only:
             # Only process frames marked as keyframes
             if not camera_frame.is_keyframe:
                 return
-            # Create keyframe directly since it's already marked
-            self._create_keyframe(camera_frame, landmarks)
+            # Only create new keyframe if timestamp is different
+            if not self.keyframes or abs(self.keyframes[-1].timestamp - camera_frame.timestamp) > 0.01:
+                self._create_keyframe(camera_frame, landmarks)
         else:
             # Use internal keyframe selection logic
             if self._should_create_keyframe(camera_frame.timestamp):
@@ -404,6 +429,37 @@ class SlidingWindowBA(BaseEstimator):
         
         return False
     
+    def _add_observations_to_keyframe(
+        self, 
+        keyframe: Keyframe, 
+        observations: List['CameraObservation'],
+        landmarks: Optional[Map]
+    ) -> None:
+        """
+        Add observations to an existing keyframe.
+        
+        Args:
+            keyframe: Keyframe to add observations to
+            observations: List of camera observations
+            landmarks: Known landmarks for initialization
+        """
+        # Add observations to keyframe
+        keyframe.observations.extend(observations)
+        
+        # Track landmarks from observations
+        for obs in observations:
+            # Add to landmark tracking
+            if obs.landmark_id not in self.landmark_observations:
+                self.landmark_observations[obs.landmark_id] = []
+            self.landmark_observations[obs.landmark_id].append((keyframe.id, obs))
+            
+            # Initialize landmark if not known
+            if obs.landmark_id not in self.landmarks:
+                if landmarks and hasattr(landmarks, 'landmarks') and obs.landmark_id in landmarks.landmarks:
+                    self.landmarks[obs.landmark_id] = landmarks.landmarks[obs.landmark_id]
+                    if self.config.verbose:
+                        logger.debug(f"Initialized landmark {obs.landmark_id}")
+    
     def _create_keyframe(self, camera_frame: CameraFrame, landmarks: Map) -> None:
         """
         Create a new keyframe.
@@ -412,6 +468,8 @@ class SlidingWindowBA(BaseEstimator):
             camera_frame: Camera observations for the keyframe
             landmarks: Known landmarks
         """
+        if self.config.verbose:
+            logger.debug(f"Creating keyframe with {len(camera_frame.observations)} observations")
         # Handle preintegrated IMU data
         if self.config.use_keyframes_only and hasattr(camera_frame, 'preintegrated_imu') and camera_frame.preintegrated_imu:
             # Use preintegrated IMU from the frame (computed during simulation)
@@ -438,8 +496,10 @@ class SlidingWindowBA(BaseEstimator):
             
             # Initialize landmark if not known
             if obs.landmark_id not in self.landmarks:
-                if obs.landmark_id in landmarks.landmarks:
+                if landmarks and hasattr(landmarks, 'landmarks') and obs.landmark_id in landmarks.landmarks:
                     self.landmarks[obs.landmark_id] = landmarks.landmarks[obs.landmark_id]
+                    if self.config.verbose:
+                        logger.debug(f"Initialized landmark {obs.landmark_id}")
         
         # Add keyframe to window and history
         self.keyframes.append(new_kf)
@@ -507,15 +567,20 @@ class SlidingWindowBA(BaseEstimator):
         # Solve using Gauss-Newton with Levenberg-Marquardt
         converged = self._solve_gauss_newton(problem)
         
-        # Update states from solution
-        if converged:
-            self._update_states_from_solution(problem)
-            
-            # Check if optimization actually changed anything
-            final_positions = [kf.state.position for kf in self.keyframes]
-            max_change = max(np.linalg.norm(f - i) for f, i in zip(final_positions, initial_positions))
-            if self.config.verbose:
-                logger.info(f"Optimization {self.num_optimizations}: max position change = {max_change:.6f}m")
+        # Update states from solution (even if not fully converged)
+        self._update_states_from_solution(problem)
+        
+        # Check if optimization actually changed anything
+        final_positions = [kf.state.position for kf in self.keyframes]
+        max_change = max(np.linalg.norm(f - i) for f, i in zip(final_positions, initial_positions))
+        
+        # Compute final cost for tracking
+        active_landmarks = self._get_active_landmarks()
+        final_residuals, _ = self._compute_residuals_and_jacobian(problem.state_vector, active_landmarks)
+        self.last_optimization_cost = 0.5 * np.dot(final_residuals, final_residuals)
+        
+        if self.config.verbose:
+            logger.info(f"Optimization {self.num_optimizations}: converged={converged}, max position change = {max_change:.6f}m, final cost = {self.last_optimization_cost:.6f}")
         
         self.num_optimizations += 1
     
@@ -528,6 +593,9 @@ class SlidingWindowBA(BaseEstimator):
         """
         # Collect active landmarks (observed by current window)
         active_landmarks = self._get_active_landmarks()
+        
+        if self.config.verbose:
+            logger.debug(f"Building optimization problem with {len(self.keyframes)} keyframes and {len(active_landmarks)} landmarks")
         
         # Build state vector [kf_states..., landmark_positions...]
         state_dim = len(self.keyframes) * 15 + len(active_landmarks) * 3
@@ -555,6 +623,9 @@ class SlidingWindowBA(BaseEstimator):
         residuals, jacobian = self._compute_residuals_and_jacobian(
             state_vector, active_landmarks
         )
+        
+        if self.config.verbose and len(residuals) > 0:
+            logger.debug(f"Residuals: min={np.min(residuals):.6f}, max={np.max(residuals):.6f}, mean={np.mean(np.abs(residuals)):.6f}")
         
         # Compute cost
         cost = 0.5 * np.dot(residuals, residuals)
@@ -639,6 +710,9 @@ class SlidingWindowBA(BaseEstimator):
                 r_cam, J_pose, J_lm = self._compute_camera_residual(
                     kf_pose, lm_pos, obs
                 )
+                
+                if self.config.verbose and lm_idx == 0 and kf_idx == 0:  # Debug first residual
+                    logger.debug(f"Camera residual for lm {lm_id}, kf {kf_id}: {r_cam}")
                 
                 # Apply robust cost
                 weight = self._compute_robust_weight(r_cam)
@@ -738,6 +812,45 @@ class SlidingWindowBA(BaseEstimator):
         J_j[6:9, 6:9] = np.eye(3)
         
         return residual, J_i, J_j
+    
+    def _predict_measurement(
+        self,
+        landmark_position: np.ndarray,
+        robot_position: np.ndarray,
+        robot_rotation: np.ndarray
+    ) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
+        """
+        Predict pixel measurement for a landmark.
+        
+        Args:
+            landmark_position: 3D position of landmark in world frame
+            robot_position: Robot position in world frame  
+            robot_rotation: Robot rotation matrix (3x3)
+        
+        Returns:
+            (predicted_pixel, jacobian) or (None, None) if behind camera
+        """
+        # Create pose object
+        from scipy.spatial.transform import Rotation
+        quat = Rotation.from_matrix(robot_rotation).as_quat()  # [x, y, z, w]
+        pose = Pose(
+            timestamp=0.0,  # Not used for projection
+            position=robot_position.copy(),
+            rotation_matrix=robot_rotation.copy()
+        )
+        
+        # Use camera model to project
+        pixel, J_pose, J_landmark = self.camera_model.project(
+            landmark_position, pose, compute_jacobian=True
+        )
+        
+        if pixel is None:
+            return None, None
+        
+        # Convert ImagePoint to numpy array
+        pixel_array = np.array([pixel.u, pixel.v])
+        
+        return pixel_array, J_pose
     
     def _compute_camera_residual(
         self,
@@ -844,11 +957,14 @@ class SlidingWindowBA(BaseEstimator):
             # Accept or reject update
             if cost_new < cost:
                 x = x_new
+                if self.config.verbose and iteration < 5:  # Log first few iterations
+                    logger.debug(f"Iteration {iteration}: cost {cost:.6f} -> {cost_new:.6f} (reduced by {cost - cost_new:.6f})")
+                cost = cost_new  # Update cost for next iteration
                 lambda_lm /= self.config.lambda_factor
                 
                 # Check convergence
                 if np.linalg.norm(dx) < self.config.convergence_threshold:
-                    logger.debug(f"Converged after {iteration + 1} iterations")
+                    logger.debug(f"Converged after {iteration + 1} iterations, final cost = {cost_new:.6f}")
                     problem.state_vector = x
                     self.total_iterations += iteration + 1
                     return True
@@ -1009,7 +1125,7 @@ class SlidingWindowBA(BaseEstimator):
             runtime_ms=0.0,  # Would need timing
             iterations=self.total_iterations,
             converged=True,
-            final_cost=0.0,
+            final_cost=self.last_optimization_cost,
             metadata={
                 "num_keyframes": len(self.keyframes),
                 "num_landmarks": len(self.landmarks),
