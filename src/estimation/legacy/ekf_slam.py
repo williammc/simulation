@@ -153,8 +153,8 @@ class EKFSlam(BaseEstimator):
         # Issue deprecation warning
         warnings.warn(
             "EKFSlam is deprecated and will be removed in a future version. "
-            "Please use GtsamEkfEstimator instead by specifying 'gtsam-ekf' as the estimator type. "
-            "The GTSAM implementation provides better numerical stability and performance.",
+            "Please use NewSWBAEstimator instead by specifying 'new-swba' as the estimator type. "
+            "The new implementation provides better performance and is camera-model independent.",
             DeprecationWarning,
             stacklevel=2
         )

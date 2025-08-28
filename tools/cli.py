@@ -138,7 +138,7 @@ def simulate(
 def slam(
     estimator: str = typer.Argument(
         "ekf",
-        help="Estimator type: ekf, swba, srif, gtsam-ekf, gtsam-swba, raw-imu-ekf, new-swba"
+        help="Estimator type: ekf, swba, srif, raw-imu-ekf, new-swba"
     ),
     input_data: Path = typer.Option(
         ...,
@@ -265,11 +265,6 @@ def test(
         "--coverage",
         help="Run with coverage report"
     ),
-    include_gtsam: bool = typer.Option(
-        True,
-        "--gtsam/--no-gtsam",
-        help="Include GTSAM comparison tests"
-    ),
     cpp: bool = typer.Option(
         True,
         "--cpp/--no-cpp",
@@ -349,12 +344,8 @@ def test(
     if not cpp_only:
         console.print("\n[bold cyan]Running Python tests...[/bold cyan]")
         
-        if include_gtsam:
-            cmd = [sys.executable, "-m", "pytest", "tests/"]
-            console.print("[green]Running all tests (including GTSAM comparisons)...[/green]")
-        else:
-            cmd = [sys.executable, "-m", "pytest", "tests/", "--ignore=tests/gtsam-comparison"]
-            console.print("[green]Running tests (excluding GTSAM comparisons)...[/green]")
+        cmd = [sys.executable, "-m", "pytest", "tests/"]
+        console.print("[green]Running all tests...[/green]")
         
         if verbose:
             cmd.append("-v")
@@ -369,46 +360,6 @@ def test(
     raise typer.Exit(0 if all_passed else 1)
 
 
-@app.command()
-def test_gtsam(
-    verbose: bool = typer.Option(
-        False,
-        "--verbose", "-v",
-        help="Verbose test output"
-    ),
-    plot: bool = typer.Option(
-        True,
-        "--plot/--no-plot",
-        help="Generate interactive Plotly visualizations"
-    ),
-):
-    """Run GTSAM comparison tests to verify IMU preintegration implementation."""
-    import subprocess
-    
-    console.print("[cyan]Running GTSAM Comparison Tests[/cyan]")
-    console.print("This verifies our IMU preintegration matches GTSAM (gold standard)")
-    
-    cmd = [sys.executable, "-m", "pytest", "tests/gtsam-comparison/"]
-    if verbose:
-        cmd.append("-v")
-    else:
-        cmd.append("-q")
-    
-    result = subprocess.run(cmd)
-    
-    if result.returncode == 0:
-        console.print("[green]✓ All GTSAM comparison tests passed![/green]")
-        if plot:
-            output_dir = Path("tests/gtsam-comparison/outputs")
-            if output_dir.exists():
-                console.print(f"\n[yellow]Interactive plots generated in:[/yellow]")
-                for html_file in output_dir.glob("*.html"):
-                    console.print(f"  • {html_file}")
-                console.print(f"\n[cyan]Open {output_dir / 'master_dashboard.html'} for summary[/cyan]")
-    else:
-        console.print("[red]✗ Some tests failed[/red]")
-    
-    raise typer.Exit(result.returncode)
 
 
 @app.command()
@@ -667,7 +618,7 @@ def e2e_simple(
     estimator: str = typer.Option(
         "ekf",
         "--estimator", "-e", 
-        help="SLAM estimator: ekf, swba, srif, gtsam-ekf, gtsam-swba, raw-imu-ekf, new-swba"
+        help="SLAM estimator: ekf, swba, srif, raw-imu-ekf, new-swba"
     ),
     output_dir: Optional[Path] = typer.Option(
         None,

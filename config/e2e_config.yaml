@@ -65,23 +65,6 @@ estimators:
         bias_accel: 0.01
         bias_gyro: 0.001
   
-  gtsam-ekf:
-    enabled: true
-    config:
-      use_preintegrated_imu: true
-      use_keyframes_only: true
-      imu_params:
-        accel_noise_sigma: 0.01
-        gyro_noise_sigma: 0.001
-        accel_bias_rw_sigma: 0.001
-        gyro_bias_rw_sigma: 0.0001
-        integration_error_cov: 1e-7
-      prior_noise:
-        pose_rotation: 0.1
-        pose_translation: 0.1
-        velocity: 1.0
-        bias: 1.0
-      
   swba:
     enabled: true
     config:
@@ -98,30 +81,6 @@ estimators:
       measurement_noise:
         position: 0.1
         orientation: 0.01
-        
-  gtsam-swba:
-    enabled: true
-    config:
-      use_preintegrated_imu: true
-      use_keyframes_only: true
-      window_size: 10
-      lag: 2.0
-      isam2_params:
-        relinearize_threshold: 0.1
-        relinearize_skip: 10
-        cache_linearized_factors: false
-        enable_detailed_results: false
-        factorization: "CHOLESKY"
-      imu_params:
-        accel_noise_sigma: 0.01
-        gyro_noise_sigma: 0.001
-        accel_bias_rw_sigma: 0.001
-        gyro_bias_rw_sigma: 0.0001
-      prior_noise:
-        pose_rotation: 0.1
-        pose_translation: 0.1
-        velocity: 1.0
-        bias: 1.0
         
   srif:
     enabled: true

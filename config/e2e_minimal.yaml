@@ -33,15 +33,6 @@ estimators:
         position: 0.01
         orientation: 0.001
         velocity: 0.1
-  
-  gtsam-ekf:
-    enabled: true
-    config:
-      use_preintegrated_imu: true
-      use_keyframes_only: true
-      imu_params:
-        accel_noise_sigma: 0.01
-        gyro_noise_sigma: 0.001
 
 # Dashboard configuration
 dashboard:

@@ -12,13 +12,15 @@ This directory contains legacy SLAM estimator implementations that are **depreca
 
 ## Migration
 
-Please migrate to the GTSAM-based implementations:
+Please migrate to the new camera-model-independent implementation:
 
 | Legacy File | Replacement | Import Path |
 |------------|-------------|------------|
-| `ekf_slam.py` | `gtsam_ekf_estimator.py` | `src.estimation.gtsam_ekf_estimator` |
-| `swba_slam.py` | `gtsam_swba_estimator.py` | `src.estimation.gtsam_swba_estimator` |
-| `srif_slam.py` | Use GTSAM EKF | `src.estimation.gtsam_ekf_estimator` |
+| `ekf_slam.py` | `new/swba_estimator.py` | `src.estimation.new.swba_estimator` |
+| `swba_slam.py` | `new/swba_estimator.py` | `src.estimation.new.swba_estimator` |
+| `srif_slam.py` | `new/swba_estimator.py` | `src.estimation.new.swba_estimator` |
+
+Use `'new-swba'` as the estimator type when calling the SLAM pipeline.
 
 ## Deprecation Timeline
 
@@ -27,10 +29,11 @@ Please migrate to the GTSAM-based implementations:
 
 ## Why Deprecate?
 
-1. **Performance**: GTSAM implementations are 4-10x faster
-2. **Numerical Stability**: Factor graph approach provides better numerical properties
-3. **Maintenance**: Single codebase to maintain (GTSAM) instead of multiple custom implementations
-4. **Features**: GTSAM provides more advanced features and better extensibility
+1. **Performance**: The new implementation is optimized and more efficient
+2. **Camera Independence**: Works with any camera model without modification
+3. **Numerical Stability**: Better numerical properties and convergence
+4. **Maintenance**: Single codebase to maintain instead of multiple implementations
+5. **Features**: More advanced features and better extensibility
 
 ## For Developers
 

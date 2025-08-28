@@ -44,7 +44,7 @@ class NewSWBAConfig(EstimatorConfig):
     keyframe_selection_method: str = "distance"  # "distance", "angle", "both", "all"
     
     # Optimization parameters  
-    optimization_backend: str = "gtsam"  # "gtsam", "ceres", "g2o"
+    optimization_backend: str = "native"  # "native", "ceres", "g2o"
     max_optimization_iterations: int = 50
     optimization_convergence_threshold: float = 1e-6
     use_robust_kernels: bool = True  # Uses pre-computed robust weights

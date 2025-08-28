@@ -39,17 +39,6 @@ estimators:
       initial_position_std: 0.1
       initial_velocity_std: 0.1
       gravity_magnitude: 9.81
-  
-  gtsam-ekf:
-    enabled: true
-    config:
-      use_preintegrated_imu: true
-      use_keyframes_only: true
-      imu_params:
-        accel_noise_sigma: 0.01
-        gyro_noise_sigma: 0.001
-        accel_bias_rw_sigma: 0.001
-        gyro_bias_rw_sigma: 0.0001
 
 # Dashboard configuration
 dashboard:

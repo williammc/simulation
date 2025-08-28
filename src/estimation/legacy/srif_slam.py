@@ -2,7 +2,7 @@
 Square Root Information Filter (SRIF) for Visual-Inertial SLAM.
 
 DEPRECATED: This implementation is maintained for backward compatibility only.
-There is no direct GTSAM replacement. Please use GtsamEkfEstimator instead.
+Please use NewSWBAEstimator instead for better performance.
 
 Implements a numerically stable variant of the Extended Kalman Filter
 using QR factorization to maintain the square root of the information matrix.
@@ -179,8 +179,8 @@ class SRIFSlam(BaseEstimator):
         # Issue deprecation warning
         warnings.warn(
             "SRIFSlam is deprecated and will be removed in a future version. "
-            "There is no direct GTSAM replacement for SRIF. "
-            "Please use GtsamEkfEstimator instead by specifying 'gtsam-ekf' as the estimator type.",
+            "There is no direct replacement for SRIF. "
+            "Please use NewSWBAEstimator instead by specifying 'new-swba' as the estimator type.",
             DeprecationWarning,
             stacklevel=2
         )
