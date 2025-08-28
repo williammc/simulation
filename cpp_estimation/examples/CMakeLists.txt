@@ -15,3 +15,6 @@ target_link_libraries(mock_estimator PRIVATE simulation_io)
 # Add thread support for sleep_for
 find_package(Threads REQUIRED)
 target_link_libraries(mock_estimator PRIVATE Threads::Threads)
+
+add_executable(template_usage_example template_usage_example.cpp)
+target_link_libraries(template_usage_example PRIVATE simulation_io)

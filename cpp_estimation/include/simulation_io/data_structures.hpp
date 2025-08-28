@@ -11,88 +11,123 @@
 
 namespace simulation_io {
 
-// Use Eigen types for linear algebra
-using Vector3 = Eigen::Vector3d;
-using Matrix3x3 = Eigen::Matrix3d;
-using Matrix4x4 = Eigen::Matrix4d;
-using VectorX = Eigen::VectorXd;
-using MatrixX = Eigen::MatrixXd;
+// Template-based Eigen types for linear algebra
+template<typename FLOAT>
+using Vector3T = Eigen::Matrix<FLOAT, 3, 1>;
+
+template<typename FLOAT>
+using Matrix3x3T = Eigen::Matrix<FLOAT, 3, 3>;
+
+template<typename FLOAT>
+using Matrix4x4T = Eigen::Matrix<FLOAT, 4, 4>;
+
+template<typename FLOAT>
+using VectorXT = Eigen::Matrix<FLOAT, Eigen::Dynamic, 1>;
+
+template<typename FLOAT>
+using MatrixXT = Eigen::Matrix<FLOAT, Eigen::Dynamic, Eigen::Dynamic>;
+
+// Default double precision types for backward compatibility
+using Vector3 = Vector3T<double>;
+using Matrix3x3 = Matrix3x3T<double>;
+using Matrix4x4 = Matrix4x4T<double>;
+using VectorX = VectorXT<double>;
+using MatrixX = MatrixXT<double>;
 
 // Calibration structures
-struct CameraIntrinsics {
-    double fx, fy, cx, cy;
+template<typename FLOAT>
+struct CameraIntrinsicsT {
+    FLOAT fx, fy, cx, cy;
     int width, height;
     std::string model;
-    std::vector<double> distortion;
+    std::vector<FLOAT> distortion;
     
-    CameraIntrinsics() : fx(0), fy(0), cx(0), cy(0), width(0), height(0), model("pinhole") {}
+    CameraIntrinsicsT() : fx(0), fy(0), cx(0), cy(0), width(0), height(0), model("pinhole") {}
 };
 
-struct CameraCalibration {
+using CameraIntrinsics = CameraIntrinsicsT<double>;
+
+template<typename FLOAT>
+struct CameraCalibrationT {
     std::string id;
-    CameraIntrinsics intrinsics;
-    Matrix4x4 T_BC;  // Body to Camera transformation
+    CameraIntrinsicsT<FLOAT> intrinsics;
+    Matrix4x4T<FLOAT> T_BC;  // Body to Camera transformation
     
-    CameraCalibration() : T_BC(Matrix4x4::Identity()) {}
+    CameraCalibrationT() : T_BC(Matrix4x4T<FLOAT>::Identity()) {}
 };
 
-struct IMUNoiseParams {
-    double noise_density;
-    double random_walk;
+using CameraCalibration = CameraCalibrationT<double>;
+
+template<typename FLOAT>
+struct IMUNoiseParamsT {
+    FLOAT noise_density;
+    FLOAT random_walk;
     
-    IMUNoiseParams() : noise_density(0), random_walk(0) {}
-    IMUNoiseParams(double nd, double rw) : noise_density(nd), random_walk(rw) {}
+    IMUNoiseParamsT() : noise_density(0), random_walk(0) {}
+    IMUNoiseParamsT(FLOAT nd, FLOAT rw) : noise_density(nd), random_walk(rw) {}
 };
 
-struct IMUCalibration {
+using IMUNoiseParams = IMUNoiseParamsT<double>;
+
+template<typename FLOAT>
+struct IMUCalibrationT {
     std::string id;
-    IMUNoiseParams accelerometer;
-    IMUNoiseParams gyroscope;
-    double sampling_rate;
+    IMUNoiseParamsT<FLOAT> accelerometer;
+    IMUNoiseParamsT<FLOAT> gyroscope;
+    FLOAT sampling_rate;
     
-    IMUCalibration() : sampling_rate(0) {}
+    IMUCalibrationT() : sampling_rate(0) {}
 };
+
+using IMUCalibration = IMUCalibrationT<double>;
 
 // Trajectory structures
-struct TrajectoryState {
-    double timestamp;
-    Vector3 position;
-    Matrix3x3 rotation_matrix;
-    std::optional<Vector3> velocity;
-    std::optional<Vector3> angular_velocity;
+template<typename FLOAT>
+struct TrajectoryStateT {
+    FLOAT timestamp;
+    Vector3T<FLOAT> position;
+    Matrix3x3T<FLOAT> rotation_matrix;
+    std::optional<Vector3T<FLOAT>> velocity;
+    std::optional<Vector3T<FLOAT>> angular_velocity;
     
-    TrajectoryState() : timestamp(0), position(Vector3::Zero()), rotation_matrix(Matrix3x3::Identity()) {}
+    TrajectoryStateT() : timestamp(0), position(Vector3T<FLOAT>::Zero()), rotation_matrix(Matrix3x3T<FLOAT>::Identity()) {}
 };
 
+using TrajectoryState = TrajectoryStateT<double>;
+
 // Forward declaration
-struct ImagePoint;
+template<typename FLOAT> struct ImagePointT;
 
 // Observation reference for landmarks (populated during JSON loading)
-struct ObservationRef {
+template<typename FLOAT>
+struct ObservationRefT {
     std::string camera_id;       // Which camera observed this landmark
-    double timestamp;             // When it was observed
+    FLOAT timestamp;             // When it was observed
     int frame_index;             // Index in camera_frames vector
     int observation_index;       // Index in frame.observations vector
     std::optional<int> keyframe_id;  // Keyframe ID if this is a keyframe observation
     
     // We'll store pixel coordinates directly to avoid dependency issues
-    double pixel_u, pixel_v;
+    FLOAT pixel_u, pixel_v;
     
-    ObservationRef() : timestamp(0), frame_index(-1), observation_index(-1), pixel_u(0), pixel_v(0) {}
+    ObservationRefT() : timestamp(0), frame_index(-1), observation_index(-1), pixel_u(0), pixel_v(0) {}
 };
 
+using ObservationRef = ObservationRefT<double>;
+
 // Landmark structure
-struct Landmark {
+template<typename FLOAT>
+struct LandmarkT {
     int id;
-    Vector3 position;
-    std::optional<std::vector<double>> descriptor;
+    Vector3T<FLOAT> position;
+    std::optional<std::vector<FLOAT>> descriptor;
     
     // Temporary member for tracking observations (populated during JSON loading)
     // This makes it easier to access all observations of this landmark
-    std::vector<ObservationRef> observation_refs;
+    std::vector<ObservationRefT<FLOAT>> observation_refs;
     
-    Landmark() : id(-1), position(Vector3::Zero()) {}
-    Landmark(int id_, const Vector3& pos) : id(id_), position(pos) {}
+    LandmarkT() : id(-1), position(Vector3T<FLOAT>::Zero()) {}
+    LandmarkT(int id_, const Vector3T<FLOAT>& pos) : id(id_), position(pos) {}
     
     // Helper to get total observation count
     size_t observation_count() const { return observation_refs.size(); }
@@ -107,77 +142,95 @@ struct Landmark {
     }
 };
 
+using Landmark = LandmarkT<double>;
+
 // Measurement structures
-struct IMUMeasurement {
-    double timestamp;
-    Vector3 accelerometer;
-    Vector3 gyroscope;
+template<typename FLOAT>
+struct IMUMeasurementT {
+    FLOAT timestamp;
+    Vector3T<FLOAT> accelerometer;
+    Vector3T<FLOAT> gyroscope;
     
-    IMUMeasurement() : timestamp(0), accelerometer(Vector3::Zero()), gyroscope(Vector3::Zero()) {}
+    IMUMeasurementT() : timestamp(0), accelerometer(Vector3T<FLOAT>::Zero()), gyroscope(Vector3T<FLOAT>::Zero()) {}
 };
 
-struct ImagePoint {
-    double u, v;
+using IMUMeasurement = IMUMeasurementT<double>;
+
+template<typename FLOAT>
+struct ImagePointT {
+    FLOAT u, v;
     
-    ImagePoint() : u(0), v(0) {}
-    ImagePoint(double u_, double v_) : u(u_), v(v_) {}
+    ImagePointT() : u(0), v(0) {}
+    ImagePointT(FLOAT u_, FLOAT v_) : u(u_), v(v_) {}
     
-    Eigen::Vector2d toVector() const {
-        return Eigen::Vector2d(u, v);
+    Eigen::Matrix<FLOAT, 2, 1> toVector() const {
+        return Eigen::Matrix<FLOAT, 2, 1>(u, v);
     }
     
-    static ImagePoint fromVector(const Eigen::Vector2d& v) {
-        return ImagePoint(v.x(), v.y());
+    static ImagePointT fromVector(const Eigen::Matrix<FLOAT, 2, 1>& v) {
+        return ImagePointT(v.x(), v.y());
     }
 };
 
-struct CameraObservation {
+using ImagePoint = ImagePointT<double>;
+
+template<typename FLOAT>
+struct CameraObservationT {
     int landmark_id;
-    ImagePoint pixel;
-    std::optional<std::vector<double>> descriptor;
+    ImagePointT<FLOAT> pixel;
+    std::optional<std::vector<FLOAT>> descriptor;
     
-    CameraObservation() : landmark_id(-1) {}
+    CameraObservationT() : landmark_id(-1) {}
 };
 
-struct CameraFrame {
-    double timestamp;
+using CameraObservation = CameraObservationT<double>;
+
+template<typename FLOAT>
+struct CameraFrameT {
+    FLOAT timestamp;
     std::string camera_id;
-    std::vector<CameraObservation> observations;
+    std::vector<CameraObservationT<FLOAT>> observations;
     bool is_keyframe;
     std::optional<int> keyframe_id;
     
-    CameraFrame() : timestamp(0), is_keyframe(false) {}
+    CameraFrameT() : timestamp(0), is_keyframe(false) {}
 };
 
+using CameraFrame = CameraFrameT<double>;
+
 // Preintegrated IMU data structure
-struct PreintegratedIMUData {
+template<typename FLOAT>
+struct PreintegratedIMUDataT {
     int from_keyframe_id;
     int to_keyframe_id;
-    Vector3 delta_position;
-    Vector3 delta_velocity;
-    Matrix3x3 delta_rotation;
-    VectorX covariance;  // Flattened covariance matrix (15x15 -> 225 elements)
-    double dt;
+    Vector3T<FLOAT> delta_position;
+    Vector3T<FLOAT> delta_velocity;
+    Matrix3x3T<FLOAT> delta_rotation;
+    VectorXT<FLOAT> covariance;  // Flattened covariance matrix (15x15 -> 225 elements)
+    FLOAT dt;
     int num_measurements;
-    std::optional<VectorX> jacobian;  // Flattened jacobian matrix
+    std::optional<VectorXT<FLOAT>> jacobian;  // Flattened jacobian matrix
     
-    PreintegratedIMUData() 
+    PreintegratedIMUDataT() 
         : from_keyframe_id(-1), 
           to_keyframe_id(-1), 
-          delta_position(Vector3::Zero()),
-          delta_velocity(Vector3::Zero()),
-          delta_rotation(Matrix3x3::Identity()),
-          covariance(VectorX::Zero(225)),
+          delta_position(Vector3T<FLOAT>::Zero()),
+          delta_velocity(Vector3T<FLOAT>::Zero()),
+          delta_rotation(Matrix3x3T<FLOAT>::Identity()),
+          covariance(VectorXT<FLOAT>::Zero(225)),
           dt(0), 
           num_measurements(0) {}
 };
 
+using PreintegratedIMUData = PreintegratedIMUDataT<double>;
+
 // Metadata structure
-struct Metadata {
+template<typename FLOAT>
+struct MetadataT {
     std::string version;
     std::string timestamp;
     std::string trajectory_type;
-    double duration;
+    FLOAT duration;
     std::string coordinate_system;
     std::optional<int> seed;
     
@@ -189,22 +242,27 @@ struct Metadata {
         Units() : position("meters"), rotation("rotation_matrix"), time("seconds") {}
     } units;
     
-    Metadata() : version("1.0"), trajectory_type("unknown"), duration(0), coordinate_system("ENU") {}
+    MetadataT() : version("1.0"), trajectory_type("unknown"), duration(0), coordinate_system("ENU") {}
 };
 
+using Metadata = MetadataT<double>;
+
 // Main simulation data container
-struct SimulationData {
-    Metadata metadata;
-    std::vector<CameraCalibration> camera_calibrations;
-    std::vector<IMUCalibration> imu_calibrations;
-    std::vector<TrajectoryState> trajectory;
-    std::vector<Landmark> landmarks;
-    std::vector<IMUMeasurement> imu_measurements;
-    std::vector<CameraFrame> camera_frames;
-    std::vector<PreintegratedIMUData> preintegrated_imu;
+template<typename FLOAT>
+struct SimulationDataT {
+    MetadataT<FLOAT> metadata;
+    std::vector<CameraCalibrationT<FLOAT>> camera_calibrations;
+    std::vector<IMUCalibrationT<FLOAT>> imu_calibrations;
+    std::vector<TrajectoryStateT<FLOAT>> trajectory;
+    std::vector<LandmarkT<FLOAT>> landmarks;
+    std::vector<IMUMeasurementT<FLOAT>> imu_measurements;
+    std::vector<CameraFrameT<FLOAT>> camera_frames;
+    std::vector<PreintegratedIMUDataT<FLOAT>> preintegrated_imu;
     
-    SimulationData() = default;
+    SimulationDataT() = default;
 };
+
+using SimulationData = SimulationDataT<double>;
 
 } // namespace simulation_io
 

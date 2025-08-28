@@ -17,12 +17,33 @@
 namespace simulation_io {
 
 using json = nlohmann::json;
-using Vector3 = Eigen::Vector3d;
-using Vector4 = Eigen::Vector4d;
-using Matrix3x3 = Eigen::Matrix3d;
-using Matrix4x4 = Eigen::Matrix4d;
-using VectorX = Eigen::VectorXd;
-using MatrixX = Eigen::MatrixXd;
+
+// Template-based Eigen types
+template<typename FLOAT>
+using Vector3T = Eigen::Matrix<FLOAT, 3, 1>;
+
+template<typename FLOAT>
+using Vector4T = Eigen::Matrix<FLOAT, 4, 1>;
+
+template<typename FLOAT>
+using Matrix3x3T = Eigen::Matrix<FLOAT, 3, 3>;
+
+template<typename FLOAT>
+using Matrix4x4T = Eigen::Matrix<FLOAT, 4, 4>;
+
+template<typename FLOAT>
+using VectorXT = Eigen::Matrix<FLOAT, Eigen::Dynamic, 1>;
+
+template<typename FLOAT>
+using MatrixXT = Eigen::Matrix<FLOAT, Eigen::Dynamic, Eigen::Dynamic>;
+
+// Default double precision types for backward compatibility
+using Vector3 = Vector3T<double>;
+using Vector4 = Vector4T<double>;
+using Matrix3x3 = Matrix3x3T<double>;
+using Matrix4x4 = Matrix4x4T<double>;
+using VectorX = VectorXT<double>;
+using MatrixX = MatrixXT<double>;
 
 // Estimator types matching Python EstimatorType enum
 enum class EstimatorType {
@@ -33,20 +54,21 @@ enum class EstimatorType {
 };
 
 // Estimated pose at a point in time
-struct EstimatedPose {
-    double timestamp;
-    Vector3 position;
-    Vector4 quaternion;  // [x, y, z, w] format
-    std::optional<Vector3> velocity;
+template<typename FLOAT>
+struct EstimatedPoseT {
+    FLOAT timestamp;
+    Vector3T<FLOAT> position;
+    Vector4T<FLOAT> quaternion;  // [x, y, z, w] format
+    std::optional<Vector3T<FLOAT>> velocity;
     
-    EstimatedPose() : timestamp(0), position(Vector3::Zero()), 
-                      quaternion(Vector4(0, 0, 0, 1)) {}
+    EstimatedPoseT() : timestamp(0), position(Vector3T<FLOAT>::Zero()), 
+                       quaternion(Vector4T<FLOAT>(0, 0, 0, 1)) {}
     
-    EstimatedPose(double t, const Vector3& p, const Matrix3x3& R) 
+    EstimatedPoseT(FLOAT t, const Vector3T<FLOAT>& p, const Matrix3x3T<FLOAT>& R) 
         : timestamp(t), position(p) {
         // Convert rotation matrix to quaternion
-        Eigen::Quaterniond q(R);
-        quaternion = Vector4(q.x(), q.y(), q.z(), q.w());
+        Eigen::Quaternion<FLOAT> q(R);
+        quaternion = Vector4T<FLOAT>(q.x(), q.y(), q.z(), q.w());
     }
     
     // Convert to JSON
@@ -66,15 +88,16 @@ struct EstimatedPose {
 };
 
 // Estimated landmark
-struct EstimatedLandmark {
+template<typename FLOAT>
+struct EstimatedLandmarkT {
     int id;
-    Vector3 position;
-    std::optional<VectorX> descriptor;
-    std::optional<Matrix3x3> covariance;
+    Vector3T<FLOAT> position;
+    std::optional<VectorXT<FLOAT>> descriptor;
+    std::optional<Matrix3x3T<FLOAT>> covariance;
     
-    EstimatedLandmark() : id(-1), position(Vector3::Zero()) {}
+    EstimatedLandmarkT() : id(-1), position(Vector3T<FLOAT>::Zero()) {}
     
-    EstimatedLandmark(int id_, const Vector3& pos) : id(id_), position(pos) {}
+    EstimatedLandmarkT(int id_, const Vector3T<FLOAT>& pos) : id(id_), position(pos) {}
     
     // Convert to JSON
     json to_json() const {
@@ -103,12 +126,13 @@ struct EstimatedLandmark {
 };
 
 // Estimator state at a point in time (for state history)
-struct EstimatorState {
-    double timestamp;
-    Vector3 position;
-    Vector4 quaternion;
-    std::optional<Vector3> velocity;
-    std::optional<VectorX> covariance_diagonal;  // Store only diagonal for efficiency
+template<typename FLOAT>
+struct EstimatorStateT {
+    FLOAT timestamp;
+    Vector3T<FLOAT> position;
+    Vector4T<FLOAT> quaternion;
+    std::optional<Vector3T<FLOAT>> velocity;
+    std::optional<VectorXT<FLOAT>> covariance_diagonal;  // Store only diagonal for efficiency
     
     // Convert to compact JSON format
     json to_json() const {
@@ -132,14 +156,15 @@ struct EstimatorState {
 };
 
 // Trajectory (collection of poses)
-struct EstimatedTrajectory {
+template<typename FLOAT>
+struct EstimatedTrajectoryT {
     std::string frame_id;
-    std::vector<EstimatedPose> poses;
+    std::vector<EstimatedPoseT<FLOAT>> poses;
     
-    EstimatedTrajectory() : frame_id("world") {}
+    EstimatedTrajectoryT() : frame_id("world") {}
     
     // Add a pose
-    void add_pose(const EstimatedPose& pose) {
+    void add_pose(const EstimatedPoseT<FLOAT>& pose) {
         poses.push_back(pose);
     }
     
@@ -159,14 +184,15 @@ struct EstimatedTrajectory {
 };
 
 // Map of landmarks
-struct EstimatedMap {
+template<typename FLOAT>
+struct EstimatedMapT {
     std::string frame_id;
-    std::map<int, EstimatedLandmark> landmarks;
+    std::map<int, EstimatedLandmarkT<FLOAT>> landmarks;
     
-    EstimatedMap() : frame_id("world") {}
+    EstimatedMapT() : frame_id("world") {}
     
     // Add a landmark
-    void add_landmark(const EstimatedLandmark& landmark) {
+    void add_landmark(const EstimatedLandmarkT<FLOAT>& landmark) {
         landmarks[landmark.id] = landmark;
     }
     
@@ -186,17 +212,18 @@ struct EstimatedMap {
 };
 
 // Main estimator result structure
-struct EstimatorResult {
+template<typename FLOAT>
+struct EstimatorResultT {
     // Core components
-    EstimatedTrajectory trajectory;
-    EstimatedMap landmarks;
-    std::vector<EstimatorState> state_history;
+    EstimatedTrajectoryT<FLOAT> trajectory;
+    EstimatedMapT<FLOAT> landmarks;
+    std::vector<EstimatorStateT<FLOAT>> state_history;
     
     // Runtime information
-    double runtime_ms;
+    FLOAT runtime_ms;
     int iterations;
     bool converged;
-    double final_cost;
+    FLOAT final_cost;
     
     // Metadata
     EstimatorType estimator_type;
@@ -205,18 +232,21 @@ struct EstimatorResult {
     // Optional simulation info
     std::optional<std::string> input_file;
     std::optional<std::string> trajectory_type;
-    std::optional<double> simulation_duration;
+    std::optional<FLOAT> simulation_duration;
     
-    EstimatorResult() 
+    EstimatorResultT() 
         : runtime_ms(0), iterations(0), converged(false), 
           final_cost(0), estimator_type(EstimatorType::UNKNOWN) {}
 };
 
+using EstimatorResult = EstimatorResultT<double>;
+
 // Main I/O class for estimator results
-class EstimatorResultIO {
+template<typename FLOAT>
+class EstimatorResultIOT {
 public:
     // Save estimator result to JSON file
-    static void save(const EstimatorResult& result, const std::string& filepath) {
+    static void save(const EstimatorResultT<FLOAT>& result, const std::string& filepath) {
         json j;
         
         // Generate unique IDs
@@ -287,7 +317,7 @@ public:
     }
     
     // Load estimator result from JSON file (for reading back)
-    static EstimatorResult load(const std::string& filepath) {
+    static EstimatorResultT<FLOAT> load(const std::string& filepath) {
         std::ifstream file(filepath);
         if (!file.is_open()) {
             throw std::runtime_error("Cannot open file: " + filepath);
@@ -297,7 +327,7 @@ public:
         file >> j;
         file.close();
         
-        EstimatorResult result;
+        EstimatorResultT<FLOAT> result;
         
         // Parse algorithm type
         if (j.contains("algorithm")) {
@@ -338,18 +368,18 @@ public:
             
             if (traj.contains("poses") && traj["poses"].is_array()) {
                 for (const auto& pose_json : traj["poses"]) {
-                    EstimatedPose pose;
+                    EstimatedPoseT<FLOAT> pose;
                     pose.timestamp = pose_json["timestamp"];
                     
                     const auto& pos = pose_json["position"];
-                    pose.position = Vector3(pos[0], pos[1], pos[2]);
+                    pose.position = Vector3T<FLOAT>(pos[0], pos[1], pos[2]);
                     
                     const auto& quat = pose_json["quaternion"];
-                    pose.quaternion = Vector4(quat[0], quat[1], quat[2], quat[3]);
+                    pose.quaternion = Vector4T<FLOAT>(quat[0], quat[1], quat[2], quat[3]);
                     
                     if (pose_json.contains("velocity") && !pose_json["velocity"].is_null()) {
                         const auto& vel = pose_json["velocity"];
-                        pose.velocity = Vector3(vel[0], vel[1], vel[2]);
+                        pose.velocity = Vector3T<FLOAT>(vel[0], vel[1], vel[2]);
                     }
                     
                     result.trajectory.poses.push_back(pose);
@@ -364,11 +394,11 @@ public:
             
             if (lmks.contains("landmarks") && lmks["landmarks"].is_array()) {
                 for (const auto& lmk_json : lmks["landmarks"]) {
-                    EstimatedLandmark landmark;
+                    EstimatedLandmarkT<FLOAT> landmark;
                     landmark.id = lmk_json["id"];
                     
                     const auto& pos = lmk_json["position"];
-                    landmark.position = Vector3(pos[0], pos[1], pos[2]);
+                    landmark.position = Vector3T<FLOAT>(pos[0], pos[1], pos[2]);
                     
                     result.landmarks.landmarks[landmark.id] = landmark;
                 }
@@ -420,6 +450,15 @@ private:
         return ss.str();
     }
 };
+
+using EstimatorResultIO = EstimatorResultIOT<double>;
+
+// Add type aliases for other templated structs for backward compatibility
+using EstimatedPose = EstimatedPoseT<double>;
+using EstimatedLandmark = EstimatedLandmarkT<double>;
+using EstimatorState = EstimatorStateT<double>;
+using EstimatedTrajectory = EstimatedTrajectoryT<double>;
+using EstimatedMap = EstimatedMapT<double>;
 
 } // namespace simulation_io
 
