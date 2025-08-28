@@ -62,12 +62,26 @@ def process_simulation_data(input_file, noise_level=0.01):
             "position": add_noise(point["position"], noise_level)
         }
         
-        if "quaternion" in point:
-            # Add small noise to quaternion (simplified)
+        if "rotation_matrix" in point:
+            # Add small noise to rotation matrix through axis-angle
+            from scipy.spatial.transform import Rotation
+            R = np.array(point["rotation_matrix"])
+            
+            # Convert to axis-angle, add noise, convert back
+            r = Rotation.from_matrix(R)
+            rotvec = r.as_rotvec()
+            rotvec += np.random.normal(0, noise_level * 0.1, 3)
+            r_noisy = Rotation.from_rotvec(rotvec)
+            est_point["rotation_matrix"] = r_noisy.as_matrix().tolist()
+        elif "quaternion" in point:
+            # Legacy support - convert quaternion to rotation matrix
+            from scipy.spatial.transform import Rotation
             q = np.array(point["quaternion"])
-            q += np.random.normal(0, noise_level * 0.1, 4)
-            q = q / np.linalg.norm(q)  # Renormalize
-            est_point["quaternion"] = q.tolist()
+            r = Rotation.from_quat(q)
+            rotvec = r.as_rotvec()
+            rotvec += np.random.normal(0, noise_level * 0.1, 3)
+            r_noisy = Rotation.from_rotvec(rotvec)
+            est_point["rotation_matrix"] = r_noisy.as_matrix().tolist()
         
         if "velocity" in point:
             est_point["velocity"] = add_noise(point["velocity"], noise_level * 0.5)

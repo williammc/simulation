@@ -210,7 +210,8 @@ class TestEstimatorResultStorage:
         assert len(traj_dict["poses"]) == 10
         assert traj_dict["poses"][0]["timestamp"] == 0.0
         assert traj_dict["poses"][0]["position"] == [0, 0, 0]
-        assert len(traj_dict["poses"][0]["quaternion"]) == 4  # Quaternion has 4 elements
+        assert len(traj_dict["poses"][0]["rotation_matrix"]) == 3  # Rotation matrix is 3x3
+        assert len(traj_dict["poses"][0]["rotation_matrix"][0]) == 3
         
         # Convert back to trajectory
         recovered_traj = EstimatorResultStorage._dict_to_trajectory(traj_dict)

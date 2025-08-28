@@ -10,7 +10,6 @@ from enum import Enum
 from src.common.data_structures import IMUMeasurement, Pose
 from src.utils.math_utils import (
     skew, so3_exp, so3_log,
-    quaternion_to_rotation_matrix, rotation_matrix_to_quaternion,
     project_to_so3
 )
 
@@ -70,7 +69,7 @@ class PreintegrationResult:
     Attributes:
         delta_position: Relative position change
         delta_velocity: Relative velocity change
-        delta_rotation: Relative rotation (as quaternion)
+        delta_rotation: Relative rotation (as 3x3 rotation matrix)
         covariance: Uncertainty of preintegrated measurements
         jacobian: Jacobian with respect to bias
         dt: Total time interval
@@ -188,9 +187,7 @@ class IMUIntegrator:
         dt: float
     ) -> IMUState:
         """
-        Fourth-order Runge-Kutta integration.
-        
-        Note: Temporarily converts to quaternion for RK4 computation
+        Fourth-order Runge-Kutta integration using SO3 exponential map.
         
         Args:
             state: Current state
@@ -200,9 +197,63 @@ class IMUIntegrator:
         Returns:
             Updated state
         """
-        # For now, use midpoint method as RK4 requires significant refactoring
-        # This maintains numerical stability while we transition to SO3
-        return self._integrate_midpoint(state, measurement, dt)
+        # Remove bias from measurements
+        accel = measurement.accelerometer - state.accel_bias
+        gyro = measurement.gyroscope - state.gyro_bias
+        
+        # Initial values
+        R = state.rotation_matrix
+        v = state.velocity
+        p = state.position
+        
+        # k1 (initial derivatives)
+        R_k1 = R
+        v_dot_k1 = R_k1 @ accel + self.gravity
+        p_dot_k1 = v
+        omega_k1 = gyro
+        
+        # k2 (midpoint)
+        R_k2 = R @ so3_exp(omega_k1 * dt / 2)
+        v_k2 = v + v_dot_k1 * dt / 2
+        v_dot_k2 = R_k2 @ accel + self.gravity
+        p_dot_k2 = v_k2
+        omega_k2 = gyro
+        
+        # k3 (midpoint with k2)
+        R_k3 = R @ so3_exp(omega_k2 * dt / 2)
+        v_k3 = v + v_dot_k2 * dt / 2
+        v_dot_k3 = R_k3 @ accel + self.gravity
+        p_dot_k3 = v_k3
+        omega_k3 = gyro
+        
+        # k4 (endpoint with k3)
+        R_k4 = R @ so3_exp(omega_k3 * dt)
+        v_k4 = v + v_dot_k3 * dt
+        v_dot_k4 = R_k4 @ accel + self.gravity
+        p_dot_k4 = v_k4
+        omega_k4 = gyro
+        
+        # Combine derivatives (RK4 formula)
+        v_dot_avg = (v_dot_k1 + 2*v_dot_k2 + 2*v_dot_k3 + v_dot_k4) / 6
+        p_dot_avg = (p_dot_k1 + 2*p_dot_k2 + 2*p_dot_k3 + p_dot_k4) / 6
+        omega_avg = (omega_k1 + 2*omega_k2 + 2*omega_k3 + omega_k4) / 6
+        
+        # Update state
+        R_new = R @ so3_exp(omega_avg * dt)
+        v_new = v + v_dot_avg * dt
+        p_new = p + p_dot_avg * dt
+        
+        # Create new state
+        new_state = IMUState(
+            position=p_new,
+            velocity=v_new,
+            rotation_matrix=R_new,
+            accel_bias=state.accel_bias.copy(),
+            gyro_bias=state.gyro_bias.copy(),
+            timestamp=state.timestamp + dt
+        )
+        
+        return new_state
     
     def _integrate_midpoint(
         self,
@@ -257,58 +308,6 @@ class IMUIntegrator:
         )
         
         return new_state
-    
-    def _compute_derivatives(
-        self,
-        quaternion: np.ndarray,
-        velocity: np.ndarray,
-        accel: np.ndarray,
-        gyro: np.ndarray
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """
-        Compute state derivatives for RK4.
-        
-        Args:
-            quaternion: Current orientation
-            velocity: Current velocity
-            accel: Bias-corrected acceleration
-            gyro: Bias-corrected gyroscope
-        
-        Returns:
-            (velocity_dot, position_dot, rotation_rate)
-        """
-        R = quaternion_to_rotation_matrix(quaternion)
-        
-        # Acceleration in world frame
-        accel_world = R @ accel + self.gravity
-        
-        # Derivatives
-        velocity_dot = accel_world
-        position_dot = velocity
-        rotation_rate = gyro
-        
-        return velocity_dot, position_dot, rotation_rate
-    
-    def _update_quaternion(
-        self,
-        quaternion: np.ndarray,
-        omega_dt: np.ndarray
-    ) -> np.ndarray:
-        """
-        Update quaternion with angular velocity.
-        
-        Args:
-            quaternion: Current quaternion
-            omega_dt: Angular velocity * dt
-        
-        Returns:
-            Updated quaternion
-        """
-        # Convert to rotation matrix, apply rotation, convert back
-        R = quaternion_to_rotation_matrix(quaternion)
-        delta_R = exp_so3(omega_dt)
-        R_new = R @ delta_R
-        return rotation_matrix_to_quaternion(R_new)
     
     def integrate_batch(
         self,
@@ -508,7 +507,7 @@ class IMUPreintegrator:
         return PreintegrationResult(
             delta_position=self.delta_p.copy(),
             delta_velocity=self.delta_v.copy(),
-            delta_rotation=rotation_matrix_to_quaternion(self.delta_R),
+            delta_rotation=self.delta_R.copy(),  # Return rotation matrix directly
             covariance=self.covariance.copy(),
             jacobian=jacobian,
             dt=self.dt,

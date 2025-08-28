@@ -303,52 +303,7 @@ def so3_interpolate(R1: np.ndarray, R2: np.ndarray, t: float) -> np.ndarray:
     return R1 @ R_t
 
 # ============================================================================
-# Legacy Quaternion Operations (TO BE REMOVED IN TASK 3)
-# These are temporarily kept for estimators that still use quaternions internally
-# ============================================================================
-
-def rotation_matrix_to_quaternion(R: np.ndarray) -> np.ndarray:
-    """Convert rotation matrix to quaternion [w, x, y, z].
-    Temporarily kept for backward compatibility."""
-    R = np.asarray(R)
-    r = Rotation.from_matrix(R)
-    q = r.as_quat()  # Returns [x, y, z, w]
-    return np.array([q[3], q[0], q[1], q[2]])
-
-# quaternion_multiply removed - use SO3 rotation matrix multiplication instead
-
-def quaternion_normalize(q: np.ndarray) -> np.ndarray:
-    """
-    Normalize quaternion to unit norm.
-    
-    Args:
-        q: Quaternion [w, x, y, z]
-    
-    Returns:
-        Normalized quaternion
-    """
-    q = np.asarray(q).flatten()
-    norm = np.linalg.norm(q)
-    if norm < 1e-10:
-        return np.array([1.0, 0.0, 0.0, 0.0])
-    return q / norm
-
-
-def quaternion_to_rotation_matrix(q: np.ndarray) -> np.ndarray:
-    """
-    Convert quaternion to rotation matrix.
-    
-    Args:
-        q: Quaternion [w, x, y, z]
-    
-    Returns:
-        3x3 rotation matrix
-    """
-    q = quaternion_normalize(q)
-    
-    # Convert to scipy format [x, y, z, w] and get matrix
-    r = Rotation.from_quat([q[1], q[2], q[3], q[0]])
-    return r.as_matrix()
+# Quaternion operations removed - use SO3 operations instead
 
 
 def transform_point(T: np.ndarray, p: np.ndarray) -> np.ndarray:
@@ -504,16 +459,6 @@ def random_rotation_matrix() -> np.ndarray:
     return r.as_matrix()
 
 
-def random_quaternion() -> np.ndarray:
-    """
-    Generate a random unit quaternion.
-    
-    Returns:
-        Quaternion [w, x, y, z]
-    """
-    r = Rotation.random()
-    q = r.as_quat()  # Returns [x, y, z, w]
-    return np.array([q[3], q[0], q[1], q[2]])
 
 
 def rotation_matrix_from_vectors(v1: np.ndarray, v2: np.ndarray) -> np.ndarray:
@@ -569,3 +514,39 @@ def pose_to_matrix(pose) -> np.ndarray:
     T[:3, :3] = pose.rotation_matrix
     T[:3, 3] = pose.position
     return T
+
+
+# ============================================================================
+# Legacy Compatibility Shims (for legacy/deprecated code only)
+# ============================================================================
+
+def quaternion_to_rotation_matrix(q: np.ndarray) -> np.ndarray:
+    """
+    Legacy compatibility shim: Convert quaternion to rotation matrix.
+    
+    DEPRECATED: Use SO3 operations directly instead.
+    This function is only provided for legacy/deprecated code compatibility.
+    """
+    from scipy.spatial.transform import Rotation
+    return Rotation.from_quat(q).as_matrix()
+
+
+def rotation_matrix_to_quaternion(R: np.ndarray) -> np.ndarray:
+    """
+    Legacy compatibility shim: Convert rotation matrix to quaternion.
+    
+    DEPRECATED: Use SO3 operations directly instead. 
+    This function is only provided for legacy/deprecated code compatibility.
+    """
+    from scipy.spatial.transform import Rotation
+    return Rotation.from_matrix(R).as_quat()
+
+
+def quaternion_normalize(q: np.ndarray) -> np.ndarray:
+    """
+    Legacy compatibility shim: Normalize quaternion.
+    
+    DEPRECATED: Use SO3 operations directly instead.
+    This function is only provided for legacy/deprecated code compatibility.
+    """
+    return q / np.linalg.norm(q)

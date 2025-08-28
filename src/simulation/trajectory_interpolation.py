@@ -4,12 +4,12 @@ Trajectory interpolation using splines for smooth motion.
 
 import numpy as np
 from scipy.interpolate import CubicSpline, interp1d
-from scipy.spatial.transform import Rotation, Slerp
+from scipy.spatial.transform import Rotation
 from typing import List, Optional, Tuple
 from dataclasses import dataclass
 
 from src.common.data_structures import Trajectory, TrajectoryState, Pose
-from src.utils.math_utils import quaternion_to_rotation_matrix
+from src.utils.math_utils import so3_interpolate
 
 
 @dataclass
@@ -53,10 +53,8 @@ class TrajectoryInterpolator:
         # Extract data
         self.time_points = np.array([state.pose.timestamp for state in trajectory.states])
         positions = np.array([state.pose.position for state in trajectory.states])
-        # Convert rotation matrices to quaternions for interpolation
-        from src.utils.math_utils import rotation_matrix_to_quaternion
-        quaternions = np.array([rotation_matrix_to_quaternion(state.pose.rotation_matrix) 
-                               for state in trajectory.states])
+        # Store rotation matrices for SO3 interpolation
+        self.rotation_matrices = np.array([state.pose.rotation_matrix for state in trajectory.states])
         
         # Fit position spline
         if self.config.boundary_condition == "periodic":
@@ -79,10 +77,27 @@ class TrajectoryInterpolator:
             bc_type=bc_type,
             extrapolate=False
         )
+    
+    def _interpolate_rotation(self, t: float) -> np.ndarray:
+        """Interpolate rotation matrix at time t using SO3 geodesic interpolation."""
+        # Find the interval containing t
+        if t <= self.time_points[0]:
+            return self.rotation_matrices[0]
+        elif t >= self.time_points[-1]:
+            return self.rotation_matrices[-1]
         
-        # Create SLERP interpolator for orientations
-        rotations = Rotation.from_quat(quaternions)
-        self.orientation_slerp = Slerp(self.time_points, rotations)
+        # Find the two closest time points
+        idx = np.searchsorted(self.time_points, t) - 1
+        idx = max(0, min(idx, len(self.time_points) - 2))
+        
+        t0, t1 = self.time_points[idx], self.time_points[idx + 1]
+        R0, R1 = self.rotation_matrices[idx], self.rotation_matrices[idx + 1]
+        
+        # Compute interpolation factor
+        alpha = (t - t0) / (t1 - t0)
+        
+        # Use SO3 geodesic interpolation
+        return so3_interpolate(R0, R1, alpha)
     
     def interpolate(
         self,
@@ -138,17 +153,15 @@ class TrajectoryInterpolator:
             # Interpolate position
             position = self.position_spline(t_clamped)
             
-            # Interpolate orientation
-            rotation = self.orientation_slerp(t_clamped)
-            quaternion = rotation.as_quat()
-            rotation_matrix = quaternion_to_rotation_matrix(quaternion)
+            # Interpolate orientation using SO3
+            rotation_matrix = self._interpolate_rotation(t_clamped)
             
             # Compute velocity from spline derivative if requested
             velocity = None
             if self.config.velocity_from_spline:
                 velocity = self.position_spline.derivative()(t_clamped)
             
-            # Compute angular velocity (numerical differentiation of quaternion)
+            # Compute angular velocity (numerical differentiation of rotation matrix)
             angular_velocity = None
             if len(trajectory.states) > 0 and self.config.velocity_from_spline:
                 dt = t - trajectory.states[-1].pose.timestamp
@@ -224,7 +237,7 @@ class TrajectoryInterpolator:
                 pose = Pose(
                     timestamp=t,
                     position=waypoint.position,
-                    quaternion=waypoint.quaternion
+                    rotation_matrix=waypoint.rotation_matrix if hasattr(waypoint, 'rotation_matrix') else np.eye(3)
                 )
                 state = TrajectoryState(pose=pose)
                 initial_traj.add_state(state)
@@ -264,10 +277,8 @@ def smooth_trajectory(
     # Extract data
     timestamps = np.array([state.pose.timestamp for state in trajectory.states])
     positions = np.array([state.pose.position for state in trajectory.states])
-    # Convert rotation matrices to quaternions for smoothing
-    from src.utils.math_utils import rotation_matrix_to_quaternion
-    quaternions = np.array([rotation_matrix_to_quaternion(state.pose.rotation_matrix) 
-                           for state in trajectory.states])
+    # Extract rotation matrices for smoothing
+    rotation_matrices = np.array([state.pose.rotation_matrix for state in trajectory.states])
     
     # Smooth positions
     smoothed_positions = np.zeros_like(positions)
@@ -278,9 +289,9 @@ def smooth_trajectory(
             mode='nearest'
         )
     
-    # Smooth orientations (convert to axis-angle, smooth, convert back)
-    rotations = Rotation.from_quat(quaternions)
-    rotvecs = rotations.as_rotvec()
+    # Smooth orientations using SO3 logarithm, smooth in tangent space, then exp back
+    from src.utils.math_utils import so3_log, so3_exp
+    rotvecs = np.array([so3_log(R) for R in rotation_matrices])
     
     smoothed_rotvecs = np.zeros_like(rotvecs)
     for i in range(3):
@@ -290,8 +301,8 @@ def smooth_trajectory(
             mode='nearest'
         )
     
-    smoothed_rotations = Rotation.from_rotvec(smoothed_rotvecs)
-    smoothed_rotation_matrices = smoothed_rotations.as_matrix()
+    # Convert smoothed rotation vectors back to rotation matrices using SO3
+    smoothed_rotation_matrices = np.array([so3_exp(rv) for rv in smoothed_rotvecs])
     
     # Rebuild trajectory
     smoothed_traj = Trajectory(frame_id=trajectory.frame_id)
@@ -367,7 +378,6 @@ def create_bezier_trajectory(
             velocity = (positions[i+1] - positions[i-1]) / dt
         
         # Simple orientation: facing velocity direction
-        quaternion = np.array([1, 0, 0, 0])  # Default identity
         R = np.eye(3)
         if velocity is not None and np.linalg.norm(velocity[:2]) > 1e-6:
             yaw = np.arctan2(velocity[1], velocity[0])

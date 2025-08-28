@@ -782,9 +782,8 @@ class SlidingWindowBA(BaseEstimator):
         r_v = R_i.T @ (v_j - v_i - g * dt) - preint.delta_velocity
         
         # Rotation residual
-        # Convert preintegration delta_rotation from quaternion to rotation matrix
-        from src.utils.math_utils import quaternion_to_rotation_matrix
-        delta_R = quaternion_to_rotation_matrix(preint.delta_rotation)
+        # Handle delta_rotation - now comes as rotation matrix directly
+        delta_R = preint.delta_rotation
         r_R = so3_log(delta_R.T @ R_i.T @ R_j)
         
         # Stack residuals

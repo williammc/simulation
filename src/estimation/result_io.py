@@ -183,14 +183,13 @@ class EstimatorResultStorage:
     @staticmethod
     def _trajectory_to_dict(trajectory: Trajectory) -> Dict[str, Any]:
         """Convert trajectory to dictionary format."""
-        from src.utils.math_utils import rotation_matrix_to_quaternion
         return {
             "frame_id": trajectory.frame_id,
             "poses": [
                 {
                     "timestamp": state.pose.timestamp,
                     "position": state.pose.position.tolist(),
-                    "quaternion": rotation_matrix_to_quaternion(state.pose.rotation_matrix).tolist(),
+                    "rotation_matrix": state.pose.rotation_matrix.tolist(),
                     "velocity": state.velocity.tolist() if state.velocity is not None else None
                 }
                 for state in trajectory.states
@@ -200,15 +199,24 @@ class EstimatorResultStorage:
     @staticmethod
     def _dict_to_trajectory(data: Dict[str, Any]) -> Trajectory:
         """Convert dictionary to trajectory."""
-        from src.utils.math_utils import quaternion_to_rotation_matrix
         trajectory = Trajectory(frame_id=data.get("frame_id", "world"))
         
         for pose_dict in data.get("poses", []):
-            quaternion = np.array(pose_dict["quaternion"])
+            # Handle both old format (quaternion) and new format (rotation_matrix) for loading
+            if "rotation_matrix" in pose_dict:
+                rotation_matrix = np.array(pose_dict["rotation_matrix"])
+            elif "quaternion" in pose_dict:
+                # Legacy support for loading old files - will be removed eventually
+                from scipy.spatial.transform import Rotation
+                quaternion = np.array(pose_dict["quaternion"])
+                rotation_matrix = Rotation.from_quat(quaternion).as_matrix()
+            else:
+                rotation_matrix = np.eye(3)
+            
             pose = Pose(
                 timestamp=pose_dict["timestamp"],
                 position=np.array(pose_dict["position"]),
-                rotation_matrix=quaternion_to_rotation_matrix(quaternion)
+                rotation_matrix=rotation_matrix
             )
             
             from src.common.data_structures import TrajectoryState
@@ -255,7 +263,6 @@ class EstimatorResultStorage:
     @staticmethod
     def _states_to_dict(states: list) -> list:
         """Convert state history to compact dictionary format."""
-        from src.utils.math_utils import rotation_matrix_to_quaternion
         state_list = []
         
         for state in states:
@@ -263,15 +270,12 @@ class EstimatorResultStorage:
             if hasattr(state, 'robot_pose'):
                 # EstimatorState format
                 position = state.robot_pose.position
-                if hasattr(state.robot_pose, 'quaternion'):
-                    quaternion = state.robot_pose.quaternion
-                else:
-                    quaternion = rotation_matrix_to_quaternion(state.robot_pose.rotation_matrix)
+                rotation_matrix = state.robot_pose.rotation_matrix
                 
                 state_dict = {
                     "t": state.timestamp,
                     "p": position.tolist(),
-                    "q": quaternion.tolist()
+                    "R": rotation_matrix.tolist()
                 }
                 
                 # Add optional fields only if present

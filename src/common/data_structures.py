@@ -345,12 +345,11 @@ class Pose:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'Pose':
         """Create from dictionary."""
-        # Support legacy quaternion format for backward compatibility
-        if "quaternion" in data:
-            from src.utils.math_utils import quaternion_to_rotation_matrix
-            rotation_matrix = quaternion_to_rotation_matrix(np.array(data["quaternion"]))
-        else:
+        # Only support rotation matrix format (no backward compatibility)
+        if "rotation_matrix" in data:
             rotation_matrix = np.array(data["rotation_matrix"])
+        else:
+            raise ValueError("No rotation_matrix found in pose data - quaternion format no longer supported")
         
         return cls(
             timestamp=data["timestamp"],

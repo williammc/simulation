@@ -108,7 +108,7 @@ class TestFactorGraphConstruction:
                     to_keyframe_id=i,
                     delta_position=np.array([0.5, 0, 0]),
                     delta_velocity=np.array([1.0, 0, 0]),
-                    delta_rotation=np.eye(3),
+                    delta_rotation=np.eye(3),  # Identity rotation matrix
                     dt=0.5,
                     covariance=np.eye(15) * 0.01,
                     num_measurements=50

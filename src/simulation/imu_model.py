@@ -11,7 +11,6 @@ from src.common.data_structures import (
     Trajectory, TrajectoryState
 )
 from src.utils.math_utils import (
-    quaternion_to_rotation_matrix,
     so3_log
 )
 
@@ -383,7 +382,7 @@ class IMUPreintegrator:
         if gravity is None:
             gravity = self.gravity
         
-        R_i = quaternion_to_rotation_matrix(state_i.pose.quaternion)
+        R_i = state_i.pose.rotation_matrix
         p_i = state_i.pose.position
         v_i = state_i.velocity if state_i.velocity is not None else np.zeros(3)
         

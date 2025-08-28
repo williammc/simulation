@@ -233,16 +233,11 @@ class SimulationData:
         
         trajectory = Trajectory()
         for state_dict in self.groundtruth["trajectory"]:
-            # Support both rotation_matrix and legacy quaternion format
+            # Only support rotation matrix format (no backward compatibility)
             if "rotation_matrix" in state_dict:
                 rotation_matrix = np.array(state_dict["rotation_matrix"])
-            elif "quaternion" in state_dict:
-                # Legacy support for quaternion format
-                from src.utils.math_utils import quaternion_to_rotation_matrix
-                quaternion = np.array(state_dict["quaternion"])
-                rotation_matrix = quaternion_to_rotation_matrix(quaternion)
             else:
-                raise ValueError("No rotation representation found in trajectory state")
+                raise ValueError("No rotation_matrix found in trajectory state - quaternion format no longer supported")
             
             pose = Pose(
                 timestamp=state_dict["timestamp"],

@@ -11,7 +11,6 @@ from src.common.data_structures import (
     Pose, Landmark, Map, ImagePoint,
     CameraObservation, CameraFrame, CameraData
 )
-from src.utils.math_utils import quaternion_to_rotation_matrix
 
 
 @dataclass

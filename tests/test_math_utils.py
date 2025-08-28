@@ -1,6 +1,6 @@
 """
 Unit tests for mathematical utilities.
-Tests SO3, SE3, quaternion operations and coordinate transformations.
+Tests SO3, SE3 operations and coordinate transformations.
 """
 
 import numpy as np
@@ -12,9 +12,7 @@ from src.utils.math_utils import (
     so3_exp, so3_log, skew, vee, is_rotation_matrix,
     # SE3 operations
     se3_exp, se3_log, se3_inverse, se3_adjoint,
-    # Temporarily available quaternion operations (for backward compatibility)
-    quaternion_normalize, quaternion_to_rotation_matrix,
-    rotation_matrix_to_quaternion,
+    # Quaternion operations removed - use SO3 operations instead
     # Coordinate transformations
     transform_point, transform_vector,
     euler_to_rotation_matrix, rotation_matrix_to_euler,
@@ -140,49 +138,7 @@ class TestSE3Operations:
         assert np.linalg.norm(xi_transformed - xi_transformed_check) < 0.1
 
 
-class TestQuaternionOperations:
-    """Test quaternion operations."""
-    
-    def test_quaternion_normalize(self):
-        """Test quaternion normalization."""
-        q = np.array([1, 2, 3, 4])
-        q_norm = quaternion_normalize(q)
-        assert abs(np.linalg.norm(q_norm) - 1.0) < 1e-10
-    
-    @pytest.mark.skip(reason="quaternion_multiply removed - use SO3 operations")
-    def test_quaternion_multiply_identity(self):
-        """Test quaternion multiplication with identity."""
-        pass  # Function removed
-    
-    @pytest.mark.skip(reason="quaternion conjugate/inverse removed - use SO3 operations")
-    def test_quaternion_conjugate_inverse(self):
-        """Test quaternion conjugate and inverse."""
-        pass  # Functions removed
-    
-    def test_quaternion_rotation_conversion(self):
-        """Test conversion between quaternion and rotation matrix."""
-        # Test multiple random quaternions
-        np.random.seed(42)
-        for _ in range(10):
-            q = quaternion_normalize(np.random.randn(4))
-            R = quaternion_to_rotation_matrix(q)
-            q_recovered = rotation_matrix_to_quaternion(R)
-            
-            # Note: q and -q represent the same rotation
-            if np.dot(q, q_recovered) < 0:
-                q_recovered = -q_recovered
-            
-            assert_array_almost_equal(q, q_recovered, decimal=10)
-    
-    @pytest.mark.skip(reason="quaternion_slerp removed - use SO3 interpolation")
-    def test_quaternion_slerp(self):
-        """Test spherical linear interpolation."""
-        pass  # Function removed
-    
-    @pytest.mark.skip(reason="axis_angle functions removed - use SO3 operations")
-    def test_axis_angle_quaternion_conversion(self):
-        """Test conversion between axis-angle and quaternion."""
-        pass  # Functions removed
+# Quaternion operations removed - use SO3 operations instead
 
 
 class TestCoordinateTransformations:
@@ -292,13 +248,12 @@ class TestNumericalStability:
         angle_recovered = np.linalg.norm(omega_recovered)
         assert abs(angle - angle_recovered) < 1e-5
     
-    def test_quaternion_near_singularity(self):
-        """Test quaternion operations near singularities."""
-        # Near 180 degree rotation (w ≈ 0)
-        q = quaternion_normalize([0.001, 1, 0, 0])
-        R = quaternion_to_rotation_matrix(q)
-        q_recovered = rotation_matrix_to_quaternion(R)
+    def test_so3_near_singularity(self):
+        """Test SO3 operations near singularities."""
+        # Near 180 degree rotation
+        R = so3_exp([np.pi * 0.999, 0, 0])  # Almost 180 degrees around x
+        omega = so3_log(R)
+        R_recovered = so3_exp(omega)
         
-        # Should get same rotation (possibly negated quaternion)
-        R_recovered = quaternion_to_rotation_matrix(q_recovered)
+        # Should get same rotation
         assert_array_almost_equal(R, R_recovered, decimal=10)

@@ -182,13 +182,12 @@ class CppBinaryEstimator:
     
     def _trajectory_to_dict(self, trajectory: Trajectory) -> List[Dict]:
         """Convert Trajectory to dictionary format."""
-        from ..utils.math_utils import rotation_matrix_to_quaternion
         points = []
         for state in trajectory.states:
             points.append({
                 "timestamp": float(state.pose.timestamp),
                 "position": state.pose.position.tolist(),
-                "quaternion": rotation_matrix_to_quaternion(state.pose.rotation_matrix).tolist(),
+                "rotation_matrix": state.pose.rotation_matrix.tolist(),
                 "velocity": state.velocity.tolist() if state.velocity is not None else None
             })
         return points
