@@ -48,6 +48,8 @@ class NewSWBAConfig(EstimatorConfig):
     max_optimization_iterations: int = 50
     optimization_convergence_threshold: float = 1e-6
     use_robust_kernels: bool = True  # Uses pre-computed robust weights
+    min_measurements_for_update: int = 5  # Minimum measurements for visual correction
+    visual_correction_gain: float = 0.3  # Gain for EKF-style visual updates
     
     # Marginalization parameters
     marginalization_strategy: str = "oldest"  # "oldest", "information"
@@ -208,8 +210,12 @@ class NewSWBAEstimator(BaseEstimator):
             landmarks: Optional map (not used for projection, only for initialization)
         """
         if not isinstance(camera_frame, ProcessedVisualFrame):
-            logger.warning("Expected ProcessedVisualFrame, got raw camera frame")
+            logger.warning(f"Expected ProcessedVisualFrame, got {type(camera_frame).__name__}")
             return
+        
+        logger.debug(f"Update called with {len(camera_frame.measurements)} measurements")
+        if landmarks:
+            logger.debug(f"Landmarks Map provided with {len(landmarks.landmarks)} landmarks")
         
         if self.current_pose is None:
             logger.warning("Cannot update: estimator not initialized")
@@ -225,14 +231,9 @@ class NewSWBAEstimator(BaseEstimator):
             self.keyframe_ids.append(self.num_keyframes_created)
             self.num_keyframes_created += 1
             
-            # Initialize new landmarks if needed
-            if landmarks:
-                for measurement in camera_frame.measurements:
-                    if measurement.landmark_id not in self.landmark_estimates:
-                        landmark = landmarks.get_landmark(measurement.landmark_id)
-                        if landmark:
-                            self.landmark_estimates[measurement.landmark_id] = landmark.position
-                            self.landmark_covariances[measurement.landmark_id] = np.eye(3) * 0.1
+            # Initialize new landmarks
+            self._initialize_new_landmarks(camera_frame)
+            logger.debug(f"After init: {len(self.landmark_estimates)} landmarks tracked")
             
             # Maintain window size
             if len(self.keyframes) > self.config.window_size:
@@ -243,28 +244,15 @@ class NewSWBAEstimator(BaseEstimator):
         # Update landmark observations (for tracking, not projection)
         self._update_landmark_observations(camera_frame)
         
-        # Apply simple visual correction if we have measurements
-        if camera_frame.measurements and len(camera_frame.measurements) > 0:
-            # Compute average residual to detect drift
-            total_residual = np.zeros(2)
-            count = 0
-            for meas in camera_frame.measurements:
-                if meas.is_valid:
-                    total_residual += meas.residual
-                    count += 1
+        # Apply immediate visual correction using EKF-like update
+        # This helps prevent drift between optimization runs
+        if camera_frame.measurements and len(camera_frame.measurements) > self.config.min_measurements_for_update:
+            valid_measurements = [m for m in camera_frame.measurements 
+                                 if m.is_valid and m.landmark_id in self.landmark_estimates]
             
-            if count > 0:
-                avg_residual = total_residual / count
-                # Apply small correction based on visual residuals (simplified)
-                # In reality, this would be done properly in optimize()
-                correction_weight = 0.01  # Small weight to avoid instability
-                
-                # Correct position slightly based on average pixel error
-                # This is a very simplified approximation
-                if hasattr(camera_frame, 'predicted_pose') and camera_frame.predicted_pose is not None:
-                    # Use the predicted pose from preprocessing as reference
-                    pose_diff = camera_frame.predicted_pose.position - self.current_pose.position
-                    self.current_pose.position += pose_diff * correction_weight
+            if len(valid_measurements) >= 3:
+                # Perform EKF-style visual update
+                self._apply_visual_correction(valid_measurements, camera_frame)
         
         self.total_updates += 1
     
@@ -425,23 +413,222 @@ class NewSWBAEstimator(BaseEstimator):
         """
         Build and optimize factor graph using pre-computed measurements.
         
-        This is a skeleton - actual implementation would use GTSAM/Ceres.
+        Simplified optimization using Gauss-Newton with pre-computed Jacobians.
         """
-        # Placeholder for actual optimization
-        # Would build factor graph from:
-        # - Visual measurements with pre-computed Jacobians
-        # - IMU preintegrations with embedded noise
-        # - Marginalization prior if exists
+        if len(self.keyframes) < 2:
+            return True
+            
+        logger.info(f"Building factor graph with {len(self.keyframes)} keyframes")
         
-        logger.info("Building factor graph from pre-processed measurements")
+        # Collect all visual measurements from keyframes
+        all_measurements = []
+        measurement_to_kf = {}  # Track which keyframe each measurement belongs to
         
-        # Simulate optimization convergence
-        self.last_optimization_cost *= 0.9  # Fake cost reduction
+        for kf_idx, kf in enumerate(self.keyframes):
+            for meas in kf.measurements:
+                if meas.is_valid and meas.landmark_id in self.landmark_estimates:
+                    all_measurements.append(meas)
+                    measurement_to_kf[len(all_measurements) - 1] = kf_idx
         
-        # Update estimates (placeholder)
-        # In real implementation, would extract optimized values
+        if len(all_measurements) == 0:
+            logger.warning("No valid measurements for optimization")
+            return True
         
-        return True  # Assume converged
+        # Build state vector: [poses..., landmarks...]
+        # For simplicity, we only optimize positions (3 DOF per pose, 3 DOF per landmark)
+        num_poses = len(self.keyframes)
+        num_landmarks = len(self.landmark_estimates)
+        state_dim = num_poses * 3 + num_landmarks * 3
+        
+        # Initialize state vector
+        state = np.zeros(state_dim)
+        
+        # Fill pose positions
+        for i, pose in enumerate(self.keyframe_poses):
+            state[i*3:(i+1)*3] = pose.position
+        
+        # Fill landmark positions
+        landmark_ids = list(self.landmark_estimates.keys())
+        landmark_idx_map = {lid: idx for idx, lid in enumerate(landmark_ids)}
+        for idx, lid in enumerate(landmark_ids):
+            state[num_poses*3 + idx*3:num_poses*3 + (idx+1)*3] = self.landmark_estimates[lid]
+        
+        # Run simplified Gauss-Newton optimization
+        max_iterations = 10
+        lambda_damping = 0.01  # Levenberg-Marquardt damping
+        
+        for iteration in range(max_iterations):
+            # Compute total residual and approximate Jacobian
+            total_residual = []
+            jacobian_rows = []
+            
+            for meas_idx, meas in enumerate(all_measurements):
+                # Get keyframe index for this measurement
+                kf_idx = measurement_to_kf[meas_idx]
+                
+                # Get landmark index
+                if meas.landmark_id not in landmark_idx_map:
+                    continue
+                lm_idx = landmark_idx_map[meas.landmark_id]
+                
+                # Add residual (already computed in preprocessing)
+                total_residual.extend(meas.residual * meas.robust_weight)
+                
+                # Build Jacobian row (simplified: only position parts)
+                J_row = np.zeros((2, state_dim))
+                
+                # Jacobian w.r.t. pose position (first 3 columns of jacobian_wrt_pose)
+                if meas.jacobian_wrt_pose is not None and meas.jacobian_wrt_pose.shape[1] >= 3:
+                    J_row[:, kf_idx*3:(kf_idx+1)*3] = meas.jacobian_wrt_pose[:, :3] * meas.robust_weight
+                
+                # Jacobian w.r.t. landmark position
+                if meas.jacobian_wrt_landmark is not None:
+                    lm_offset = num_poses * 3 + lm_idx * 3
+                    J_row[:, lm_offset:lm_offset+3] = meas.jacobian_wrt_landmark * meas.robust_weight
+                
+                jacobian_rows.append(J_row)
+            
+            if len(total_residual) == 0:
+                break
+                
+            # Stack residuals and Jacobian
+            r = np.array(total_residual)
+            J = np.vstack(jacobian_rows)
+            
+            # Compute cost
+            cost = 0.5 * np.dot(r, r)
+            
+            # Gauss-Newton step with Levenberg-Marquardt damping
+            H = J.T @ J + lambda_damping * np.eye(state_dim)  # Hessian approximation
+            g = -J.T @ r  # Gradient
+            
+            try:
+                # Solve for update
+                delta = np.linalg.solve(H, g)
+                
+                # Apply update with step size
+                step_size = 0.1  # Conservative step
+                state += step_size * delta
+                
+                # Check convergence
+                if np.linalg.norm(delta) < 1e-4:
+                    logger.info(f"Optimization converged at iteration {iteration}")
+                    break
+                    
+            except np.linalg.LinAlgError:
+                logger.warning("Singular matrix in optimization, stopping")
+                break
+        
+        # Update estimates from optimized state
+        for i in range(num_poses):
+            self.keyframe_poses[i].position[:] = state[i*3:(i+1)*3]
+        
+        for idx, lid in enumerate(landmark_ids):
+            self.landmark_estimates[lid] = state[num_poses*3 + idx*3:num_poses*3 + (idx+1)*3].copy()
+        
+        # Update current pose to match last keyframe
+        if len(self.keyframe_poses) > 0:
+            self.current_pose.position[:] = self.keyframe_poses[-1].position
+        
+        self.last_optimization_cost = cost if 'cost' in locals() else 0.0
+        logger.info(f"Optimization complete, final cost: {self.last_optimization_cost:.6f}")
+        
+        return True
+    
+    def _initialize_new_landmarks(self, camera_frame: ProcessedVisualFrame):
+        """
+        Initialize new landmarks from measurements.
+        
+        For new-swba, we use simple triangulation based on current pose and pixel observations.
+        """
+        for measurement in camera_frame.measurements:
+            if measurement.landmark_id not in self.landmark_estimates:
+                # Simple initialization: place landmark at a default depth in front of camera
+                # This is a heuristic that will be refined by optimization
+                default_depth = 5.0  # meters
+                
+                # Convert pixel to normalized coordinates
+                # Assuming image size 640x480 and approximate focal length
+                img_width, img_height = 640, 480
+                focal_length = 500.0  # Approximate
+                
+                # Convert pixel to camera coordinates
+                cx = img_width / 2
+                cy = img_height / 2
+                x_cam = (measurement.observed_pixel[0] - cx) * default_depth / focal_length
+                y_cam = (measurement.observed_pixel[1] - cy) * default_depth / focal_length
+                z_cam = default_depth
+                
+                point_camera = np.array([x_cam, y_cam, z_cam])
+                
+                # Transform to world frame
+                R = self.current_pose.rotation_matrix
+                t = self.current_pose.position
+                point_world = R @ point_camera + t
+                
+                self.landmark_estimates[measurement.landmark_id] = point_world
+                self.landmark_covariances[measurement.landmark_id] = np.eye(3) * 1.0  # Higher uncertainty for initialization
+                
+                logger.debug(f"Initialized landmark {measurement.landmark_id} at depth {default_depth}m")
+    
+    
+    def _apply_visual_correction(self, measurements: List[Any], camera_frame: Any):
+        """
+        Apply visual correction using EKF-style update.
+        
+        Uses pre-computed Jacobians from measurements to correct pose.
+        """
+        # Stack residuals and Jacobians
+        H_pose = np.zeros((6, 6))  # Information matrix for pose
+        b_pose = np.zeros(6)  # Information vector
+        
+        for meas in measurements:
+            if meas.jacobian_wrt_pose is None:
+                continue
+                
+            # Get measurement covariance (inverse of information)
+            # Use robust weight to downweight outliers
+            measurement_info = np.eye(2) * meas.robust_weight / (meas.covariance[0, 0] if hasattr(meas, 'covariance') else 1.0)
+            
+            # Accumulate information
+            # H = J^T * W * J, where W is measurement information
+            J_pose = meas.jacobian_wrt_pose[:, :6] if meas.jacobian_wrt_pose.shape[1] >= 6 else meas.jacobian_wrt_pose
+            H_pose += J_pose.T @ measurement_info @ J_pose
+            b_pose += J_pose.T @ measurement_info @ meas.residual
+        
+        # Add regularization to prevent singular matrix
+        H_pose += np.eye(6) * 1e-6
+        
+        try:
+            # Solve for correction: delta = H^-1 * b
+            delta_pose = np.linalg.solve(H_pose, b_pose)
+            
+            # Apply correction with conservative gain
+            gain = self.config.visual_correction_gain
+            
+            # Update position
+            self.current_pose.position -= gain * delta_pose[:3]
+            
+            # Update rotation (if we have rotation correction)
+            if len(delta_pose) >= 6:
+                # Apply rotation correction using exponential map
+                from src.utils.math_utils import so3_exp
+                delta_R = so3_exp(-gain * delta_pose[3:6])
+                self.current_pose.rotation_matrix = self.current_pose.rotation_matrix @ delta_R
+            
+            # Update velocity based on position correction trend
+            if hasattr(self, 'current_velocity') and len(measurements) > 5:
+                # Simple velocity damping when we have good visual measurements
+                velocity_damping = 0.95  # Slight damping to prevent drift
+                self.current_velocity *= velocity_damping
+            
+            correction_norm = np.linalg.norm(delta_pose[:3])
+            if correction_norm > 0.01:  # Only log significant corrections
+                logger.debug(f"Applied visual correction: pos={correction_norm*gain:.4f}m, "
+                            f"rot={np.linalg.norm(delta_pose[3:6] if len(delta_pose) >= 6 else [0])*gain:.4f}rad")
+            
+        except np.linalg.LinAlgError:
+            logger.warning("Singular matrix in visual correction, skipping update")
     
     def _marginalize_oldest_keyframe(self):
         """
