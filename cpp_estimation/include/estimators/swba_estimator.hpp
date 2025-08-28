@@ -377,7 +377,7 @@ public:
         simulation_io::EstimatedPoseT<FLOAT> pose;
         pose.timestamp = current_state_.timestamp;
         pose.position = current_state_.position;
-        pose.quaternion = rotation_matrix_to_quaternion(current_state_.rotation_matrix);
+        pose.rotation_matrix = current_state_.rotation_matrix;
         pose.velocity = current_state_.velocity;
         return pose;
     }
@@ -405,7 +405,7 @@ public:
             simulation_io::EstimatedPoseT<FLOAT> pose;
             pose.timestamp = state.timestamp;
             pose.position = state.position;
-            pose.quaternion = rotation_matrix_to_quaternion(state.rotation_matrix);
+            pose.rotation_matrix = state.rotation_matrix;
             pose.velocity = state.velocity;
             trajectory.push_back(pose);
         }

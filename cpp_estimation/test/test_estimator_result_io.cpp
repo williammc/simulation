@@ -26,13 +26,17 @@ bool vectors_equal(const Vector3T<FLOAT>& a, const Vector3T<FLOAT>& b, FLOAT tol
            approx_equal(a.z(), b.z(), tolerance);
 }
 
-// Helper function to compare Vector4
+// Helper function to compare rotation matrices
 template<typename FLOAT>
-bool quaternions_equal(const Vector4T<FLOAT>& a, const Vector4T<FLOAT>& b, FLOAT tolerance = 1e-6) {
-    return approx_equal(a.x(), b.x(), tolerance) &&
-           approx_equal(a.y(), b.y(), tolerance) &&
-           approx_equal(a.z(), b.z(), tolerance) &&
-           approx_equal(a.w(), b.w(), tolerance);
+bool matrices_equal(const Matrix3x3T<FLOAT>& a, const Matrix3x3T<FLOAT>& b, FLOAT tolerance = 1e-6) {
+    for (int i = 0; i < 3; ++i) {
+        for (int j = 0; j < 3; ++j) {
+            if (!approx_equal(a(i, j), b(i, j), tolerance)) {
+                return false;
+            }
+        }
+    }
+    return true;
 }
 
 // Create a sample EstimatorResult with known values
@@ -125,9 +129,8 @@ EstimatorResultT<FLOAT> create_test_result() {
             static_cast<FLOAT>(i * 3)
         );
         
-        // Create quaternion
-        Eigen::Quaternion<FLOAT> q = Eigen::Quaternion<FLOAT>::Identity();
-        state.quaternion = Vector4T<FLOAT>(q.x(), q.y(), q.z(), q.w());
+        // Create rotation matrix
+        state.rotation_matrix = Matrix3x3T<FLOAT>::Identity();
         
         // Add velocity for some states
         if (i == 1) {
@@ -197,7 +200,7 @@ void test_basic_save_load(const std::string& test_name) {
         
         assert(approx_equal(load_pose.timestamp, orig_pose.timestamp, static_cast<FLOAT>(1e-6)));
         assert(vectors_equal(load_pose.position, orig_pose.position, static_cast<FLOAT>(1e-6)));
-        assert(quaternions_equal(load_pose.quaternion, orig_pose.quaternion, static_cast<FLOAT>(1e-6)));
+        assert(matrices_equal(load_pose.rotation_matrix, orig_pose.rotation_matrix, static_cast<FLOAT>(1e-6)));
         
         assert(load_pose.velocity.has_value() == orig_pose.velocity.has_value());
         if (orig_pose.velocity.has_value()) {

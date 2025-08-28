@@ -31,7 +31,7 @@ class TestEKFState:
         state = EKFState(
             position=np.array([1, 2, 3]),
             velocity=np.array([0.1, 0.2, 0.3]),
-            quaternion=np.array([1, 0, 0, 0]),
+            rotation_matrix=np.eye(3),  # Use rotation matrix instead of quaternion
             accel_bias=np.zeros(3),
             gyro_bias=np.zeros(3),
             timestamp=1.0
@@ -39,6 +39,7 @@ class TestEKFState:
         
         assert np.allclose(state.position, [1, 2, 3])
         assert np.allclose(state.velocity, [0.1, 0.2, 0.3])
+        assert np.allclose(state.rotation_matrix, np.eye(3))
         assert state.timestamp == 1.0
         assert state.covariance.shape == (15, 15)
     

@@ -11,11 +11,7 @@ from src.common.data_structures import (
     IMUMeasurement, IMUCalibration
 )
 from src.estimation.imu_integration import IMUIntegrator, IntegrationMethod, IMUState
-from src.utils.math_utils import (
-    quaternion_to_rotation_matrix,
-    rotation_matrix_to_quaternion,
-    skew
-)
+from src.utils.math_utils import skew
 
 
 class IMUFusionMethod(Enum):

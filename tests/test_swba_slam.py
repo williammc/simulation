@@ -49,9 +49,8 @@ class TestKeyframe:
     def test_keyframe_get_pose(self):
         """Test getting pose from keyframe."""
         # 90-degree rotation around z-axis
-        from src.utils.math_utils import quaternion_to_rotation_matrix
-        q = np.array([0.707, 0, 0, 0.707])
-        R = quaternion_to_rotation_matrix(q)
+        from src.utils.math_utils import euler_to_rotation_matrix
+        R = euler_to_rotation_matrix(0, 0, np.pi/2, 'xyz')
         
         state = IMUState(
             position=np.array([1, 2, 3]),

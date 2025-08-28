@@ -14,7 +14,7 @@ from src.estimation.camera_model import (
     CameraMeasurementModel, ReprojectionError
 )
 from src.utils.math_utils import (
-    quaternion_to_rotation_matrix, skew, pose_to_matrix
+    skew, pose_to_matrix
 )
 
 

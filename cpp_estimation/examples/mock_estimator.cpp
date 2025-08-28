@@ -17,8 +17,10 @@
 #include <cmath>
 #include <iomanip>
 #include <nlohmann/json.hpp>
+#include <Eigen/Dense>
 
 using json = nlohmann::json;
+using Matrix3d = Eigen::Matrix3d;
 
 // Structure for 3D position
 struct Position3D {
@@ -29,17 +31,45 @@ struct Position3D {
     }
 };
 
-// Structure for quaternion
-struct Quaternion {
-    double w, x, y, z;
-    
-    void normalize() {
-        double norm = std::sqrt(w*w + x*x + y*y + z*z);
-        if (norm > 1e-6) {
-            w /= norm; x /= norm; y /= norm; z /= norm;
-        }
+// Helper functions for rotation matrix operations
+Matrix3d quaternionToMatrix(double w, double x, double y, double z) {
+    // Normalize quaternion first
+    double norm = std::sqrt(w*w + x*x + y*y + z*z);
+    if (norm > 1e-6) {
+        w /= norm; x /= norm; y /= norm; z /= norm;
     }
-};
+    
+    Matrix3d R;
+    R << 1 - 2*(y*y + z*z), 2*(x*y - w*z), 2*(x*z + w*y),
+         2*(x*y + w*z), 1 - 2*(x*x + z*z), 2*(y*z - w*x),
+         2*(x*z - w*y), 2*(y*z + w*x), 1 - 2*(x*x + y*y);
+    return R;
+}
+
+Matrix3d addNoiseToRotation(const Matrix3d& R, double noise_level, std::mt19937& gen) {
+    // Add small noise via axis-angle perturbation
+    std::normal_distribution<> dist(0.0, noise_level * 0.1);
+    
+    // Small rotation vector
+    Eigen::Vector3d omega(dist(gen), dist(gen), dist(gen));
+    double angle = omega.norm();
+    
+    if (angle < 1e-8) {
+        return R;
+    }
+    
+    // Rodrigues formula for small rotation
+    Eigen::Vector3d axis = omega / angle;
+    Eigen::Matrix3d K;
+    K << 0, -axis.z(), axis.y(),
+         axis.z(), 0, -axis.x(),
+         -axis.y(), axis.x(), 0;
+    
+    Matrix3d delta_R = Matrix3d::Identity() + std::sin(angle) * K + (1 - std::cos(angle)) * K * K;
+    
+    // Apply perturbation
+    return delta_R * R;
+}
 
 // Add Gaussian noise to a position
 Position3D addNoise(const Position3D& pos, double noise_level, std::mt19937& gen) {
@@ -51,18 +81,6 @@ Position3D addNoise(const Position3D& pos, double noise_level, std::mt19937& gen
     };
 }
 
-// Add small noise to quaternion
-Quaternion addNoiseToQuaternion(const Quaternion& q, double noise_level, std::mt19937& gen) {
-    std::normal_distribution<> dist(0.0, noise_level * 0.1);
-    Quaternion noisy = {
-        q.w + dist(gen),
-        q.x + dist(gen),
-        q.y + dist(gen),
-        q.z + dist(gen)
-    };
-    noisy.normalize();
-    return noisy;
-}
 
 int main(int argc, char* argv[]) {
     // Parse command line arguments
@@ -144,17 +162,37 @@ int main(int argc, char* argv[]) {
                 Position3D noisy_pos = addNoise(pos, noise_level, gen);
                 est_point["position"] = {noisy_pos.x, noisy_pos.y, noisy_pos.z};
                 
-                // Add noise to quaternion if present
-                if (point.contains("quaternion")) {
-                    Quaternion q = {
-                        point["quaternion"][0].get<double>(),
-                        point["quaternion"][1].get<double>(),
-                        point["quaternion"][2].get<double>(),
-                        point["quaternion"][3].get<double>()
-                    };
-                    Quaternion noisy_q = addNoiseToQuaternion(q, noise_level, gen);
-                    est_point["quaternion"] = {noisy_q.w, noisy_q.x, noisy_q.y, noisy_q.z};
+                // Handle rotation - convert from quaternion if present, otherwise use rotation_matrix
+                Matrix3d R = Matrix3d::Identity();
+                
+                if (point.contains("rotation_matrix")) {
+                    // Direct rotation matrix input
+                    const auto& R_json = point["rotation_matrix"];
+                    for (int i = 0; i < 3; ++i) {
+                        for (int j = 0; j < 3; ++j) {
+                            R(i, j) = R_json[i][j].get<double>();
+                        }
+                    }
+                } else if (point.contains("quaternion")) {
+                    // Legacy quaternion format - convert to rotation matrix
+                    double w = point["quaternion"][0].get<double>();
+                    double x = point["quaternion"][1].get<double>();
+                    double y = point["quaternion"][2].get<double>();
+                    double z = point["quaternion"][3].get<double>();
+                    R = quaternionToMatrix(w, x, y, z);
                 }
+                
+                // Add noise to rotation
+                Matrix3d noisy_R = addNoiseToRotation(R, noise_level, gen);
+                
+                // Output as rotation matrix (list of lists)
+                std::vector<std::vector<double>> R_list(3, std::vector<double>(3));
+                for (int i = 0; i < 3; ++i) {
+                    for (int j = 0; j < 3; ++j) {
+                        R_list[i][j] = noisy_R(i, j);
+                    }
+                }
+                est_point["rotation_matrix"] = R_list;
                 
                 // Copy velocity if present and not null
                 if (point.contains("velocity") && !point["velocity"].is_null()) {

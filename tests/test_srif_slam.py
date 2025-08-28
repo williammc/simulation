@@ -64,9 +64,9 @@ class TestSRIFState:
     
     def test_state_vector_packing(self):
         """Test state vector packing and unpacking."""
-        from src.utils.math_utils import quaternion_to_rotation_matrix
-        q = np.array([0.707, 0, 0, 0.707])
-        R = quaternion_to_rotation_matrix(q)
+        from src.utils.math_utils import euler_to_rotation_matrix, so3_log
+        # Create a rotation matrix (45 degrees around Z-axis)
+        R = euler_to_rotation_matrix(0, 0, np.pi/4, 'xyz')
         
         state = SRIFState(
             position=np.array([1, 2, 3]),
@@ -82,13 +82,23 @@ class TestSRIFState:
         assert x.shape == (15,)
         assert np.allclose(x[0:3], [1, 2, 3])
         assert np.allclose(x[3:6], [4, 5, 6])
+        # Check rotation is properly encoded as SO3 log
+        assert np.allclose(x[6:9], so3_log(R))
+        assert np.allclose(x[9:12], [0.1, 0.2, 0.3])
+        assert np.allclose(x[12:15], [0.01, 0.02, 0.03])
         
         # Unpack state
-        x_new = np.random.randn(15)
-        x_new[6:10] = [1, 0, 0, 0]  # Valid quaternion
+        x_new = np.zeros(15)
+        x_new[0:3] = [7, 8, 9]  # New position
+        x_new[3:6] = [10, 11, 12]  # New velocity
+        x_new[6:9] = [0.1, 0.2, 0.3]  # Small rotation vector (SO3 log)
+        x_new[9:12] = [0.4, 0.5, 0.6]  # New accel bias
+        x_new[12:15] = [0.04, 0.05, 0.06]  # New gyro bias
         state._unpack_state_vector(x_new)
         assert np.allclose(state.position, x_new[0:3])
         assert np.allclose(state.velocity, x_new[3:6])
+        assert np.allclose(state.accel_bias, x_new[9:12])
+        assert np.allclose(state.gyro_bias, x_new[12:15])
 
 
 class TestSRIFConfig:

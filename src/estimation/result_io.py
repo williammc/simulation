@@ -202,16 +202,11 @@ class EstimatorResultStorage:
         trajectory = Trajectory(frame_id=data.get("frame_id", "world"))
         
         for pose_dict in data.get("poses", []):
-            # Handle both old format (quaternion) and new format (rotation_matrix) for loading
+            # Only support rotation matrix format (no backward compatibility)
             if "rotation_matrix" in pose_dict:
                 rotation_matrix = np.array(pose_dict["rotation_matrix"])
-            elif "quaternion" in pose_dict:
-                # Legacy support for loading old files - will be removed eventually
-                from scipy.spatial.transform import Rotation
-                quaternion = np.array(pose_dict["quaternion"])
-                rotation_matrix = Rotation.from_quat(quaternion).as_matrix()
             else:
-                rotation_matrix = np.eye(3)
+                raise ValueError("No rotation_matrix found in pose data - quaternion format no longer supported")
             
             pose = Pose(
                 timestamp=pose_dict["timestamp"],

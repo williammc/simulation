@@ -58,26 +58,30 @@ template<typename FLOAT>
 struct EstimatedPoseT {
     FLOAT timestamp;
     Vector3T<FLOAT> position;
-    Vector4T<FLOAT> quaternion;  // [x, y, z, w] format
+    Matrix3x3T<FLOAT> rotation_matrix;  // SO3 representation
     std::optional<Vector3T<FLOAT>> velocity;
     
     EstimatedPoseT() : timestamp(0), position(Vector3T<FLOAT>::Zero()), 
-                       quaternion(Vector4T<FLOAT>(0, 0, 0, 1)) {}
+                       rotation_matrix(Matrix3x3T<FLOAT>::Identity()) {}
     
     EstimatedPoseT(FLOAT t, const Vector3T<FLOAT>& p, const Matrix3x3T<FLOAT>& R) 
-        : timestamp(t), position(p) {
-        // Convert rotation matrix to quaternion
-        Eigen::Quaternion<FLOAT> q(R);
-        quaternion = Vector4T<FLOAT>(q.x(), q.y(), q.z(), q.w());
-    }
+        : timestamp(t), position(p), rotation_matrix(R) {}
     
     // Convert to JSON
     json to_json() const {
         json j;
         j["timestamp"] = timestamp;
         j["position"] = {position.x(), position.y(), position.z()};
-        j["quaternion"] = {quaternion.x(), quaternion.y(), 
-                           quaternion.z(), quaternion.w()};
+        
+        // Save rotation matrix as 2D array (list of lists)
+        std::vector<std::vector<FLOAT>> R_list(3, std::vector<FLOAT>(3));
+        for (int i = 0; i < 3; ++i) {
+            for (int j = 0; j < 3; ++j) {
+                R_list[i][j] = rotation_matrix(i, j);
+            }
+        }
+        j["rotation_matrix"] = R_list;
+        
         if (velocity.has_value()) {
             j["velocity"] = {velocity->x(), velocity->y(), velocity->z()};
         } else {
@@ -130,7 +134,7 @@ template<typename FLOAT>
 struct EstimatorStateT {
     FLOAT timestamp;
     Vector3T<FLOAT> position;
-    Vector4T<FLOAT> quaternion;
+    Matrix3x3T<FLOAT> rotation_matrix;  // SO3 representation
     std::optional<Vector3T<FLOAT>> velocity;
     std::optional<VectorXT<FLOAT>> covariance_diagonal;  // Store only diagonal for efficiency
     
@@ -139,7 +143,15 @@ struct EstimatorStateT {
         json j;
         j["t"] = timestamp;
         j["p"] = {position.x(), position.y(), position.z()};
-        j["q"] = {quaternion.x(), quaternion.y(), quaternion.z(), quaternion.w()};
+        
+        // Save rotation matrix as flattened list for compactness
+        std::vector<std::vector<FLOAT>> R_list(3, std::vector<FLOAT>(3));
+        for (int i = 0; i < 3; ++i) {
+            for (int j = 0; j < 3; ++j) {
+                R_list[i][j] = rotation_matrix(i, j);
+            }
+        }
+        j["R"] = R_list;
         
         if (velocity.has_value()) {
             j["v"] = {velocity->x(), velocity->y(), velocity->z()};
@@ -374,8 +386,18 @@ public:
                     const auto& pos = pose_json["position"];
                     pose.position = Vector3T<FLOAT>(pos[0], pos[1], pos[2]);
                     
-                    const auto& quat = pose_json["quaternion"];
-                    pose.quaternion = Vector4T<FLOAT>(quat[0], quat[1], quat[2], quat[3]);
+                    // Load rotation matrix
+                    if (pose_json.contains("rotation_matrix")) {
+                        const auto& R_json = pose_json["rotation_matrix"];
+                        for (int i = 0; i < 3; ++i) {
+                            for (int j = 0; j < 3; ++j) {
+                                pose.rotation_matrix(i, j) = R_json[i][j];
+                            }
+                        }
+                    } else {
+                        // No backward compatibility - rotation_matrix is required
+                        throw std::runtime_error("No rotation_matrix found in pose data - quaternion format no longer supported");
+                    }
                     
                     if (pose_json.contains("velocity") && !pose_json["velocity"].is_null()) {
                         const auto& vel = pose_json["velocity"];

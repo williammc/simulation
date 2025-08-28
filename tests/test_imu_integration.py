@@ -441,9 +441,8 @@ class TestAnalyticalSolutions:
         
         # Initial state
         # Rotation about y-axis by theta0
-        from src.utils.math_utils import quaternion_to_rotation_matrix
-        q = np.array([np.cos(theta0/2), 0, np.sin(theta0/2), 0])
-        R = quaternion_to_rotation_matrix(q)
+        from src.utils.math_utils import euler_to_rotation_matrix
+        R = euler_to_rotation_matrix(0, theta0, 0, 'xyz')  # Rotation about y-axis
         
         state = IMUState(
             position=np.array([L * np.sin(theta0), 0, -L * np.cos(theta0)]),

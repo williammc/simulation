@@ -35,7 +35,6 @@ from src.common.data_structures import (
     PreintegratedIMUData
 )
 from src.utils.math_utils import (
-    rotation_matrix_to_quaternion,
     skew, so3_exp, so3_log
 )
 
@@ -283,14 +282,11 @@ class SlidingWindowBA(BaseEstimator):
         
         if from_kf is not None:
             # Store preintegration with the source keyframe
-            # Convert rotation matrix to quaternion for PreintegrationResult
-            from src.utils.math_utils import rotation_matrix_to_quaternion
-            delta_quat = rotation_matrix_to_quaternion(preintegrated.delta_rotation)
-            
+            # Use rotation matrix directly (no quaternion conversion)
             from_kf.imu_preintegration = PreintegrationResult(
                 delta_position=preintegrated.delta_position,
                 delta_velocity=preintegrated.delta_velocity,
-                delta_rotation=delta_quat,
+                delta_rotation=preintegrated.delta_rotation,
                 covariance=preintegrated.covariance,
                 dt=preintegrated.dt,
                 jacobian=preintegrated.jacobian,
@@ -1139,14 +1135,13 @@ class SlidingWindowBA(BaseEstimator):
             return np.array([])
         
         # Build state vector from keyframes
-        # Convert rotation matrices to quaternions for backward compatibility
-        from src.utils.math_utils import rotation_matrix_to_quaternion
+        # Use rotation matrices directly (no quaternion conversion)
         states = []
         for kf in self.keyframes:
             states.extend([
                 kf.state.position,
                 kf.state.velocity,
-                rotation_matrix_to_quaternion(kf.state.rotation_matrix),
+                kf.state.rotation_matrix.flatten(),  # Flatten 3x3 matrix to 9 elements
                 kf.state.accel_bias,
                 kf.state.gyro_bias
             ])

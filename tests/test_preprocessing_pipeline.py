@@ -437,9 +437,9 @@ class TestIMUPreprocessor:
         assert not is_valid
     
     def test_rotation_matrix_property(self):
-        """Test rotation matrix extraction from quaternion."""
-        # Test with rotation matrix
-        data_matrix = PreprocessedIMUData(
+        """Test rotation matrix property."""
+        # Test with identity rotation matrix
+        data_identity = PreprocessedIMUData(
             from_keyframe_id=0,
             to_keyframe_id=1,
             delta_position=np.zeros(3),
@@ -448,16 +448,24 @@ class TestIMUPreprocessor:
             covariance=np.eye(9),
             delta_t=0.1
         )
-        assert data_matrix.rotation_matrix.shape == (3, 3)
+        assert np.allclose(data_identity.rotation_matrix, np.eye(3))
+        assert data_identity.rotation_matrix.shape == (3, 3)
         
-        # Test with quaternion
-        data_quat = PreprocessedIMUData(
+        # Test with 90 degree rotation about Z axis
+        angle = np.pi / 2
+        rotation_matrix = np.array([
+            [np.cos(angle), -np.sin(angle), 0],
+            [np.sin(angle), np.cos(angle), 0],
+            [0, 0, 1]
+        ])
+        data_rotated = PreprocessedIMUData(
             from_keyframe_id=0,
             to_keyframe_id=1,
             delta_position=np.zeros(3),
             delta_velocity=np.zeros(3),
-            delta_rotation=np.array([1.0, 0.0, 0.0, 0.0]),
+            delta_rotation=rotation_matrix,
             covariance=np.eye(9),
             delta_t=0.1
         )
-        assert data_quat.rotation_matrix.shape == (3, 3)
+        assert np.allclose(data_rotated.rotation_matrix, rotation_matrix)
+        assert data_rotated.rotation_matrix.shape == (3, 3)

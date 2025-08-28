@@ -515,38 +515,3 @@ def pose_to_matrix(pose) -> np.ndarray:
     T[:3, 3] = pose.position
     return T
 
-
-# ============================================================================
-# Legacy Compatibility Shims (for legacy/deprecated code only)
-# ============================================================================
-
-def quaternion_to_rotation_matrix(q: np.ndarray) -> np.ndarray:
-    """
-    Legacy compatibility shim: Convert quaternion to rotation matrix.
-    
-    DEPRECATED: Use SO3 operations directly instead.
-    This function is only provided for legacy/deprecated code compatibility.
-    """
-    from scipy.spatial.transform import Rotation
-    return Rotation.from_quat(q).as_matrix()
-
-
-def rotation_matrix_to_quaternion(R: np.ndarray) -> np.ndarray:
-    """
-    Legacy compatibility shim: Convert rotation matrix to quaternion.
-    
-    DEPRECATED: Use SO3 operations directly instead. 
-    This function is only provided for legacy/deprecated code compatibility.
-    """
-    from scipy.spatial.transform import Rotation
-    return Rotation.from_matrix(R).as_quat()
-
-
-def quaternion_normalize(q: np.ndarray) -> np.ndarray:
-    """
-    Legacy compatibility shim: Normalize quaternion.
-    
-    DEPRECATED: Use SO3 operations directly instead.
-    This function is only provided for legacy/deprecated code compatibility.
-    """
-    return q / np.linalg.norm(q)

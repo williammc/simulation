@@ -64,9 +64,8 @@ int main() {
             state.timestamp = t;
             state.position = position;
             
-            // Convert rotation to quaternion
-            Eigen::Quaterniond q(rotation);
-            state.quaternion = Vector4(q.x(), q.y(), q.z(), q.w());
+            // Use rotation matrix directly
+            state.rotation_matrix = rotation;
             state.velocity = pose.velocity;
             
             // Add fake covariance diagonal (decreasing over time)

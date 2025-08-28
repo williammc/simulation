@@ -10,9 +10,7 @@ from src.common.data_structures import (
     CameraObservation, ImagePoint, CameraCalibration,
     Pose, Landmark
 )
-from src.utils.math_utils import (
-    quaternion_to_rotation_matrix, skew
-)
+from src.utils.math_utils import skew
 
 
 @dataclass

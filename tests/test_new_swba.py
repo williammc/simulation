@@ -16,7 +16,6 @@ from src.estimation.interfaces import (
     PreprocessedIMUData
 )
 from src.common.data_structures import Pose, Map, Landmark
-from src.utils.math_utils import quaternion_to_rotation_matrix, rotation_matrix_to_quaternion
 
 
 class TestNewSWBAEstimator:

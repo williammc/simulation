@@ -180,7 +180,7 @@ class PreprocessedIMUData:
     # Pre-integrated changes
     delta_position: np.ndarray  # shape: (3,)
     delta_velocity: np.ndarray  # shape: (3,)
-    delta_rotation: np.ndarray  # shape: (3, 3) rotation matrix or (4,) quaternion
+    delta_rotation: np.ndarray  # shape: (3, 3) rotation matrix
     
     # Pre-computed covariance including noise model
     covariance: np.ndarray  # shape: (9, 9) for [rotation, velocity, position] or (15, 15) with biases
@@ -204,14 +204,12 @@ class PreprocessedIMUData:
         self.delta_position = np.asarray(self.delta_position).reshape(3)
         self.delta_velocity = np.asarray(self.delta_velocity).reshape(3)
         
-        # Handle rotation (could be matrix or quaternion)
+        # Handle rotation matrix only (no quaternion support)
         delta_rot = np.asarray(self.delta_rotation)
         if delta_rot.shape == (3, 3):
             self.delta_rotation = delta_rot
-        elif delta_rot.size == 4:
-            self.delta_rotation = delta_rot.reshape(4)
         else:
-            raise ValueError(f"Invalid rotation shape: {delta_rot.shape}")
+            raise ValueError(f"Invalid rotation shape: {delta_rot.shape}. Only (3,3) rotation matrices supported.")
         
         # Ensure covariance is proper size
         cov = np.asarray(self.covariance)
@@ -237,12 +235,7 @@ class PreprocessedIMUData:
     @property
     def rotation_matrix(self) -> np.ndarray:
         """Get rotation as a 3x3 matrix."""
-        if self.delta_rotation.shape == (3, 3):
-            return self.delta_rotation
-        else:
-            # Convert quaternion to rotation matrix
-            from src.utils.math_utils import quaternion_to_rotation_matrix
-            return quaternion_to_rotation_matrix(self.delta_rotation)
+        return self.delta_rotation  # Always a 3x3 matrix now
 
 
 @dataclass

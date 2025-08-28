@@ -66,31 +66,34 @@ class TestCameraIntrinsics:
 class TestCameraExtrinsics:
     """Test camera extrinsics validation."""
     
-    def test_quaternion_normalization(self):
-        """Test that quaternions are normalized."""
+    def test_rotation_matrix_validation(self):
+        """Test that rotation matrices are validated and projected to SO3."""
+        import numpy as np
+        
+        # Non-orthogonal matrix should be corrected
         extrinsics = CameraExtrinsics(
             translation=[0.1, 0.2, 0.3],
-            quaternion=[2.0, 0.0, 0.0, 0.0]  # Not normalized
+            rotation_matrix=[[2.0, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 2.0]]  # Not orthogonal
         )
-        # Check quaternion is normalized
-        q = extrinsics.quaternion
-        norm = sum(x**2 for x in q) ** 0.5
-        assert abs(norm - 1.0) < 1e-6
+        # Check rotation matrix is orthogonal
+        R = np.array(extrinsics.rotation_matrix)
+        assert np.allclose(R @ R.T, np.eye(3), atol=1e-6)
+        assert np.allclose(np.linalg.det(R), 1.0, atol=1e-6)
     
     def test_invalid_translation_size(self):
         """Test that wrong translation size raises error."""
         with pytest.raises(ValueError):
             CameraExtrinsics(
                 translation=[0.1, 0.2],  # Only 2 elements
-                quaternion=[1.0, 0.0, 0.0, 0.0]
+                rotation_matrix=[[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
             )
     
-    def test_invalid_quaternion_size(self):
-        """Test that wrong quaternion size raises error."""
+    def test_invalid_rotation_matrix_size(self):
+        """Test that wrong rotation matrix size raises error."""
         with pytest.raises(ValueError):
             CameraExtrinsics(
                 translation=[0.1, 0.2, 0.3],
-                quaternion=[1.0, 0.0, 0.0]  # Only 3 elements
+                rotation_matrix=[[1.0, 0.0], [0.0, 1.0]]  # Only 2x2
             )
 
 

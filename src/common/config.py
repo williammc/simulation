@@ -123,9 +123,9 @@ class CameraExtrinsics(BaseModel):
         default=[0.0, 0.0, 0.0],
         description="Translation [x, y, z] in meters"
     )
-    quaternion: List[float] = Field(
-        default=[1.0, 0.0, 0.0, 0.0],
-        description="Rotation quaternion [w, x, y, z]"
+    rotation_matrix: List[List[float]] = Field(
+        default=[[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+        description="Rotation matrix (3x3)"
     )
     
     @field_validator('translation')
@@ -135,16 +135,23 @@ class CameraExtrinsics(BaseModel):
             raise ValueError('Translation must have exactly 3 components')
         return v
     
-    @field_validator('quaternion')
+    @field_validator('rotation_matrix')
     @classmethod
-    def validate_quaternion(cls, v: List[float]) -> List[float]:
-        if len(v) != 4:
-            raise ValueError('Quaternion must have exactly 4 components')
-        # Normalize quaternion
-        norm = sum(x**2 for x in v) ** 0.5
-        if norm < 1e-6:
-            raise ValueError('Quaternion norm is too small')
-        return [x / norm for x in v]
+    def validate_rotation_matrix(cls, v: List[List[float]]) -> List[List[float]]:
+        if len(v) != 3 or any(len(row) != 3 for row in v):
+            raise ValueError('Rotation matrix must be 3x3')
+        # Check orthogonality and determinant = 1 for valid rotation
+        import numpy as np
+        R = np.array(v)
+        if not np.allclose(R @ R.T, np.eye(3), atol=1e-6):
+            # Project to nearest rotation matrix
+            U, _, Vt = np.linalg.svd(R)
+            R = U @ Vt
+            if np.linalg.det(R) < 0:
+                Vt[-1, :] *= -1
+                R = U @ Vt
+            return R.tolist()
+        return v
 
 
 class CameraConfig(BaseModel):

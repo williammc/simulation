@@ -31,7 +31,6 @@ from src.common.data_structures import (
     PreintegratedIMUData
 )
 from src.utils.math_utils import (
-    quaternion_to_rotation_matrix, rotation_matrix_to_quaternion,
     skew, so3_exp, project_to_so3
 )
 
@@ -53,7 +52,6 @@ class EKFState:
         position: np.ndarray,
         velocity: np.ndarray,
         rotation_matrix: Optional[np.ndarray] = None,
-        quaternion: Optional[np.ndarray] = None,  # For backward compatibility
         accel_bias: np.ndarray = None,
         gyro_bias: np.ndarray = None,
         covariance: Optional[np.ndarray] = None,
@@ -66,7 +64,6 @@ class EKFState:
             position: 3D position in world frame
             velocity: 3D velocity in world frame
             rotation_matrix: SO3 rotation matrix (3x3)
-            quaternion: Legacy quaternion support (will be converted)
             accel_bias: Accelerometer bias
             gyro_bias: Gyroscope bias
             covariance: State covariance matrix (15x15)
@@ -78,9 +75,6 @@ class EKFState:
         # Handle rotation representation
         if rotation_matrix is not None:
             self.rotation_matrix = project_to_so3(rotation_matrix)
-        elif quaternion is not None:
-            # Legacy support: convert quaternion to rotation matrix
-            self.rotation_matrix = quaternion_to_rotation_matrix(quaternion)
         else:
             self.rotation_matrix = np.eye(3)
         
@@ -93,11 +87,6 @@ class EKFState:
             self.covariance = np.eye(15) * 1e-3
         else:
             self.covariance = covariance.copy()
-    
-    @property
-    def quaternion(self):
-        """Legacy quaternion access (for backward compatibility)."""
-        return rotation_matrix_to_quaternion(self.rotation_matrix)
     
     
     def copy(self) -> 'EKFState':
@@ -753,15 +742,15 @@ class EKFSlam(BaseEstimator):
         Get state vector.
         
         Returns:
-            State vector [position, velocity, quaternion, accel_bias, gyro_bias]
+            State vector [position, velocity, rotation_matrix_flattened, accel_bias, gyro_bias]
         """
         if self.state is None:
-            return np.zeros(16)
+            return np.zeros(21)  # 3+3+9+3+3 = 21
         
         return np.concatenate([
             self.state.position,
             self.state.velocity,
-            self.state.quaternion,
+            self.state.rotation_matrix.flatten(),  # 9 elements instead of 4
             self.state.accel_bias,
             self.state.gyro_bias
         ])

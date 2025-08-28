@@ -147,7 +147,7 @@ void test_estimator_structures() {
         
         assert(pose.timestamp == static_cast<FLOAT>(1.0));
         assert(pose.position.x() == static_cast<FLOAT>(1));
-        assert(pose.quaternion.w() == static_cast<FLOAT>(1));  // Identity rotation
+        assert(pose.rotation_matrix.isIdentity());  // Identity rotation
         
         std::cout << "  EstimatedPoseT<" << type_name<FLOAT>() << "> OK" << std::endl;
     }
@@ -170,7 +170,7 @@ void test_estimator_structures() {
             EstimatedPoseT<FLOAT> pose;
             pose.timestamp = static_cast<FLOAT>(i * 0.1);
             pose.position = Vector3T<FLOAT>(i, i*2, i*3);
-            pose.quaternion = Vector4T<FLOAT>(0, 0, 0, 1);
+            pose.rotation_matrix = Matrix3x3T<FLOAT>::Identity();
             trajectory.add_pose(pose);
         }
         
@@ -271,7 +271,7 @@ void test_mixed_precision() {
         static_cast<double>(f_state.position.y()),
         static_cast<double>(f_state.position.z())
     );
-    d_pose.quaternion = Vector4T<double>(0, 0, 0, 1);
+    d_pose.rotation_matrix = Matrix3x3T<double>::Identity();
     double_result.trajectory.add_pose(d_pose);
     
     assert(double_result.trajectory.poses.size() == 1);
