@@ -35,6 +35,7 @@ class EstimatorType(str, Enum):
     CPP_BINARY = "cpp_binary"
     GTSAM_EKF = "gtsam_ekf"
     GTSAM_SWBA = "gtsam_swba"
+    NEW_SWBA = "new_swba"  # Camera-model-independent SWBA
     UNKNOWN = "unknown"
 
 

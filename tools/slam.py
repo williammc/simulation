@@ -44,6 +44,9 @@ def run_slam(
     # Modern GTSAM-based estimators (preferred)
     from src.estimation.gtsam_ekf_estimator import GTSAMEKFEstimatorV2 as GtsamEkfEstimator
     from src.estimation.gtsam_swba_estimator import GtsamSWBAEstimator
+    # Camera-model-independent estimator
+    from src.estimation.new.swba_estimator import NewSWBAEstimator, NewSWBAConfig
+    from src.estimation.preprocessing import VisualMeasurementPreprocessor
     from src.estimation.base_estimator import EstimatorConfig
     from src.common.json_io import load_simulation_data
     from src.common.config import EKFConfig, SWBAConfig, SRIFConfig
@@ -55,7 +58,7 @@ def run_slam(
     
     # Validate estimator type
     estimator_lower = estimator.lower()
-    valid_estimators = ['ekf', 'swba', 'srif', 'gtsam-ekf', 'gtsam-swba', 'raw-imu-ekf']
+    valid_estimators = ['ekf', 'swba', 'srif', 'gtsam-ekf', 'gtsam-swba', 'raw-imu-ekf', 'new-swba']
     if estimator_lower not in valid_estimators:
         console.print(f"[red]✗ Error: Unknown estimator: {estimator}[/red]")
         console.print(f"  Available estimators: {', '.join(valid_estimators)}")
@@ -64,7 +67,9 @@ def run_slam(
     # Warn about legacy estimators
     if estimator_lower in ['ekf', 'swba', 'srif']:
         console.print(f"[yellow]⚠ Warning: '{estimator}' is a legacy estimator.[/yellow]")
-        console.print(f"[yellow]  Consider using 'gtsam-{estimator_lower}' instead for better performance.[/yellow]")
+        console.print(f"[yellow]  Consider using 'gtsam-{estimator_lower}' or 'new-swba' for better performance.[/yellow]")
+    elif estimator_lower == 'new-swba':
+        console.print(f"[green]Using camera-model-independent SWBA estimator[/green]")
     
     console.print(f"\n[bold]Running {estimator.upper()} Estimator[/bold]")
     console.print(f"  Input: {input_data}")
@@ -233,6 +238,25 @@ def run_slam(
             estimator_instance = EKFSlam(ekf_config, camera_calib, imu_calib, use_preintegrated_imu=False)
             console.print("[cyan]Using raw IMU processing (no preintegration)[/cyan]")
         
+        elif estimator_lower == 'new-swba':
+            # Create camera-model-independent SWBA estimator
+            new_swba_config_data = config_data.get('new_swba', {})
+            new_swba_config = NewSWBAConfig(
+                estimator_type=EstimatorType.NEW_SWBA,
+                window_size=new_swba_config_data.get('window_size', 10),
+                min_keyframe_distance=new_swba_config_data.get('min_keyframe_distance', 0.5),
+                min_keyframe_angle=new_swba_config_data.get('min_keyframe_angle', 10.0),
+                keyframe_selection_method=new_swba_config_data.get('keyframe_selection_method', 'distance'),
+                max_optimization_iterations=new_swba_config_data.get('max_optimization_iterations', 50),
+                optimization_convergence_threshold=new_swba_config_data.get('optimization_convergence_threshold', 1e-6),
+                use_robust_kernels=new_swba_config_data.get('use_robust_kernels', True),
+                verbose_optimization=new_swba_config_data.get('verbose_optimization', False)
+            )
+            estimator_instance = NewSWBAEstimator(new_swba_config)
+            console.print("[green]Created camera-model-independent SWBA estimator[/green]")
+            # Note: We'll need to create a preprocessor to convert raw frames to processed frames
+            preprocessor = None  # Will be created later when we have camera calibration
+        
     except Exception as e:
         console.print(f"[red]✗ Error creating estimator: {e}[/red]")
         return None
@@ -242,8 +266,8 @@ def run_slam(
         initial_pose = trajectory_gt.states[0].pose
         initial_velocity = trajectory_gt.states[0].velocity if hasattr(trajectory_gt.states[0], 'velocity') else None
         
-        # Check if estimator supports initial velocity (EKF, SWBA, SRIF now all support it)
-        if estimator_lower in ['ekf', 'swba', 'srif'] and initial_velocity is not None:
+        # Check if estimator supports initial velocity 
+        if estimator_lower in ['ekf', 'swba', 'srif', 'new-swba'] and initial_velocity is not None:
             estimator_instance.initialize(initial_pose, initial_velocity=initial_velocity)
             console.print(f"[cyan]Initialized with velocity: [{initial_velocity[0]:.2f}, {initial_velocity[1]:.2f}, {initial_velocity[2]:.2f}] m/s[/cyan]")
         else:
@@ -269,7 +293,103 @@ def run_slam(
     ) as progress:
         
         # Process based on available data and estimator type
-        if estimator_lower == 'raw-imu-ekf' and raw_imu:
+        if estimator_lower == 'new-swba':
+            # Special processing for camera-model-independent SWBA
+            # Create preprocessor with projection service
+            from src.estimation.projection_adapters import PinholeProjectionAdapter
+            
+            # Create projection adapter using camera calibration
+            if camera_calib:
+                projection_adapter = PinholeProjectionAdapter(camera_calib)
+            else:
+                console.print("[yellow]Warning: No camera calibration, using default pinhole model[/yellow]")
+                # Create default calibration
+                from src.common.data_structures import CameraCalibration
+                default_calib = CameraCalibration(
+                    camera_id="cam0",
+                    image_width=640,
+                    image_height=480,
+                    K=np.array([[500, 0, 320], [0, 500, 240], [0, 0, 1]]),
+                    D=np.zeros(5),
+                    model="pinhole"
+                )
+                projection_adapter = PinholeProjectionAdapter(default_calib)
+            
+            # Create preprocessor
+            preprocessor = VisualMeasurementPreprocessor(
+                projection_service=projection_adapter,
+                pixel_noise_std=1.0,
+                robust_kernel='huber',
+                huber_delta=1.0
+            )
+            
+            # Process preintegrated IMU and camera frames
+            if preintegrated_imu:
+                task = progress.add_task(
+                    f"Processing with camera-model-independent pipeline...", 
+                    total=len(preintegrated_imu)
+                )
+                
+                # Get keyframes
+                keyframes = []
+                if camera_data and hasattr(camera_data, 'frames'):
+                    keyframes = [f for f in camera_data.frames if f.is_keyframe]
+                elif isinstance(camera_data, list):
+                    keyframes = [f for f in camera_data if getattr(f, 'is_keyframe', False)]
+                
+                kf_idx = 0
+                for i, preint_data in enumerate(preintegrated_imu):
+                    # Convert simulation PreintegratedIMUData to our PreprocessedIMUData interface
+                    from src.estimation.interfaces import PreprocessedIMUData
+                    converted_imu = PreprocessedIMUData(
+                        from_keyframe_id=preint_data.from_keyframe_id,
+                        to_keyframe_id=preint_data.to_keyframe_id,
+                        delta_position=preint_data.delta_position,
+                        delta_velocity=preint_data.delta_velocity,
+                        delta_rotation=preint_data.delta_rotation,
+                        covariance=preint_data.covariance,
+                        delta_t=preint_data.dt,  # Convert dt to delta_t
+                        num_measurements=preint_data.num_measurements
+                    )
+                    
+                    # Predict with converted IMU data
+                    estimator_instance.predict(converted_imu, converted_imu.delta_t)
+                    
+                    # Process visual frame if we have a matching keyframe
+                    if kf_idx < len(keyframes) and keyframes[kf_idx].timestamp <= preint_data.dt * (i + 1):
+                        raw_frame = keyframes[kf_idx]
+                        
+                        # Get current state for preprocessing
+                        from src.common.data_structures import TrajectoryState, Pose
+                        current_pose = estimator_instance.current_pose
+                        current_state = TrajectoryState(
+                            pose=current_pose,
+                            velocity=estimator_instance.current_velocity,
+                            angular_velocity=None
+                        )
+                        
+                        # Preprocess the frame
+                        processed_frame = preprocessor.process_frame(
+                            raw_frame,
+                            current_state,
+                            landmarks,
+                            compute_jacobians=True,
+                            chi2_threshold=5.991
+                        )
+                        
+                        # Update with processed frame
+                        estimator_instance.update(processed_frame, landmarks)
+                        kf_idx += 1
+                    
+                    # Run optimization periodically
+                    if (i + 1) % 5 == 0:
+                        estimator_instance.optimize()
+                    
+                    progress.update(task, advance=1)
+            else:
+                console.print("[yellow]Warning: No preintegrated IMU for new-swba[/yellow]")
+        
+        elif estimator_lower == 'raw-imu-ekf' and raw_imu:
             # Use raw IMU measurements for raw-imu-ekf
             task = progress.add_task(
                 f"Processing {len(raw_imu)} raw IMU measurements...", 

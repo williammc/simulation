@@ -38,7 +38,7 @@ def run_e2e_simple(
     Args:
         duration: Simulation duration in seconds
         trajectory_type: Type of trajectory ("circle", "figure8", "spiral", "line")
-        estimator_type: SLAM estimator ("ekf", "swba", "srif")
+        estimator_type: SLAM estimator ("ekf", "swba", "srif", "new-swba")
         output_dir: Directory for output files
         sim_filename: Optional custom name for simulation output
         slam_filename: Optional custom name for SLAM output

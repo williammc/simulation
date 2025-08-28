@@ -118,16 +118,17 @@ class NewSWBAEstimator(BaseEstimator):
         
         logger.info(f"Initialized NewSWBAEstimator with window size {config.window_size}")
     
-    def initialize(self, initial_pose: Pose, initial_covariance: Optional[np.ndarray] = None):
+    def initialize(self, initial_pose: Pose, initial_covariance: Optional[np.ndarray] = None, initial_velocity: Optional[np.ndarray] = None):
         """
         Initialize estimator with initial pose.
         
         Args:
             initial_pose: Initial robot pose
             initial_covariance: Initial uncertainty (optional)
+            initial_velocity: Initial velocity (optional)
         """
         self.current_pose = initial_pose
-        self.current_velocity = np.zeros(3)
+        self.current_velocity = initial_velocity if initial_velocity is not None else np.zeros(3)
         self.current_imu_bias = {
             'accelerometer': np.zeros(3),
             'gyroscope': np.zeros(3)
@@ -168,10 +169,18 @@ class NewSWBAEstimator(BaseEstimator):
         R_curr = self.current_pose.rotation_matrix
         
         # Propagate state using pre-integrated measurements
-        # Note: These already include gravity and bias corrections
-        new_position = self.current_pose.position + R_curr @ delta_p + self.current_velocity * dt
-        new_velocity = self.current_velocity + R_curr @ delta_v
+        # The preintegrated values have gravity removed, so we need to add it back
+        # Based on IMUPreintegrator.predict() in imu_model.py
+        gravity = np.array([0, 0, -9.81])  # Gravity in world frame
+        
+        # Propagate rotation first: R_j = R_i @ delta_R
         new_rotation = R_curr @ delta_R
+        
+        # Propagate velocity: v_j = v_i + g*dt + R_i @ delta_v
+        new_velocity = self.current_velocity + gravity * dt + R_curr @ delta_v
+        
+        # Propagate position: p_j = p_i + v_i*dt + 0.5*g*dt^2 + R_i @ delta_p
+        new_position = self.current_pose.position + self.current_velocity * dt + 0.5 * gravity * dt**2 + R_curr @ delta_p
         
         # Update pose
         self.current_pose = Pose(
@@ -233,6 +242,29 @@ class NewSWBAEstimator(BaseEstimator):
         
         # Update landmark observations (for tracking, not projection)
         self._update_landmark_observations(camera_frame)
+        
+        # Apply simple visual correction if we have measurements
+        if camera_frame.measurements and len(camera_frame.measurements) > 0:
+            # Compute average residual to detect drift
+            total_residual = np.zeros(2)
+            count = 0
+            for meas in camera_frame.measurements:
+                if meas.is_valid:
+                    total_residual += meas.residual
+                    count += 1
+            
+            if count > 0:
+                avg_residual = total_residual / count
+                # Apply small correction based on visual residuals (simplified)
+                # In reality, this would be done properly in optimize()
+                correction_weight = 0.01  # Small weight to avoid instability
+                
+                # Correct position slightly based on average pixel error
+                # This is a very simplified approximation
+                if hasattr(camera_frame, 'predicted_pose') and camera_frame.predicted_pose is not None:
+                    # Use the predicted pose from preprocessing as reference
+                    pose_diff = camera_frame.predicted_pose.position - self.current_pose.position
+                    self.current_pose.position += pose_diff * correction_weight
         
         self.total_updates += 1
     
@@ -351,6 +383,10 @@ class NewSWBAEstimator(BaseEstimator):
         
         if len(self.keyframes) == 0:
             return True  # First frame is always a keyframe
+        
+        # For now, accept all frames marked as keyframes in the data
+        if hasattr(frame, 'is_keyframe') and frame.is_keyframe:
+            return True
         
         last_kf_pose = self.keyframe_poses[-1]
         
