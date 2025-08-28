@@ -56,7 +56,7 @@ def run_slam(
     
     # Validate estimator type
     estimator_lower = estimator.lower()
-    valid_estimators = ['ekf', 'swba', 'srif', 'raw-imu-ekf', 'new-swba']
+    valid_estimators = ['ekf', 'swba', 'srif', 'raw-imu-ekf', 'new-swba', 'cpp-swba']
     if estimator_lower not in valid_estimators:
         console.print(f"[red]✗ Error: Unknown estimator: {estimator}[/red]")
         console.print(f"  Available estimators: {', '.join(valid_estimators)}")
@@ -68,6 +68,8 @@ def run_slam(
         console.print(f"[yellow]  Consider using 'new-swba' for better performance.[/yellow]")
     elif estimator_lower == 'new-swba':
         console.print(f"[green]Using camera-model-independent SWBA estimator[/green]")
+    elif estimator_lower == 'cpp-swba':
+        console.print(f"[green]Using C++ SWBA estimator (camera-model-independent)[/green]")
     
     console.print(f"\n[bold]Running {estimator.upper()} Estimator[/bold]")
     console.print(f"  Input: {input_data}")
@@ -221,26 +223,32 @@ def run_slam(
             # Note: We'll need to create a preprocessor to convert raw frames to processed frames
             preprocessor = None  # Will be created later when we have camera calibration
         
+        elif estimator_lower == 'cpp-swba':
+            # C++ SWBA is run as external process - no Python instance needed
+            estimator_instance = None
+            console.print("[green]Will run C++ SWBA estimator as external process[/green]")
+        
     except Exception as e:
         console.print(f"[red]✗ Error creating estimator: {e}[/red]")
         return None
     
-    # Initialize estimator with first pose and velocity
-    if trajectory_gt and len(trajectory_gt.states) > 0:
-        initial_pose = trajectory_gt.states[0].pose
-        initial_velocity = trajectory_gt.states[0].velocity if hasattr(trajectory_gt.states[0], 'velocity') else None
-        
-        # Check if estimator supports initial velocity 
-        if estimator_lower in ['ekf', 'swba', 'srif', 'new-swba'] and initial_velocity is not None:
-            estimator_instance.initialize(initial_pose, initial_velocity=initial_velocity)
-            console.print(f"[cyan]Initialized with velocity: [{initial_velocity[0]:.2f}, {initial_velocity[1]:.2f}, {initial_velocity[2]:.2f}] m/s[/cyan]")
+    # Initialize estimator with first pose and velocity (skip for cpp-swba)
+    if estimator_lower != 'cpp-swba':
+        if trajectory_gt and len(trajectory_gt.states) > 0:
+            initial_pose = trajectory_gt.states[0].pose
+            initial_velocity = trajectory_gt.states[0].velocity if hasattr(trajectory_gt.states[0], 'velocity') else None
+            
+            # Check if estimator supports initial velocity 
+            if estimator_lower in ['ekf', 'swba', 'srif', 'new-swba'] and initial_velocity is not None:
+                estimator_instance.initialize(initial_pose, initial_velocity=initial_velocity)
+                console.print(f"[cyan]Initialized with velocity: [{initial_velocity[0]:.2f}, {initial_velocity[1]:.2f}, {initial_velocity[2]:.2f}] m/s[/cyan]")
+            else:
+                estimator_instance.initialize(initial_pose)
+                if initial_velocity is not None and np.linalg.norm(initial_velocity) > 0.1:
+                    console.print(f"[yellow]Warning: Initial velocity [{initial_velocity[0]:.2f}, {initial_velocity[1]:.2f}, {initial_velocity[2]:.2f}] m/s not used[/yellow]")
         else:
-            estimator_instance.initialize(initial_pose)
-            if initial_velocity is not None and np.linalg.norm(initial_velocity) > 0.1:
-                console.print(f"[yellow]Warning: Initial velocity [{initial_velocity[0]:.2f}, {initial_velocity[1]:.2f}, {initial_velocity[2]:.2f}] m/s not used[/yellow]")
-    else:
-        console.print("[red]✗ Error: No ground truth trajectory found[/red]")
-        return None
+            console.print("[red]✗ Error: No ground truth trajectory found[/red]")
+            return None
     
     # Run estimation
     
@@ -257,7 +265,79 @@ def run_slam(
     ) as progress:
         
         # Process based on available data and estimator type
-        if estimator_lower == 'new-swba':
+        if estimator_lower == 'cpp-swba':
+            # Run C++ SWBA estimator as external process
+            import subprocess
+            import os
+            
+            # Find the C++ executable
+            cpp_exe_paths = [
+                Path("cpp_estimation/build/examples/run_swba_estimator"),
+                Path("../cpp_estimation/build/examples/run_swba_estimator"),
+                Path(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) / "cpp_estimation/build/examples/run_swba_estimator"
+            ]
+            
+            cpp_exe = None
+            for path in cpp_exe_paths:
+                if path.exists():
+                    cpp_exe = path
+                    break
+            
+            if not cpp_exe:
+                console.print("[red]✗ Error: C++ SWBA executable not found. Please build cpp_estimation first.[/red]")
+                console.print("  Run: cd cpp_estimation/build && cmake .. && make run_swba_estimator")
+                return None
+            
+            # Prepare output directory
+            output_dir = output or Path("output/slam")
+            output_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Build command
+            cmd = [
+                str(cpp_exe),
+                "--input", str(input_data),
+                "--output", str(output_dir)
+            ]
+            
+            # Add config if provided
+            if config and config.exists():
+                cmd.extend(["--config", str(config)])
+            
+            # Add verbose flag if needed
+            if config_data.get('verbose', False):
+                cmd.append("--verbose")
+            
+            console.print(f"[cyan]Running C++ executable: {cpp_exe.name}[/cyan]")
+            
+            try:
+                # Run the C++ estimator
+                result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+                
+                # Show output
+                if result.stdout:
+                    for line in result.stdout.split('\n'):
+                        if line.strip():
+                            console.print(f"  {line}")
+                
+                # Check for output file
+                output_file = output_dir / "cpp_swba_result.json"
+                if output_file.exists():
+                    console.print(f"[green]✓ C++ SWBA completed successfully[/green]")
+                    return output_file
+                else:
+                    console.print("[red]✗ Error: Output file not created[/red]")
+                    return None
+                    
+            except subprocess.CalledProcessError as e:
+                console.print(f"[red]✗ C++ SWBA failed with exit code {e.returncode}[/red]")
+                if e.stderr:
+                    console.print(f"[red]Error output:[/red]")
+                    for line in e.stderr.split('\n'):
+                        if line.strip():
+                            console.print(f"  [red]{line}[/red]")
+                return None
+            
+        elif estimator_lower == 'new-swba':
             # Special processing for camera-model-independent SWBA
             # Create preprocessor with projection service
             from src.estimation.projection_adapters import PinholeProjectionAdapter

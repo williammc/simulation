@@ -18,3 +18,9 @@ target_link_libraries(mock_estimator PRIVATE Threads::Threads)
 
 add_executable(template_usage_example template_usage_example.cpp)
 target_link_libraries(template_usage_example PRIVATE simulation_io)
+
+add_executable(swba_example swba_example.cpp)
+target_link_libraries(swba_example PRIVATE simulation_io)
+
+add_executable(run_swba_estimator run_swba_estimator.cpp)
+target_link_libraries(run_swba_estimator PRIVATE simulation_io)

@@ -167,6 +167,17 @@ class NewSWBAEstimator(BaseEstimator):
         delta_v = imu_measurements.delta_velocity
         delta_p = imu_measurements.delta_position
         
+        # Debug output to match C++
+        if not hasattr(self, 'predict_count'):
+            self.predict_count = 0
+        if self.predict_count < 5:
+            print(f"[Python SWBA] Predict #{self.predict_count} dt={dt}")
+            print(f"  delta_p: {delta_p}")
+            print(f"  delta_v: {delta_v}")
+            print(f"  prev_pos: {self.current_pose.position}")
+            print(f"  prev_vel: {self.current_velocity}")
+        self.predict_count += 1
+        
         # Get current rotation matrix
         R_curr = self.current_pose.rotation_matrix
         
@@ -183,6 +194,12 @@ class NewSWBAEstimator(BaseEstimator):
         
         # Propagate position: p_j = p_i + v_i*dt + 0.5*g*dt^2 + R_i @ delta_p
         new_position = self.current_pose.position + self.current_velocity * dt + 0.5 * gravity * dt**2 + R_curr @ delta_p
+        
+        # Debug output after update
+        if self.predict_count <= 5:
+            print(f"  new_pos: {new_position}")
+            print(f"  new_vel: {new_velocity}")
+            print()
         
         # Update pose
         self.current_pose = Pose(
@@ -254,7 +271,8 @@ class NewSWBAEstimator(BaseEstimator):
         
         # Apply immediate visual correction using EKF-like update
         # This helps prevent drift between optimization runs
-        if camera_frame.measurements and len(camera_frame.measurements) > self.config.min_measurements_for_update:
+        # TEMPORARILY DISABLED FOR DEBUGGING
+        if False and camera_frame.measurements and len(camera_frame.measurements) > self.config.min_measurements_for_update:
             valid_measurements = [m for m in camera_frame.measurements 
                                  if m.is_valid and m.landmark_id in self.landmark_estimates]
             
@@ -271,6 +289,9 @@ class NewSWBAEstimator(BaseEstimator):
         Returns:
             True if converged, False otherwise
         """
+        # TEMPORARILY DISABLED FOR DEBUGGING
+        return True
+        
         if len(self.keyframes) < 2:
             logger.debug("Not enough keyframes for optimization")
             return True
