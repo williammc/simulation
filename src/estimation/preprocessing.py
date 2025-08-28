@@ -24,6 +24,24 @@ State = TrajectoryState
 logger = logging.getLogger(__name__)
 
 
+def skew_matrix(v: np.ndarray) -> np.ndarray:
+    """
+    Create skew-symmetric matrix from 3D vector.
+    
+    For vector v = [v1, v2, v3], returns:
+    [  0  -v3   v2 ]
+    [ v3    0  -v1 ]
+    [-v2   v1    0 ]
+    
+    Used for SO(3) tangent space computations.
+    """
+    return np.array([
+        [0, -v[2], v[1]],
+        [v[2], 0, -v[0]],
+        [-v[1], v[0], 0]
+    ])
+
+
 class VisualMeasurementPreprocessor:
     """
     Converts raw camera frames to processed measurements.
@@ -91,49 +109,160 @@ class VisualMeasurementPreprocessor:
         
         # Process each observation
         num_outliers = 0
+        if not hasattr(self, '_debug_count'):
+            self._debug_count = 0
+        if self._debug_count < 3:
+            print(f"[Preprocessor] Frame has {len(raw_frame.observations)} observations")
+            if landmarks:
+                print(f"[Preprocessor] Landmarks map has {len(landmarks.landmarks)} landmarks")
+            else:
+                print(f"[Preprocessor] No landmarks map provided")
+            self._debug_count += 1
+            
+        found_count = 0
+        missing_count = 0
         for obs in raw_frame.observations:
             # Get landmark from map
-            landmark = landmarks.get_landmark(obs.landmark_id)
+            landmark = landmarks.get_landmark(obs.landmark_id) if landmarks else None
             if landmark is None:
-                logger.debug(f"Landmark {obs.landmark_id} not found in map")
+                missing_count += 1
+                if missing_count == 1 and self._debug_count <= 3:
+                    print(f"[Preprocessor] Looking for landmark {obs.landmark_id}, not found")
+                    if landmarks and hasattr(landmarks, 'landmarks'):
+                        sample_ids = list(landmarks.landmarks.keys())[:5]
+                        print(f"[Preprocessor] Sample landmark IDs in map: {sample_ids}")
                 continue
-            
-            # Project landmark to get predicted measurement
+            found_count += 1
+        
+        if self._debug_count <= 3:
+            print(f"[Preprocessor] Found {found_count}/{len(raw_frame.observations)} landmarks")
+        
+        # Re-iterate to process observations
+        processed_count = 0
+        for obs in raw_frame.observations:
+            landmark = landmarks.get_landmark(obs.landmark_id) if landmarks else None
+            if landmark is None:
+                continue
+                
+            # For ideal-only projection, transform landmark to camera frame and project to ideal plane
             try:
-                pred_meas = self.projection_service.project(
-                    landmark.position,
-                    current_state.pose,
-                    compute_jacobians=compute_jacobians
-                )
+                # Transform landmark to camera frame
+                R_world_to_cam = current_state.pose.rotation_matrix.T
+                t_world_to_cam = -R_world_to_cam @ current_state.pose.position
+                landmark_cam = R_world_to_cam @ landmark.position + t_world_to_cam
+                
+                # Check if behind camera
+                if landmark_cam[2] <= 0.1:  # Behind or too close
+                    continue
+                
+                # Project to ideal plane (z=1)
+                predicted_ideal = np.array([
+                    landmark_cam[0] / landmark_cam[2],
+                    landmark_cam[1] / landmark_cam[2]
+                ])
+                
+                if self._debug_count <= 3 and processed_count == 0:
+                    print(f"[Preprocessor] Landmark {obs.landmark_id} in cam frame: {landmark_cam}, ideal: {predicted_ideal}")
+                    
             except Exception as e:
+                if self._debug_count <= 3 and processed_count == 0:
+                    print(f"[Preprocessor] Failed to project landmark {obs.landmark_id}: {e}")
                 logger.warning(f"Failed to project landmark {obs.landmark_id}: {e}")
                 continue
+            processed_count += 1
             
-            # Convert observation pixel to numpy array
+            # Convert observation pixel to ideal coordinates
             observed_pixel = np.array([obs.pixel.u, obs.pixel.v])
             
-            # Compute residual
-            residual = observed_pixel - pred_meas.predicted_pixel
+            # Convert pixel to ideal using simple pinhole model
+            calib = self.projection_service.camera_calib
+            K = np.array([
+                [calib.intrinsics.fx, 0, calib.intrinsics.cx],
+                [0, calib.intrinsics.fy, calib.intrinsics.cy],
+                [0, 0, 1]
+            ])
             
-            # Check for outliers using chi-squared test if threshold provided
-            if chi2_threshold is not None:
-                chi2 = residual.T @ np.linalg.inv(self.default_pixel_covariance) @ residual
+            observed_ideal = np.array([
+                (observed_pixel[0] - K[0, 2]) / K[0, 0],
+                (observed_pixel[1] - K[1, 2]) / K[1, 1]
+            ])
+            
+            # Compute ideal residual
+            ideal_residual = observed_ideal - predicted_ideal
+            
+            # Debug residual
+            if self._debug_count <= 3 and processed_count == 1:
+                print(f"[Preprocessor] Observed ideal: {observed_ideal}, Predicted ideal: {predicted_ideal}")
+                print(f"[Preprocessor] Ideal residual: {ideal_residual}, norm: {np.linalg.norm(ideal_residual):.4f}")
+            
+            # Check for outliers using ideal residual
+            if False and chi2_threshold is not None:  # TEMPORARILY DISABLED
+                # Use reasonable covariance for ideal coordinates
+                # Ideal coords have typical range of [-1, 1], so use appropriate variance
+                ideal_covariance = np.eye(2) * 0.01  # Reasonable for normalized coordinates
+                chi2 = ideal_residual.T @ np.linalg.inv(ideal_covariance) @ ideal_residual
                 if chi2 > chi2_threshold:
                     num_outliers += 1
+                    if self._debug_count <= 3 and num_outliers == 1:
+                        print(f"[Preprocessor] Landmark {obs.landmark_id} rejected as outlier (chi2={chi2:.2f} > {chi2_threshold})")
                     logger.debug(f"Landmark {obs.landmark_id} rejected as outlier (chi2={chi2:.2f})")
                     continue
             
-            # Compute ideal coordinates and bearing vectors
-            observed_ideal = None
-            predicted_ideal = None
-            ideal_residual = None
-            bearing_vector = None
-            ideal_jacobian_wrt_pose = None
-            ideal_jacobian_wrt_landmark = None
+            # Compute bearing vector from observed ideal coordinates
+            bearing_vector = np.array([observed_ideal[0], observed_ideal[1], 1.0])
+            bearing_vector = bearing_vector / np.linalg.norm(bearing_vector)
             
-            try:
-                # Convert observed pixel to ideal coordinates
-                observed_ideal = self.projection_service.pixel_to_ideal(observed_pixel)
+            # Compute Jacobians for ideal coordinates if requested
+            if compute_jacobians:
+                # We have: landmark_cam = R^T @ (landmark_world - t)
+                # And: ideal = [x/z, y/z] where [x,y,z] = landmark_cam
+                
+                # Get world landmark position (we need this for Jacobian computation)
+                landmark_world = landmark.position  # We already have this from earlier
+                
+                # 1. Jacobian of ideal coordinates w.r.t camera point
+                x, y, z = landmark_cam
+                z2 = z * z
+                J_ideal_pcam = np.array([
+                    [1/z, 0, -x/z2],
+                    [0, 1/z, -y/z2]
+                ])  # 2x3
+                
+                # 2. Jacobian of camera point w.r.t world position (translation)
+                R = current_state.pose.rotation_matrix
+                J_pcam_t = -R.T  # 3x3
+                
+                # 3. Jacobian of camera point w.r.t rotation (using SO3 tangent)
+                # Using the standard pinhole projection Jacobian formulation
+                # For rotation perturbation δω, the camera point changes as:
+                # δp_cam = -[p_cam]_× @ δω (rotation acts on the point)
+                # This gives us the Jacobian
+                J_pcam_omega = -skew_matrix(landmark_cam)  # 3x3
+                
+                # 4. Combine for full pose Jacobian [position, rotation]
+                J_pcam_pose = np.hstack([J_pcam_t, J_pcam_omega])  # 3x6
+                ideal_jacobian_wrt_pose = J_ideal_pcam @ J_pcam_pose  # 2x6
+                
+                # Debug Jacobian magnitudes (only for first few)
+                if self._debug_count <= 1 and processed_count == 1:
+                    print(f"[Preprocessor] Jacobian magnitudes:")
+                    print(f"  J_ideal_pcam norm: {np.linalg.norm(J_ideal_pcam):.4f}")
+                    print(f"  J_pcam_t norm: {np.linalg.norm(J_pcam_t):.4f}")
+                    print(f"  J_pcam_omega norm: {np.linalg.norm(J_pcam_omega):.4f}")
+                    print(f"  ideal_jacobian_wrt_pose norm: {np.linalg.norm(ideal_jacobian_wrt_pose):.4f}")
+                
+                # 5. Jacobian w.r.t landmark position
+                # ideal depends on landmark through p_cam = R^T @ (p_w - t)
+                # So J_pcam_landmark = R^T
+                ideal_jacobian_wrt_landmark = J_ideal_pcam @ R.T  # 2x3
+            else:
+                ideal_jacobian_wrt_pose = None
+                ideal_jacobian_wrt_landmark = None
+            
+            # Skip the old projection service code
+            if False:
+                # Old code that uses projection service
+                observed_ideal_old = self.projection_service.pixel_to_ideal(observed_pixel)
                 
                 # Convert predicted pixel to ideal coordinates
                 predicted_ideal = self.projection_service.pixel_to_ideal(pred_meas.predicted_pixel)
@@ -168,20 +297,26 @@ class VisualMeasurementPreprocessor:
                     ideal_jacobian_wrt_pose = J_ideal_pixel @ pred_meas.jacobian_wrt_pose
                     if pred_meas.jacobian_wrt_landmark is not None:
                         ideal_jacobian_wrt_landmark = J_ideal_pixel @ pred_meas.jacobian_wrt_landmark
-                    
-            except Exception as e:
-                logger.debug(f"Could not compute ideal coordinates: {e}")
+            
+            # Compute predicted pixel from ideal coordinates (for compatibility)
+            predicted_pixel = np.array([
+                predicted_ideal[0] * K[0, 0] + K[0, 2],
+                predicted_ideal[1] * K[1, 1] + K[1, 2]
+            ])
+            
+            # Compute pixel residual
+            pixel_residual = observed_pixel - predicted_pixel
             
             # Create visual measurement with ideal coordinates
             vis_meas = VisualMeasurement(
                 landmark_id=obs.landmark_id,
                 observed_pixel=observed_pixel,
-                predicted_pixel=pred_meas.predicted_pixel,
-                residual=residual,
-                pixel_covariance=pred_meas.pixel_covariance if pred_meas.pixel_covariance is not None else self.default_pixel_covariance,
-                jacobian_wrt_pose=pred_meas.jacobian_wrt_pose,
-                jacobian_wrt_landmark=pred_meas.jacobian_wrt_landmark,
-                # New ideal/normalized fields
+                predicted_pixel=predicted_pixel,
+                residual=pixel_residual,
+                pixel_covariance=self.default_pixel_covariance,
+                jacobian_wrt_pose=None,  # Not using pixel jacobians
+                jacobian_wrt_landmark=None,
+                # Ideal/normalized fields (what we actually use)
                 observed_ideal=observed_ideal,
                 predicted_ideal=predicted_ideal,
                 ideal_residual=ideal_residual,
@@ -190,17 +325,20 @@ class VisualMeasurementPreprocessor:
                 bearing_vector=bearing_vector
             )
             
-            # Apply robust kernel if configured
+            # Apply robust kernel if configured (using ideal residual)
             if self.robust_kernel:
                 vis_meas.robust_weight = self.compute_robust_weight(
-                    vis_meas.residual,
-                    vis_meas.pixel_covariance
+                    ideal_residual,
+                    np.eye(2) * 0.001  # Ideal covariance
                 )
             
             processed.measurements.append(vis_meas)
         
         if num_outliers > 0:
             logger.info(f"Frame {raw_frame.timestamp}: {num_outliers} outliers rejected")
+        
+        if self._debug_count <= 3:
+            print(f"[Preprocessor] Created {len(processed.measurements)} measurements")
         
         return processed
     

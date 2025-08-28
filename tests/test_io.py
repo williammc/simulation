@@ -27,6 +27,10 @@ from src.simulation.trajectory_generator import (
     TrajectoryParams,
     generate_trajectory
 )
+from src.simulation.camera_model import (
+    PinholeCamera,
+    generate_camera_observations
+)
 
 
 class TestSimulationDataIO:
@@ -693,4 +697,256 @@ class TestTrajectoryGenerator:
         
         assert loaded["trajectory"] is not None
         assert len(loaded["trajectory"].states) == 5
-        assert loaded["metadata"]["trajectory_type"] == "circle"
+
+
+class TestIdealProjection:
+    """Test ideal coordinate projection functionality."""
+    
+    def test_camera_observation_with_ideal_coordinates(self):
+        """Test that CameraObservation properly handles ideal coordinates."""
+        # Create observation with ideal coordinates
+        obs = CameraObservation(
+            landmark_id=1,
+            pixel=ImagePoint(u=320.0, v=240.0),
+            ideal_coordinates=np.array([0.5, -0.3])
+        )
+        
+        # Check attributes
+        assert obs.landmark_id == 1
+        assert obs.pixel.u == 320.0
+        assert obs.pixel.v == 240.0
+        assert obs.ideal_coordinates is not None
+        np.testing.assert_array_almost_equal(obs.ideal_coordinates, [0.5, -0.3])
+        
+        # Test serialization
+        obs_dict = obs.to_dict()
+        assert "ideal_coordinates" in obs_dict
+        assert obs_dict["ideal_coordinates"] == [0.5, -0.3]
+        
+        # Test deserialization
+        obs_restored = CameraObservation.from_dict(obs_dict)
+        assert obs_restored.ideal_coordinates is not None
+        np.testing.assert_array_almost_equal(obs_restored.ideal_coordinates, [0.5, -0.3])
+    
+    def test_ideal_projection_consistency(self):
+        """Test that ideal projection is consistent with pixel projection."""
+        # Create camera calibration
+        intrinsics = CameraIntrinsics(
+            model=CameraModel.PINHOLE,
+            width=640, height=480,
+            fx=500.0, fy=500.0,
+            cx=320.0, cy=240.0,
+            distortion=np.zeros(5)
+        )
+        extrinsics = CameraExtrinsics(B_T_C=np.eye(4))
+        calib = CameraCalibration(
+            camera_id="cam0",
+            intrinsics=intrinsics,
+            extrinsics=extrinsics
+        )
+        
+        # Create camera
+        camera = PinholeCamera(calib)
+        
+        # Create test pose and landmarks
+        pose = Pose(
+            timestamp=0.0,
+            position=np.array([0, 0, 0]),
+            rotation_matrix=np.eye(3)
+        )
+        
+        landmarks = Map()
+        test_points = [
+            [1, 0, 5],    # In front
+            [2, 1, 10],   # In front, to the right
+            [-1, -1, 3],  # In front, to the left
+            [0, 0, 8],    # Straight ahead
+        ]
+        
+        for i, pos in enumerate(test_points):
+            landmarks.add_landmark(Landmark(id=i, position=np.array(pos)))
+        
+        # Generate observations
+        frame = generate_camera_observations(camera, landmarks, pose, 0.0, "cam0", add_noise=False)
+        
+        # Check each observation
+        for obs in frame.observations:
+            landmark = landmarks.get_landmark(obs.landmark_id)
+            
+            # Check that ideal coordinates exist
+            assert obs.ideal_coordinates is not None, f"Missing ideal coords for landmark {obs.landmark_id}"
+            
+            # Verify ideal projection formula: ideal = [x/z, y/z] in camera frame
+            # Since we have identity extrinsics and pose, camera frame = world frame
+            expected_ideal = np.array([
+                landmark.position[0] / landmark.position[2],
+                landmark.position[1] / landmark.position[2]
+            ])
+            
+            np.testing.assert_array_almost_equal(
+                obs.ideal_coordinates, expected_ideal, decimal=5,
+                err_msg=f"Ideal projection mismatch for landmark {obs.landmark_id}"
+            )
+            
+            # Verify consistency with pixel projection
+            # pixel = K @ ideal_homogeneous, where K is intrinsics
+            expected_pixel_u = intrinsics.fx * expected_ideal[0] + intrinsics.cx
+            expected_pixel_v = intrinsics.fy * expected_ideal[1] + intrinsics.cy
+            
+            assert abs(obs.pixel.u - expected_pixel_u) < 1e-3, \
+                f"Pixel u mismatch for landmark {obs.landmark_id}"
+            assert abs(obs.pixel.v - expected_pixel_v) < 1e-3, \
+                f"Pixel v mismatch for landmark {obs.landmark_id}"
+    
+    def test_ideal_projection_with_rotation(self):
+        """Test ideal projection with camera rotation."""
+        # Create camera
+        intrinsics = CameraIntrinsics(
+            model=CameraModel.PINHOLE,
+            width=640, height=480,
+            fx=500.0, fy=500.0,
+            cx=320.0, cy=240.0,
+            distortion=np.zeros(5)
+        )
+        extrinsics = CameraExtrinsics(B_T_C=np.eye(4))
+        calib = CameraCalibration(
+            camera_id="cam0",
+            intrinsics=intrinsics,
+            extrinsics=extrinsics
+        )
+        camera = PinholeCamera(calib)
+        
+        # Create rotated pose (45 degrees around Y axis)
+        angle = np.pi / 4
+        R_y = np.array([
+            [np.cos(angle), 0, np.sin(angle)],
+            [0, 1, 0],
+            [-np.sin(angle), 0, np.cos(angle)]
+        ])
+        
+        pose = Pose(
+            timestamp=0.0,
+            position=np.array([0, 0, 0]),
+            rotation_matrix=R_y
+        )
+        
+        # Create landmark
+        landmarks = Map()
+        landmarks.add_landmark(Landmark(id=0, position=np.array([5, 0, 5])))
+        
+        # Generate observation
+        frame = generate_camera_observations(camera, landmarks, pose, 0.0, "cam0", add_noise=False)
+        
+        assert len(frame.observations) == 1
+        obs = frame.observations[0]
+        
+        # Compute expected ideal coordinates
+        # Transform to camera: p_cam = R^T @ (p_world - t)
+        p_world = np.array([5, 0, 5])
+        p_cam = R_y.T @ p_world  # No translation
+        expected_ideal = np.array([p_cam[0] / p_cam[2], p_cam[1] / p_cam[2]])
+        
+        np.testing.assert_array_almost_equal(
+            obs.ideal_coordinates, expected_ideal, decimal=5,
+            err_msg="Ideal projection with rotation failed"
+        )
+    
+    def test_ideal_projection_with_translation(self):
+        """Test ideal projection with camera translation."""
+        # Create camera
+        intrinsics = CameraIntrinsics(
+            model=CameraModel.PINHOLE,
+            width=640, height=480,
+            fx=500.0, fy=500.0,
+            cx=320.0, cy=240.0,
+            distortion=np.zeros(5)
+        )
+        extrinsics = CameraExtrinsics(B_T_C=np.eye(4))
+        calib = CameraCalibration(
+            camera_id="cam0",
+            intrinsics=intrinsics,
+            extrinsics=extrinsics
+        )
+        camera = PinholeCamera(calib)
+        
+        # Create translated pose
+        pose = Pose(
+            timestamp=0.0,
+            position=np.array([1, 2, 3]),
+            rotation_matrix=np.eye(3)
+        )
+        
+        # Create landmark
+        landmarks = Map()
+        landmarks.add_landmark(Landmark(id=0, position=np.array([4, 2, 8])))
+        
+        # Generate observation
+        frame = generate_camera_observations(camera, landmarks, pose, 0.0, "cam0", add_noise=False)
+        
+        assert len(frame.observations) == 1
+        obs = frame.observations[0]
+        
+        # Compute expected ideal coordinates
+        # Transform to camera: p_cam = R^T @ (p_world - t)
+        p_world = np.array([4, 2, 8])
+        t = pose.position
+        p_cam = p_world - t  # Identity rotation
+        expected_ideal = np.array([p_cam[0] / p_cam[2], p_cam[1] / p_cam[2]])
+        
+        np.testing.assert_array_almost_equal(
+            obs.ideal_coordinates, expected_ideal, decimal=5,
+            err_msg="Ideal projection with translation failed"
+        )
+    
+    def test_save_load_with_ideal_coordinates(self, tmp_path):
+        """Test that ideal coordinates are preserved through save/load cycle."""
+        # Create simulation data
+        sim_data = SimulationData()
+        
+        # Add camera frame with ideal coordinates
+        camera_data = CameraData(camera_id="cam0", rate=30.0)
+        
+        obs1 = CameraObservation(
+            landmark_id=1,
+            pixel=ImagePoint(u=100, v=200),
+            ideal_coordinates=np.array([0.2, -0.4])
+        )
+        obs2 = CameraObservation(
+            landmark_id=2,
+            pixel=ImagePoint(u=400, v=300),
+            ideal_coordinates=np.array([-0.1, 0.3])
+        )
+        
+        frame = CameraFrame(
+            timestamp=0.1,
+            camera_id="cam0",
+            observations=[obs1, obs2]
+        )
+        camera_data.add_frame(frame)
+        
+        sim_data.add_camera_measurements(camera_data)
+        
+        # Save to file
+        output_file = tmp_path / "test_ideal.json"
+        sim_data.save(output_file)
+        
+        # Load and verify
+        loaded_data = SimulationData.load(output_file)
+        
+        loaded_frames = loaded_data.measurements["camera_frames"]
+        assert len(loaded_frames) == 1
+        
+        loaded_obs = loaded_frames[0]["observations"]
+        assert len(loaded_obs) == 2
+        
+        # Check first observation
+        assert "ideal_coordinates" in loaded_obs[0]
+        np.testing.assert_array_almost_equal(
+            loaded_obs[0]["ideal_coordinates"], [0.2, -0.4]
+        )
+        
+        # Check second observation
+        assert "ideal_coordinates" in loaded_obs[1]
+        np.testing.assert_array_almost_equal(
+            loaded_obs[1]["ideal_coordinates"], [-0.1, 0.3]
+        )

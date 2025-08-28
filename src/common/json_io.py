@@ -161,12 +161,7 @@ class SimulationData:
         for frame in camera_data.frames:
             observations = []
             for obs in frame.observations:
-                obs_dict = {
-                    "landmark_id": obs.landmark_id,
-                    "pixel": [obs.pixel.u, obs.pixel.v]
-                }
-                if obs.descriptor is not None:
-                    obs_dict["descriptor"] = obs.descriptor.tolist()
+                obs_dict = obs.to_dict()
                 observations.append(obs_dict)
             
             frame_dict = {
@@ -363,15 +358,7 @@ class SimulationData:
             
             observations = []
             for obs_dict in frame_dict["observations"]:
-                descriptor = None
-                if "descriptor" in obs_dict:
-                    descriptor = np.array(obs_dict["descriptor"])
-                
-                observation = CameraObservation(
-                    landmark_id=obs_dict["landmark_id"],
-                    pixel=ImagePoint(u=obs_dict["pixel"][0], v=obs_dict["pixel"][1]),
-                    descriptor=descriptor
-                )
+                observation = CameraObservation.from_dict(obs_dict)
                 observations.append(observation)
             
             frame = CameraFrame(

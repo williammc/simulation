@@ -49,7 +49,7 @@ class NewSWBAConfig(EstimatorConfig):
     optimization_convergence_threshold: float = 1e-6
     use_robust_kernels: bool = True  # Uses pre-computed robust weights
     min_measurements_for_update: int = 5  # Minimum measurements for visual correction
-    visual_correction_gain: float = 0.3  # Gain for EKF-style visual updates
+    visual_correction_gain: float = 0.1  # Gain for EKF-style visual updates (moderate gain)
     
     # Marginalization parameters
     marginalization_strategy: str = "oldest"  # "oldest", "information"
@@ -235,14 +235,10 @@ class NewSWBAEstimator(BaseEstimator):
         logger.debug(f"Update called with {len(camera_frame.measurements)} measurements")
         if landmarks:
             logger.debug(f"Landmarks Map provided with {len(landmarks.landmarks)} landmarks")
-            # Initialize landmark estimates from the provided Map if needed
-            for lid, landmark in landmarks.landmarks.items():
-                if lid not in self.landmark_estimates:
-                    self.landmark_estimates[lid] = landmark.position.copy()
-                    if hasattr(landmark, 'covariance') and landmark.covariance is not None:
-                        self.landmark_covariances[lid] = landmark.covariance.copy()
-                    else:
-                        self.landmark_covariances[lid] = np.eye(3)
+            # Store landmarks map for lookup during landmark initialization if needed
+            self.landmarks_map = landmarks
+            # Note: We only initialize landmarks when they have measurements,
+            # not all landmarks from the map automatically
         
         if self.current_pose is None:
             logger.warning("Cannot update: estimator not initialized")
@@ -278,6 +274,11 @@ class NewSWBAEstimator(BaseEstimator):
                                  if m.is_valid and m.landmark_id in self.landmark_estimates]
             
             print(f"[Python] Frame has {len(camera_frame.measurements)} measurements, {len(valid_measurements)} valid")
+            print(f"[Python] Landmark estimates: {len(self.landmark_estimates)} total")
+            if len(valid_measurements) == 0 and len(camera_frame.measurements) > 0:
+                sample_meas = camera_frame.measurements[0]
+                print(f"[Python] Sample measurement landmark_id: {sample_meas.landmark_id}, is_valid: {sample_meas.is_valid}")
+                print(f"[Python] Landmark {sample_meas.landmark_id} in estimates: {sample_meas.landmark_id in self.landmark_estimates}")
             
             if len(valid_measurements) >= 3:
                 # Perform EKF-style visual update
@@ -294,8 +295,7 @@ class NewSWBAEstimator(BaseEstimator):
         Returns:
             True if converged, False otherwise
         """
-        # TEMPORARILY DISABLED FOR DEBUGGING
-        return True
+        # Optimization enabled for proper testing
         
         if len(self.keyframes) < 2:
             logger.debug("Not enough keyframes for optimization")
@@ -628,7 +628,7 @@ class NewSWBAEstimator(BaseEstimator):
         """
         Apply visual correction using EKF-style update with ideal coordinates.
         
-        Uses pre-computed Jacobians from measurements to correct pose.
+        Uses pre-computed Jacobians from preprocessing for better accuracy.
         Prefers ideal coordinates for better numerical stability.
         """
         # Stack residuals and Jacobians
@@ -637,17 +637,24 @@ class NewSWBAEstimator(BaseEstimator):
         
         num_ideal = 0
         num_pixel = 0
+        num_skipped = 0
         
         for meas in measurements:
-            # Prefer ideal coordinates if available
+            # Prefer ideal coordinates with preprocessed Jacobians
             if meas.has_ideal_coordinates and meas.ideal_jacobian_wrt_pose is not None:
-                # Use ideal coordinates for better numerical stability
+                # Use preprocessed ideal coordinates and Jacobians
                 residual = meas.ideal_residual
                 jacobian = meas.ideal_jacobian_wrt_pose[:, :6] if meas.ideal_jacobian_wrt_pose.shape[1] >= 6 else meas.ideal_jacobian_wrt_pose
                 
-                # Use smaller covariance for ideal coordinates (they're normalized)
-                measurement_info = np.eye(2) * meas.robust_weight * 1000.0  # Higher weight for ideal coords
+                # Use appropriate weight for ideal coordinates
+                # Ideal coords have typical noise ~0.003 (from context.md)
+                ideal_std = 0.003
+                measurement_info = np.eye(2) * meas.robust_weight / (ideal_std ** 2)
                 num_ideal += 1
+                
+                # Accumulate information
+                H_pose += jacobian.T @ measurement_info @ jacobian
+                b_pose += jacobian.T @ measurement_info @ residual
                 
             elif meas.jacobian_wrt_pose is not None:
                 # Fall back to pixel coordinates
@@ -659,6 +666,7 @@ class NewSWBAEstimator(BaseEstimator):
                 num_pixel += 1
                 
             else:
+                num_skipped += 1
                 continue
             
             # Accumulate information
@@ -677,7 +685,7 @@ class NewSWBAEstimator(BaseEstimator):
             gain = self.config.visual_correction_gain
             
             # Debug output
-            print(f"[Python Visual] {num_ideal+num_pixel} measurements, correction: {-gain * delta_pose[:3]}")
+            print(f"[Python Visual] {num_ideal+num_pixel} measurements ({num_skipped} skipped), correction: {-gain * delta_pose[:3]}")
             
             # Update position
             self.current_pose.position -= gain * delta_pose[:3]

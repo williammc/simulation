@@ -201,6 +201,7 @@ class CameraObservation:
     landmark_id: int  # ID of the observed landmark
     pixel: ImagePoint  # 2D pixel coordinates
     descriptor: Optional[np.ndarray] = None  # Feature descriptor (if available)
+    ideal_coordinates: Optional[np.ndarray] = None  # Normalized/ideal coordinates (x/z, y/z) on z=1 plane
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -210,6 +211,8 @@ class CameraObservation:
         }
         if self.descriptor is not None:
             result["descriptor"] = self.descriptor.tolist()
+        if self.ideal_coordinates is not None:
+            result["ideal_coordinates"] = self.ideal_coordinates.tolist()
         return result
     
     @classmethod
@@ -219,10 +222,15 @@ class CameraObservation:
         if "descriptor" in data and data["descriptor"] is not None:
             descriptor = np.array(data["descriptor"])
         
+        ideal_coordinates = None
+        if "ideal_coordinates" in data and data["ideal_coordinates"] is not None:
+            ideal_coordinates = np.array(data["ideal_coordinates"])
+        
         return cls(
             landmark_id=data["landmark_id"],
             pixel=ImagePoint.from_dict(data["pixel"]),
-            descriptor=descriptor
+            descriptor=descriptor,
+            ideal_coordinates=ideal_coordinates
         )
 
 
