@@ -216,6 +216,14 @@ class NewSWBAEstimator(BaseEstimator):
         logger.debug(f"Update called with {len(camera_frame.measurements)} measurements")
         if landmarks:
             logger.debug(f"Landmarks Map provided with {len(landmarks.landmarks)} landmarks")
+            # Initialize landmark estimates from the provided Map if needed
+            for lid, landmark in landmarks.landmarks.items():
+                if lid not in self.landmark_estimates:
+                    self.landmark_estimates[lid] = landmark.position.copy()
+                    if hasattr(landmark, 'covariance') and landmark.covariance is not None:
+                        self.landmark_covariances[lid] = landmark.covariance.copy()
+                    else:
+                        self.landmark_covariances[lid] = np.eye(3)
         
         if self.current_pose is None:
             logger.warning("Cannot update: estimator not initialized")
@@ -471,20 +479,35 @@ class NewSWBAEstimator(BaseEstimator):
                     continue
                 lm_idx = landmark_idx_map[meas.landmark_id]
                 
-                # Add residual (already computed in preprocessing)
-                total_residual.extend(meas.residual * meas.robust_weight)
+                # Prefer ideal coordinates if available
+                if meas.has_ideal_coordinates and meas.ideal_residual is not None:
+                    # Use ideal coordinates for better numerical stability
+                    residual = meas.ideal_residual
+                    jacobian_pose = meas.ideal_jacobian_wrt_pose
+                    jacobian_landmark = meas.ideal_jacobian_wrt_landmark
+                    # Scale weight higher for ideal coordinates
+                    weight = meas.robust_weight * 10.0  # Boost weight for ideal coords
+                else:
+                    # Fall back to pixel coordinates
+                    residual = meas.residual
+                    jacobian_pose = meas.jacobian_wrt_pose
+                    jacobian_landmark = meas.jacobian_wrt_landmark
+                    weight = meas.robust_weight
+                
+                # Add weighted residual
+                total_residual.extend(residual * weight)
                 
                 # Build Jacobian row (simplified: only position parts)
                 J_row = np.zeros((2, state_dim))
                 
-                # Jacobian w.r.t. pose position (first 3 columns of jacobian_wrt_pose)
-                if meas.jacobian_wrt_pose is not None and meas.jacobian_wrt_pose.shape[1] >= 3:
-                    J_row[:, kf_idx*3:(kf_idx+1)*3] = meas.jacobian_wrt_pose[:, :3] * meas.robust_weight
+                # Jacobian w.r.t. pose position (first 3 columns of jacobian)
+                if jacobian_pose is not None and jacobian_pose.shape[1] >= 3:
+                    J_row[:, kf_idx*3:(kf_idx+1)*3] = jacobian_pose[:, :3] * weight
                 
                 # Jacobian w.r.t. landmark position
-                if meas.jacobian_wrt_landmark is not None:
+                if jacobian_landmark is not None:
                     lm_offset = num_poses * 3 + lm_idx * 3
-                    J_row[:, lm_offset:lm_offset+3] = meas.jacobian_wrt_landmark * meas.robust_weight
+                    J_row[:, lm_offset:lm_offset+3] = jacobian_landmark * weight
                 
                 jacobian_rows.append(J_row)
             
@@ -537,29 +560,32 @@ class NewSWBAEstimator(BaseEstimator):
     
     def _initialize_new_landmarks(self, camera_frame: ProcessedVisualFrame):
         """
-        Initialize new landmarks from measurements.
+        Initialize new landmarks from measurements using ideal coordinates or bearing vectors.
         
-        For new-swba, we use simple triangulation based on current pose and pixel observations.
+        For new-swba, we use bearing vectors for triangulation when available.
         """
         for measurement in camera_frame.measurements:
             if measurement.landmark_id not in self.landmark_estimates:
-                # Simple initialization: place landmark at a default depth in front of camera
-                # This is a heuristic that will be refined by optimization
+                # Default depth for initialization
                 default_depth = 5.0  # meters
                 
-                # Convert pixel to normalized coordinates
-                # Assuming image size 640x480 and approximate focal length
-                img_width, img_height = 640, 480
-                focal_length = 500.0  # Approximate
-                
-                # Convert pixel to camera coordinates
-                cx = img_width / 2
-                cy = img_height / 2
-                x_cam = (measurement.observed_pixel[0] - cx) * default_depth / focal_length
-                y_cam = (measurement.observed_pixel[1] - cy) * default_depth / focal_length
-                z_cam = default_depth
-                
-                point_camera = np.array([x_cam, y_cam, z_cam])
+                if measurement.bearing_vector is not None:
+                    # Use bearing vector for more accurate initialization
+                    point_camera = measurement.bearing_vector * default_depth
+                elif measurement.observed_ideal is not None:
+                    # Use ideal coordinates
+                    x_ideal, y_ideal = measurement.observed_ideal
+                    # Create 3D point from ideal coordinates
+                    point_camera = np.array([x_ideal * default_depth, y_ideal * default_depth, default_depth])
+                else:
+                    # Fall back to pixel coordinates with hardcoded intrinsics
+                    img_width, img_height = 640, 480
+                    focal_length = 500.0
+                    cx = img_width / 2
+                    cy = img_height / 2
+                    x_cam = (measurement.observed_pixel[0] - cx) * default_depth / focal_length
+                    y_cam = (measurement.observed_pixel[1] - cy) * default_depth / focal_length
+                    point_camera = np.array([x_cam, y_cam, default_depth])
                 
                 # Transform to world frame
                 R = self.current_pose.rotation_matrix
@@ -569,32 +595,50 @@ class NewSWBAEstimator(BaseEstimator):
                 self.landmark_estimates[measurement.landmark_id] = point_world
                 self.landmark_covariances[measurement.landmark_id] = np.eye(3) * 1.0  # Higher uncertainty for initialization
                 
-                logger.debug(f"Initialized landmark {measurement.landmark_id} at depth {default_depth}m")
+                logger.debug(f"Initialized landmark {measurement.landmark_id} at depth {default_depth}m using {'bearing' if measurement.bearing_vector is not None else 'ideal' if measurement.observed_ideal is not None else 'pixel'} coords")
     
     
     def _apply_visual_correction(self, measurements: List[Any], camera_frame: Any):
         """
-        Apply visual correction using EKF-style update.
+        Apply visual correction using EKF-style update with ideal coordinates.
         
         Uses pre-computed Jacobians from measurements to correct pose.
+        Prefers ideal coordinates for better numerical stability.
         """
         # Stack residuals and Jacobians
         H_pose = np.zeros((6, 6))  # Information matrix for pose
         b_pose = np.zeros(6)  # Information vector
         
+        num_ideal = 0
+        num_pixel = 0
+        
         for meas in measurements:
-            if meas.jacobian_wrt_pose is None:
-                continue
+            # Prefer ideal coordinates if available
+            if meas.has_ideal_coordinates and meas.ideal_jacobian_wrt_pose is not None:
+                # Use ideal coordinates for better numerical stability
+                residual = meas.ideal_residual
+                jacobian = meas.ideal_jacobian_wrt_pose[:, :6] if meas.ideal_jacobian_wrt_pose.shape[1] >= 6 else meas.ideal_jacobian_wrt_pose
                 
-            # Get measurement covariance (inverse of information)
-            # Use robust weight to downweight outliers
-            measurement_info = np.eye(2) * meas.robust_weight / (meas.covariance[0, 0] if hasattr(meas, 'covariance') else 1.0)
+                # Use smaller covariance for ideal coordinates (they're normalized)
+                measurement_info = np.eye(2) * meas.robust_weight * 1000.0  # Higher weight for ideal coords
+                num_ideal += 1
+                
+            elif meas.jacobian_wrt_pose is not None:
+                # Fall back to pixel coordinates
+                residual = meas.residual
+                jacobian = meas.jacobian_wrt_pose[:, :6] if meas.jacobian_wrt_pose.shape[1] >= 6 else meas.jacobian_wrt_pose
+                
+                # Use pixel covariance
+                measurement_info = np.eye(2) * meas.robust_weight / (meas.pixel_covariance[0, 0] if meas.pixel_covariance is not None else 1.0)
+                num_pixel += 1
+                
+            else:
+                continue
             
             # Accumulate information
             # H = J^T * W * J, where W is measurement information
-            J_pose = meas.jacobian_wrt_pose[:, :6] if meas.jacobian_wrt_pose.shape[1] >= 6 else meas.jacobian_wrt_pose
-            H_pose += J_pose.T @ measurement_info @ J_pose
-            b_pose += J_pose.T @ measurement_info @ meas.residual
+            H_pose += jacobian.T @ measurement_info @ jacobian
+            b_pose += jacobian.T @ measurement_info @ residual
         
         # Add regularization to prevent singular matrix
         H_pose += np.eye(6) * 1e-6
@@ -624,7 +668,8 @@ class NewSWBAEstimator(BaseEstimator):
             
             correction_norm = np.linalg.norm(delta_pose[:3])
             if correction_norm > 0.01:  # Only log significant corrections
-                logger.debug(f"Applied visual correction: pos={correction_norm*gain:.4f}m, "
+                logger.debug(f"Applied visual correction (ideal:{num_ideal}, pixel:{num_pixel}): "
+                            f"pos={correction_norm*gain:.4f}m, "
                             f"rot={np.linalg.norm(delta_pose[3:6] if len(delta_pose) >= 6 else [0])*gain:.4f}rad")
             
         except np.linalg.LinAlgError:

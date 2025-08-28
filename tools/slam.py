@@ -96,7 +96,7 @@ def run_slam(
         # Extract components
         if isinstance(sim_data, dict):
             trajectory_gt = sim_data.get('trajectory')
-            landmarks = sim_data.get('landmarks')
+            landmarks_data = sim_data.get('landmarks')
             camera_data = sim_data.get('camera_data')
             preintegrated_imu = sim_data.get('preintegrated_imu', [])
             # Try both possible keys for raw IMU
@@ -113,7 +113,7 @@ def run_slam(
         else:
             # Handle object-based format
             trajectory_gt = getattr(sim_data, 'ground_truth_trajectory', None)
-            landmarks = getattr(sim_data, 'landmarks', None)
+            landmarks_data = getattr(sim_data, 'landmarks', None)
             camera_data = getattr(sim_data, 'camera_measurements', None)
             preintegrated_imu = getattr(sim_data, 'preintegrated_imu', [])
             # Try both possible attributes for raw IMU
@@ -127,6 +127,27 @@ def run_slam(
             camera_calibrations = getattr(sim_data, 'camera_calibrations', [])
             imu_calibrations = getattr(sim_data, 'imu_calibrations', [])
         
+        # Convert landmarks to Map object
+        from src.common.data_structures import Map, Landmark
+        landmarks = Map()
+        if landmarks_data:
+            if isinstance(landmarks_data, dict):
+                for lid, lm_data in landmarks_data.items():
+                    if isinstance(lm_data, dict):
+                        landmarks.add_landmark(Landmark(
+                            id=int(lid) if isinstance(lid, str) else lid,
+                            position=np.array(lm_data.get('position', [0, 0, 0])),
+                            covariance=np.array(lm_data.get('covariance', np.eye(3)))
+                        ))
+                    elif hasattr(lm_data, 'position'):
+                        landmarks.add_landmark(Landmark(
+                            id=int(lid) if isinstance(lid, str) else lid,
+                            position=np.array(lm_data.position),
+                            covariance=np.array(lm_data.covariance) if hasattr(lm_data, 'covariance') else np.eye(3)
+                        ))
+            elif hasattr(landmarks_data, 'landmarks'):
+                # Already a Map object
+                landmarks = landmarks_data
         
     except Exception as e:
         console.print(f"[red]✗ Error loading simulation data: {e}[/red]")

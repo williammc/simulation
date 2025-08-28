@@ -123,7 +123,56 @@ class VisualMeasurementPreprocessor:
                     logger.debug(f"Landmark {obs.landmark_id} rejected as outlier (chi2={chi2:.2f})")
                     continue
             
-            # Create visual measurement
+            # Compute ideal coordinates and bearing vectors
+            observed_ideal = None
+            predicted_ideal = None
+            ideal_residual = None
+            bearing_vector = None
+            ideal_jacobian_wrt_pose = None
+            ideal_jacobian_wrt_landmark = None
+            
+            try:
+                # Convert observed pixel to ideal coordinates
+                observed_ideal = self.projection_service.pixel_to_ideal(observed_pixel)
+                
+                # Convert predicted pixel to ideal coordinates
+                predicted_ideal = self.projection_service.pixel_to_ideal(pred_meas.predicted_pixel)
+                
+                # Compute ideal residual
+                ideal_residual = observed_ideal - predicted_ideal
+                
+                # Get bearing vector for observed pixel
+                bearing_vector = self.projection_service.pixel_to_bearing(observed_pixel)
+                
+                # If we have Jacobians, transform them to ideal space
+                if compute_jacobians and pred_meas.jacobian_wrt_pose is not None:
+                    # Get the transformation Jacobian from pixel to ideal
+                    # This is approximately the inverse of the intrinsics matrix
+                    if hasattr(self.projection_service, 'camera_calib'):
+                        calib = self.projection_service.camera_calib
+                        if hasattr(calib, 'intrinsics'):
+                            fx = calib.intrinsics.fx
+                            fy = calib.intrinsics.fy
+                        elif hasattr(calib, 'K'):
+                            fx = calib.K[0,0]
+                            fy = calib.K[1,1]
+                        else:
+                            fx = fy = 500.0
+                    else:
+                        fx = fy = 500.0
+                    
+                    # Jacobian of ideal w.r.t. pixel is diag(1/fx, 1/fy)
+                    J_ideal_pixel = np.diag([1.0/fx, 1.0/fy])
+                    
+                    # Transform Jacobians to ideal space
+                    ideal_jacobian_wrt_pose = J_ideal_pixel @ pred_meas.jacobian_wrt_pose
+                    if pred_meas.jacobian_wrt_landmark is not None:
+                        ideal_jacobian_wrt_landmark = J_ideal_pixel @ pred_meas.jacobian_wrt_landmark
+                    
+            except Exception as e:
+                logger.debug(f"Could not compute ideal coordinates: {e}")
+            
+            # Create visual measurement with ideal coordinates
             vis_meas = VisualMeasurement(
                 landmark_id=obs.landmark_id,
                 observed_pixel=observed_pixel,
@@ -131,7 +180,14 @@ class VisualMeasurementPreprocessor:
                 residual=residual,
                 pixel_covariance=pred_meas.pixel_covariance if pred_meas.pixel_covariance is not None else self.default_pixel_covariance,
                 jacobian_wrt_pose=pred_meas.jacobian_wrt_pose,
-                jacobian_wrt_landmark=pred_meas.jacobian_wrt_landmark
+                jacobian_wrt_landmark=pred_meas.jacobian_wrt_landmark,
+                # New ideal/normalized fields
+                observed_ideal=observed_ideal,
+                predicted_ideal=predicted_ideal,
+                ideal_residual=ideal_residual,
+                ideal_jacobian_wrt_pose=ideal_jacobian_wrt_pose,
+                ideal_jacobian_wrt_landmark=ideal_jacobian_wrt_landmark,
+                bearing_vector=bearing_vector
             )
             
             # Apply robust kernel if configured

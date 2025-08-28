@@ -33,9 +33,23 @@ class VisualMeasurement:
     # Measurement uncertainty
     pixel_covariance: np.ndarray  # shape: (2, 2)
     
+    # Ideal/Normalized coordinates (camera-model independent)
+    # These are in the ideal pinhole camera plane (z=1)
+    observed_ideal: Optional[np.ndarray] = None  # shape: (2,) - undistorted normalized coordinates
+    predicted_ideal: Optional[np.ndarray] = None  # shape: (2,) - predicted normalized coordinates
+    ideal_residual: Optional[np.ndarray] = None  # shape: (2,) - residual in ideal plane
+    
     # Optional pre-computed Jacobians for optimization
     jacobian_wrt_pose: Optional[np.ndarray] = None  # shape: (2, 6) for SE(3) or (2, 15) for full state
     jacobian_wrt_landmark: Optional[np.ndarray] = None  # shape: (2, 3)
+    
+    # Jacobians in ideal/normalized coordinates (more stable for optimization)
+    ideal_jacobian_wrt_pose: Optional[np.ndarray] = None  # shape: (2, 6) or (2, 15)
+    ideal_jacobian_wrt_landmark: Optional[np.ndarray] = None  # shape: (2, 3)
+    
+    # Bearing vector and depth (for triangulation)
+    bearing_vector: Optional[np.ndarray] = None  # shape: (3,) - unit vector in camera frame
+    estimated_depth: Optional[float] = None  # estimated distance along bearing vector
     
     # Pre-computed robust weight (1.0 for no robustification)
     robust_weight: float = 1.0
@@ -50,6 +64,23 @@ class VisualMeasurement:
         self.predicted_pixel = np.asarray(self.predicted_pixel).reshape(2)
         self.residual = np.asarray(self.residual).reshape(2)
         self.pixel_covariance = np.asarray(self.pixel_covariance).reshape(2, 2)
+        
+        # Ensure ideal coordinates if provided
+        if self.observed_ideal is not None:
+            self.observed_ideal = np.asarray(self.observed_ideal).reshape(2)
+        if self.predicted_ideal is not None:
+            self.predicted_ideal = np.asarray(self.predicted_ideal).reshape(2)
+        if self.ideal_residual is not None:
+            self.ideal_residual = np.asarray(self.ideal_residual).reshape(2)
+        elif self.observed_ideal is not None and self.predicted_ideal is not None:
+            self.ideal_residual = self.observed_ideal - self.predicted_ideal
+        
+        # Ensure bearing vector is unit length if provided
+        if self.bearing_vector is not None:
+            self.bearing_vector = np.asarray(self.bearing_vector).reshape(3)
+            norm = np.linalg.norm(self.bearing_vector)
+            if norm > 0:
+                self.bearing_vector = self.bearing_vector / norm
         
         # Compute information matrix if not provided
         if self.information_matrix is None:
@@ -72,6 +103,21 @@ class VisualMeasurement:
             np.isfinite(self.residual).all() and
             np.isfinite(self.pixel_covariance).all()
         )
+    
+    @property
+    def has_ideal_coordinates(self) -> bool:
+        """Check if ideal/normalized coordinates are available."""
+        return (
+            self.observed_ideal is not None and
+            self.predicted_ideal is not None
+        )
+    
+    @property
+    def ideal_weighted_residual(self) -> np.ndarray:
+        """Get ideal residual weighted by robust weight."""
+        if self.ideal_residual is None:
+            return np.zeros(2)
+        return self.ideal_residual * self.robust_weight
 
 
 @dataclass
@@ -199,6 +245,32 @@ class PreprocessedIMUData:
             return quaternion_to_rotation_matrix(self.delta_rotation)
 
 
+@dataclass
+class IdealProjection:
+    """
+    Ideal/normalized projection result.
+    
+    Represents projection onto the ideal pinhole camera plane (z=1),
+    independent of camera intrinsics and distortion.
+    """
+    ideal_point: np.ndarray  # shape: (2,) - point on ideal plane
+    pixel_point: np.ndarray  # shape: (2,) - corresponding pixel after camera model
+    jacobian_ideal_to_pixel: Optional[np.ndarray] = None  # shape: (2, 2) - transformation Jacobian
+    pixel_covariance: Optional[np.ndarray] = None  # shape: (2, 2) - uncertainty in pixel space
+    ideal_covariance: Optional[np.ndarray] = None  # shape: (2, 2) - uncertainty in ideal space
+    
+    def __post_init__(self):
+        """Ensure proper array shapes."""
+        self.ideal_point = np.asarray(self.ideal_point).reshape(2)
+        self.pixel_point = np.asarray(self.pixel_point).reshape(2)
+        if self.jacobian_ideal_to_pixel is not None:
+            self.jacobian_ideal_to_pixel = np.asarray(self.jacobian_ideal_to_pixel).reshape(2, 2)
+        if self.pixel_covariance is not None:
+            self.pixel_covariance = np.asarray(self.pixel_covariance).reshape(2, 2)
+        if self.ideal_covariance is not None:
+            self.ideal_covariance = np.asarray(self.ideal_covariance).reshape(2, 2)
+
+
 class ProjectionInterface(Protocol):
     """
     Abstract interface for projection operations.
@@ -240,6 +312,96 @@ class ProjectionInterface(Protocol):
             
         Returns:
             3D point in camera frame
+        """
+        ...
+    
+    def project_ideal(
+        self,
+        point_3d: np.ndarray,  # shape: (3,) in camera frame
+        compute_jacobians: bool = False
+    ) -> IdealProjection:
+        """
+        Project 3D point to both ideal plane and pixel coordinates.
+        
+        The ideal plane is the normalized camera plane at z=1, which is
+        independent of camera intrinsics and distortion. This enables
+        camera-model-independent algorithms.
+        
+        Args:
+            point_3d: 3D point in camera frame
+            compute_jacobians: Whether to compute transformation Jacobians
+            
+        Returns:
+            IdealProjection containing both ideal and pixel coordinates
+        """
+        ...
+    
+    def unproject_ideal(
+        self,
+        ideal_point: np.ndarray,  # shape: (2,) on ideal plane
+        depth: float
+    ) -> np.ndarray:  # shape: (3,)
+        """
+        Unproject from ideal plane to 3D point.
+        
+        Args:
+            ideal_point: 2D point on ideal plane (z=1)
+            depth: Distance along ray from camera center
+            
+        Returns:
+            3D point in camera frame
+        """
+        ...
+    
+    def pixel_to_ideal(
+        self,
+        pixel: np.ndarray  # shape: (2,)
+    ) -> np.ndarray:  # shape: (2,)
+        """
+        Convert pixel coordinates to ideal/normalized coordinates.
+        
+        This removes camera intrinsics and distortion, mapping to
+        the ideal pinhole plane at z=1.
+        
+        Args:
+            pixel: 2D pixel coordinates
+            
+        Returns:
+            2D point on ideal plane
+        """
+        ...
+    
+    def ideal_to_pixel(
+        self,
+        ideal_point: np.ndarray  # shape: (2,)
+    ) -> np.ndarray:  # shape: (2,)
+        """
+        Convert ideal/normalized coordinates to pixel coordinates.
+        
+        This applies camera intrinsics and distortion.
+        
+        Args:
+            ideal_point: 2D point on ideal plane
+            
+        Returns:
+            2D pixel coordinates
+        """
+        ...
+    
+    def pixel_to_bearing(
+        self,
+        pixel: np.ndarray  # shape: (2,)
+    ) -> np.ndarray:  # shape: (3,)
+        """
+        Convert pixel to unit bearing vector in camera frame.
+        
+        This is useful for triangulation and bearing-only measurements.
+        
+        Args:
+            pixel: 2D pixel coordinates
+            
+        Returns:
+            Unit bearing vector in camera frame
         """
         ...
     
