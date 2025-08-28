@@ -226,10 +226,12 @@ class NewSWBAEstimator(BaseEstimator):
             camera_frame: ProcessedVisualFrame with pre-computed measurements
             landmarks: Optional map (not used for projection, only for initialization)
         """
+        print(f"[Python] Update called")
         if not isinstance(camera_frame, ProcessedVisualFrame):
             logger.warning(f"Expected ProcessedVisualFrame, got {type(camera_frame).__name__}")
             return
         
+        print(f"[Python] Update has {len(camera_frame.measurements) if hasattr(camera_frame, 'measurements') else 0} measurements")
         logger.debug(f"Update called with {len(camera_frame.measurements)} measurements")
         if landmarks:
             logger.debug(f"Landmarks Map provided with {len(landmarks.landmarks)} landmarks")
@@ -271,14 +273,17 @@ class NewSWBAEstimator(BaseEstimator):
         
         # Apply immediate visual correction using EKF-like update
         # This helps prevent drift between optimization runs
-        # TEMPORARILY DISABLED FOR DEBUGGING
-        if False and camera_frame.measurements and len(camera_frame.measurements) > self.config.min_measurements_for_update:
+        if camera_frame.measurements and len(camera_frame.measurements) > self.config.min_measurements_for_update:
             valid_measurements = [m for m in camera_frame.measurements 
                                  if m.is_valid and m.landmark_id in self.landmark_estimates]
+            
+            print(f"[Python] Frame has {len(camera_frame.measurements)} measurements, {len(valid_measurements)} valid")
             
             if len(valid_measurements) >= 3:
                 # Perform EKF-style visual update
                 self._apply_visual_correction(valid_measurements, camera_frame)
+            else:
+                print(f"[Python] Not enough valid measurements for visual correction")
         
         self.total_updates += 1
     
@@ -670,6 +675,9 @@ class NewSWBAEstimator(BaseEstimator):
             
             # Apply correction with conservative gain
             gain = self.config.visual_correction_gain
+            
+            # Debug output
+            print(f"[Python Visual] {num_ideal+num_pixel} measurements, correction: {-gain * delta_pose[:3]}")
             
             # Update position
             self.current_pose.position -= gain * delta_pose[:3]

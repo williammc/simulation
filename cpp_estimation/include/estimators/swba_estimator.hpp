@@ -58,7 +58,7 @@ public:
         FLOAT ideal_coordinate_weight = static_cast<FLOAT>(10.0);  // Weight boost for ideal coords
         
         // Visual correction parameters
-        FLOAT visual_correction_gain = static_cast<FLOAT>(0.0);  // Disable to match Python debug
+        FLOAT visual_correction_gain = static_cast<FLOAT>(0.5);  // Re-enable visual correction
         FLOAT chi2_outlier_threshold = static_cast<FLOAT>(5.991);  // 95% confidence for 2 DOF
         
         // Robust kernel parameters
@@ -164,7 +164,7 @@ public:
         
         // Debug IMU data
         static int predict_count = 0;
-        if (predict_count < 5 || config_.verbose) {
+        if (predict_count < 10 || config_.verbose) {
             std::cout << "[SWBA] Predict #" << predict_count << " dt=" << dt 
                      << "\n  delta_p: " << imu_data.delta_position.transpose()
                      << "\n  delta_v: " << imu_data.delta_velocity.transpose()
@@ -465,6 +465,10 @@ private:
             // Solve for correction: delta = (H + lambda*I)^(-1) * b
             Matrix9 H = info_matrix + Matrix9::Identity() * 1e-6;  // Add small damping
             Vector9 correction = H.ldlt().solve(info_vector) * config_.visual_correction_gain;
+            
+            // Debug output
+            std::cout << "[C++ Visual] " << valid_measurements << " measurements, correction: " 
+                     << correction.template segment<3>(0).transpose() << std::endl;
             
             // Apply correction
             current_state_.position += correction.template segment<3>(0);
