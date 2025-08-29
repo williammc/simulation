@@ -616,9 +616,9 @@ def e2e_simple(
         help="Trajectory type: circle, figure8, spiral, line"
     ),
     estimator: str = typer.Option(
-        "ekf",
+        "simple-swba",
         "--estimator", "-e", 
-        help="SLAM estimator: ekf, swba, srif, raw-imu-ekf, new-swba"
+        help="SLAM estimator: ekf, swba, srif, raw-imu-ekf, new-swba, simple-swba"
     ),
     output_dir: Optional[Path] = typer.Option(
         None,

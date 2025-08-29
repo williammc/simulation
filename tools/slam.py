@@ -56,7 +56,7 @@ def run_slam(
     
     # Validate estimator type
     estimator_lower = estimator.lower()
-    valid_estimators = ['ekf', 'swba', 'srif', 'raw-imu-ekf', 'new-swba', 'cpp-swba']
+    valid_estimators = ['ekf', 'swba', 'srif', 'raw-imu-ekf', 'new-swba', 'simple-swba', 'cpp-swba']
     if estimator_lower not in valid_estimators:
         console.print(f"[red]✗ Error: Unknown estimator: {estimator}[/red]")
         console.print(f"  Available estimators: {', '.join(valid_estimators)}")
@@ -68,6 +68,8 @@ def run_slam(
         console.print(f"[yellow]  Consider using 'new-swba' for better performance.[/yellow]")
     elif estimator_lower == 'new-swba':
         console.print(f"[green]Using camera-model-independent SWBA estimator[/green]")
+    elif estimator_lower == 'simple-swba':
+        console.print(f"[green]Using simplified SWBA VIO estimator[/green]")
     elif estimator_lower == 'cpp-swba':
         console.print(f"[green]Using C++ SWBA estimator (camera-model-independent)[/green]")
     
@@ -223,6 +225,22 @@ def run_slam(
             # Note: We'll need to create a preprocessor to convert raw frames to processed frames
             preprocessor = None  # Will be created later when we have camera calibration
         
+        elif estimator_lower == 'simple-swba':
+            # Create simplified SWBA VIO estimator
+            from src.estimation.new.simple_swba_vio import SimpleSWBAVIO, SimpleSWBAConfig
+            simple_config_data = config_data.get('simple_swba', {})
+            simple_config = SimpleSWBAConfig(
+                estimator_type=EstimatorType.SIMPLE_SWBA,
+                window_size=simple_config_data.get('window_size', 10),
+                keyframe_spacing=simple_config_data.get('keyframe_spacing', 10),
+                max_iterations=simple_config_data.get('max_iterations', 10),
+                convergence_threshold=simple_config_data.get('convergence_threshold', 1e-4),
+                min_measurements=simple_config_data.get('min_measurements', 5)
+            )
+            estimator_instance = SimpleSWBAVIO(simple_config)
+            console.print("[green]Created simplified SWBA VIO estimator[/green]")
+            preprocessor = None  # Will be created later
+        
         elif estimator_lower == 'cpp-swba':
             # C++ SWBA is run as external process - no Python instance needed
             estimator_instance = None
@@ -239,7 +257,7 @@ def run_slam(
             initial_velocity = trajectory_gt.states[0].velocity if hasattr(trajectory_gt.states[0], 'velocity') else None
             
             # Check if estimator supports initial velocity 
-            if estimator_lower in ['ekf', 'swba', 'srif', 'new-swba'] and initial_velocity is not None:
+            if estimator_lower in ['ekf', 'swba', 'srif', 'new-swba', 'simple-swba'] and initial_velocity is not None:
                 estimator_instance.initialize(initial_pose, initial_velocity=initial_velocity)
                 console.print(f"[cyan]Initialized with velocity: [{initial_velocity[0]:.2f}, {initial_velocity[1]:.2f}, {initial_velocity[2]:.2f}] m/s[/cyan]")
             else:
@@ -337,7 +355,7 @@ def run_slam(
                             console.print(f"  [red]{line}[/red]")
                 return None
             
-        elif estimator_lower == 'new-swba':
+        elif estimator_lower in ['new-swba', 'simple-swba']:
             # Special processing for camera-model-independent SWBA
             # TODO: The projection adapter has been removed. 
             # The preprocessor should work directly with ideal coordinates from simulation.
