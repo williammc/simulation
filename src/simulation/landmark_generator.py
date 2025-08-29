@@ -362,7 +362,8 @@ class AdaptiveLandmarkGenerator:
 def generate_landmarks(
     config: Optional[LandmarkGeneratorConfig] = None,
     trajectory: Optional[Trajectory] = None,
-    adaptive: bool = False
+    adaptive: bool = False,
+    circular_inward_facing: bool = False
 ) -> Map:
     """
     Factory function to generate landmarks.
@@ -371,11 +372,15 @@ def generate_landmarks(
         config: Generation configuration
         trajectory: Reference trajectory (for adaptive generation)
         adaptive: Whether to use adaptive generation
+        circular_inward_facing: Whether this is for circular trajectory facing inward
     
     Returns:
         Map containing generated landmarks
     """
-    if adaptive and trajectory is not None:
+    if circular_inward_facing and trajectory is not None:
+        # For circular trajectory facing inward, place landmarks at center
+        generator = InwardFacingLandmarkGenerator(trajectory, config)
+    elif adaptive and trajectory is not None:
         generator = AdaptiveLandmarkGenerator(trajectory, config)
     else:
         generator = LandmarkGenerator(config)

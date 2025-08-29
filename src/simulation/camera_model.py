@@ -3,7 +3,7 @@ Camera projection model and visibility checking for SLAM simulation.
 """
 
 import numpy as np
-from typing import Optional, List, Tuple, Dict, Any
+from typing import Optional, List, Tuple, Dict, Any, Union
 from dataclasses import dataclass
 
 from src.common.data_structures import (
@@ -356,6 +356,67 @@ class StereoCamera:
         return point_world_hom[:3]
 
 
+def create_observation_from_pixel(
+    landmark_id: int,
+    pixel: Union[np.ndarray, ImagePoint],
+    camera: PinholeCamera,
+    descriptor: Optional[np.ndarray] = None,
+    add_noise: bool = False
+) -> CameraObservation:
+    """
+    Create a camera observation from a pixel coordinate.
+    
+    This helper function handles noise addition and ideal coordinate computation.
+    
+    Args:
+        landmark_id: ID of the landmark
+        pixel: 2D pixel coordinates (numpy array or ImagePoint)
+        camera: Camera model for intrinsics
+        descriptor: Optional feature descriptor
+        add_noise: Whether to add noise to the pixel
+        
+    Returns:
+        CameraObservation with ideal coordinates computed from pixel
+    """
+    # Convert ImagePoint to numpy array if needed
+    if isinstance(pixel, ImagePoint):
+        pixel_array = np.array([pixel.u, pixel.v])
+    else:
+        pixel_array = pixel
+    
+    # Add noise to pixel if configured
+    # IMPORTANT: We add noise BEFORE computing ideal coordinates
+    # so that ideal_coordinates represents what we actually observe
+    noisy_pixel = pixel_array.copy()
+    if add_noise:
+        noisy_pixel = camera.add_noise_to_pixel(noisy_pixel)
+    
+    # Compute observed ideal coordinates from the (potentially noisy) pixel
+    # This represents the normalized coordinates of what we actually observe,
+    # NOT the true projection of the 3D point
+    fx = camera.calibration.intrinsics.fx
+    fy = camera.calibration.intrinsics.fy
+    cx = camera.calibration.intrinsics.cx
+    cy = camera.calibration.intrinsics.cy
+    
+    # Back-project pixel to ideal/normalized coordinates
+    # This is what the camera actually observes in normalized coordinates
+    observed_ideal_coords = np.array([
+        (noisy_pixel[0] - cx) / fx,  # (u - cx) / fx
+        (noisy_pixel[1] - cy) / fy   # (v - cy) / fy
+    ])
+    
+    # Convert to ImagePoint
+    pixel_point = ImagePoint(u=noisy_pixel[0], v=noisy_pixel[1])
+    
+    return CameraObservation(
+        landmark_id=landmark_id,
+        pixel=pixel_point,
+        descriptor=descriptor,
+        ideal_coordinates=observed_ideal_coords
+    )
+
+
 def generate_camera_observations(
     camera: PinholeCamera,
     landmarks: Map,
@@ -389,30 +450,14 @@ def generate_camera_observations(
     
     # Create observations
     observations = []
-    for landmark, pixel, depth in visible:
-        # Compute ideal coordinates (before adding noise)
-        # Get camera transformation
-        C_T_W = np.linalg.inv(W_T_B @ camera.calibration.extrinsics.B_T_C)
-        
-        # Transform landmark to camera frame
-        landmark_cam_h = C_T_W @ np.append(landmark.position, 1)  # Homogeneous coords
-        landmark_cam = landmark_cam_h[:3]
-        
-        # Compute ideal coordinates (normalized/undistorted)
-        ideal_coords = np.array([
-            landmark_cam[0] / landmark_cam[2],
-            landmark_cam[1] / landmark_cam[2]
-        ])
-        
-        # Add noise if configured (only to pixel, not ideal)
-        if should_add_noise:
-            pixel = camera.add_noise_to_pixel(pixel)
-        
-        obs = CameraObservation(
+    for landmark, pixel, _ in visible:  # depth not used
+        # Use helper function to create observation with proper ideal coordinates
+        obs = create_observation_from_pixel(
             landmark_id=landmark.id,
             pixel=pixel,
-            descriptor=landmark.descriptor,  # Pass through descriptor if available
-            ideal_coordinates=ideal_coords  # Add ideal coordinates
+            camera=camera,
+            descriptor=landmark.descriptor,
+            add_noise=should_add_noise
         )
         observations.append(obs)
     

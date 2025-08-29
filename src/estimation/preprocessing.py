@@ -174,7 +174,7 @@ class VisualMeasurementPreprocessor:
             # Convert observation pixel to ideal coordinates
             observed_pixel = np.array([obs.pixel.u, obs.pixel.v])
             
-            # Convert pixel to ideal using simple pinhole model
+            # Get camera calibration matrix
             calib = self.projection_service.camera_calib
             K = np.array([
                 [calib.intrinsics.fx, 0, calib.intrinsics.cx],
@@ -182,10 +182,15 @@ class VisualMeasurementPreprocessor:
                 [0, 0, 1]
             ])
             
-            observed_ideal = np.array([
-                (observed_pixel[0] - K[0, 2]) / K[0, 0],
-                (observed_pixel[1] - K[1, 2]) / K[1, 1]
-            ])
+            # Use pre-computed ideal coordinates if available, otherwise compute from pixel
+            if hasattr(obs, 'ideal_coordinates') and obs.ideal_coordinates is not None:
+                observed_ideal = np.array(obs.ideal_coordinates)
+            else:
+                # Convert pixel to ideal using simple pinhole model
+                observed_ideal = np.array([
+                    (observed_pixel[0] - K[0, 2]) / K[0, 0],
+                    (observed_pixel[1] - K[1, 2]) / K[1, 1]
+                ])
             
             # Compute ideal residual
             ideal_residual = observed_ideal - predicted_ideal

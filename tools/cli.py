@@ -18,7 +18,6 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from simulate import run_simulation
 from slam import run_slam
 from dashboard import generate_dashboard
-from e2e_pipeline import run_e2e
 from evaluate import run_evaluate
 
 app = typer.Typer(
@@ -545,118 +544,8 @@ def info():
     console.print("  Run './run.sh list-datasets' for details")
 
 
-@app.command(name="e2e")
-def e2e_command(
-    config_file: Path = typer.Argument(
-        Path("config/e2e_config.yaml"),
-        help="Path to e2e configuration YAML file"
-    ),
-    output_dir: Optional[Path] = typer.Option(
-        None,
-        "--output", "-o",
-        help="Override output directory from config"
-    ),
-    parallel_jobs: Optional[int] = typer.Option(
-        None,
-        "--parallel", "-j",
-        help="Number of parallel estimation jobs"
-    ),
-    datasets: Optional[str] = typer.Option(
-        None,
-        "--datasets", "-d",
-        help="Comma-separated list of datasets to evaluate (default: all)"
-    ),
-    estimators: Optional[str] = typer.Option(
-        None,
-        "--estimators", "-e",
-        help="Comma-separated list of estimators to run (default: all enabled)"
-    ),
-    skip_generation: bool = typer.Option(
-        False,
-        "--skip-generation",
-        help="Skip dataset generation even if missing"
-    ),
-    skip_dashboard: bool = typer.Option(
-        False,
-        "--skip-dashboard",
-        help="Skip dashboard generation"
-    ),
-    dry_run: bool = typer.Option(
-        False,
-        "--dry-run",
-        help="Show what would be done without actually running"
-    )
-):
-    """Run end-to-end (e2e) pipeline across all datasets and estimators."""
-    # Call the e2e module
-    exit_code = run_e2e(
-        config_file=config_file,
-        output_dir=output_dir,
-        parallel_jobs=parallel_jobs,
-        datasets=datasets,
-        estimators=estimators,
-        skip_generation=skip_generation,
-        skip_dashboard=skip_dashboard,
-        dry_run=dry_run
-    )
-    if exit_code != 0:
-        raise typer.Exit(exit_code)
 
 
-@app.command("e2e-simple")
-def e2e_simple(
-    duration: float = typer.Option(
-        10.0,
-        "--duration", "-d",
-        help="Simulation duration in seconds"
-    ),
-    trajectory: str = typer.Option(
-        "circle",
-        "--trajectory", "-t",
-        help="Trajectory type: circle, figure8, spiral, line"
-    ),
-    estimator: str = typer.Option(
-        "ekf",
-        "--estimator", "-e", 
-        help="SLAM estimator: ekf, swba, srif, raw-imu-ekf, new-swba"
-    ),
-    output_dir: Optional[Path] = typer.Option(
-        None,
-        "--output", "-o",
-        help="Output directory for all files"
-    ),
-    sim_file: Optional[str] = typer.Option(
-        None,
-        "--sim-file",
-        help="Custom filename for simulation output"
-    ),
-    slam_file: Optional[str] = typer.Option(
-        None,
-        "--slam-file",
-        help="Custom filename for SLAM output"
-    ),
-    eval_file: Optional[str] = typer.Option(
-        None,
-        "--eval-file",
-        help="Custom filename for evaluation output"
-    ),
-):
-    """Run end-to-end simple SLAM pipeline: simulate → estimate → evaluate."""
-    from e2e_simple import run_e2e_simple
-    
-    # Convert Path to string if provided
-    output_dir_str = str(output_dir) if output_dir else "output"
-    
-    # Run the end-to-end pipeline
-    run_e2e_simple(
-        duration=duration,
-        trajectory_type=trajectory,
-        estimator_type=estimator,
-        output_dir=output_dir_str,
-        sim_filename=sim_file,
-        slam_filename=slam_file,
-        eval_filename=eval_file
-    )
 
 
 def main():

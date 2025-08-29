@@ -199,9 +199,13 @@ class ImagePoint:
 class CameraObservation:
     """Single camera observation of a landmark."""
     landmark_id: int  # ID of the observed landmark
-    pixel: ImagePoint  # 2D pixel coordinates
+    pixel: ImagePoint  # 2D pixel coordinates (potentially with noise)
     descriptor: Optional[np.ndarray] = None  # Feature descriptor (if available)
-    ideal_coordinates: Optional[np.ndarray] = None  # Normalized/ideal coordinates (x/z, y/z) on z=1 plane
+    # IMPORTANT: ideal_coordinates represents the OBSERVED ideal coordinates
+    # computed from the pixel measurement (including any noise).
+    # Formula: ideal = [(u - cx)/fx, (v - cy)/fy] where u,v are pixel coords
+    # This is NOT the true projection of the 3D point, but what we observe.
+    ideal_coordinates: Optional[np.ndarray] = None  # Observed normalized coords from pixel
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""

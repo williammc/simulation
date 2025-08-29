@@ -326,7 +326,7 @@ class IMUPreintegrator:
         self,
         measurement: IMUMeasurement,
         dt: float,
-        remove_gravity: bool = True
+        remove_gravity: bool = False  # Changed default to False
     ):
         """
         Integrate single IMU measurement.
@@ -334,31 +334,37 @@ class IMUPreintegrator:
         Args:
             measurement: IMU measurement
             dt: Time step
-            remove_gravity: Whether to remove gravity from accelerometer (default: True)
+            remove_gravity: Whether to remove gravity from accelerometer (default: False)
+                           Should be False since IMU already measures specific force
         """
         # Store measurement
         self.measurements.append((measurement, dt))
         
         # Extract measurements
-        acc = measurement.accelerometer
+        acc = measurement.accelerometer  # Already specific force (gravity removed)
         gyro = measurement.gyroscope
         
-        # IMPORTANT: Remove gravity from accelerometer measurements
-        # The IMU measures specific force which includes gravity
-        # For preintegration, we need to remove gravity in the world frame
+        # IMPORTANT: The accelerometer already measures specific force
+        # (acceleration with gravity removed), so we should NOT remove gravity again!
+        # The measurement model computes: a_measured = a_true - g
+        # So acc already has gravity removed and we can use it directly
+        
         if remove_gravity:
-            # Transform gravity to body frame and remove it
-            # gravity_body = R^T @ gravity_world
+            # This branch should normally not be used since gravity is already removed
+            # Keeping for backward compatibility but with warning
+            print("[WARNING] remove_gravity=True but accelerometer already measures specific force!")
             gravity_body = self.delta_R.T @ self.gravity
             acc_corrected = acc - gravity_body
         else:
+            # Use accelerometer directly (it's already specific force)
             acc_corrected = acc
         
         # Update rotation (first-order integration)
         from src.utils.math_utils import so3_exp
         dR = so3_exp(gyro * dt)
         
-        # Update position and velocity using gravity-compensated acceleration
+        # Update position and velocity using specific force
+        # These deltas do NOT include gravity (will be added during prediction)
         self.delta_p += self.delta_v * dt + 0.5 * self.delta_R @ acc_corrected * dt * dt
         self.delta_v += self.delta_R @ acc_corrected * dt
         self.delta_R = self.delta_R @ dR

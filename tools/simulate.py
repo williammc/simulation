@@ -7,18 +7,23 @@ import json
 import yaml
 from pathlib import Path
 from datetime import datetime
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List, Tuple
 
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from src.simulation.trajectory_generator import generate_trajectory
 from src.simulation.landmark_generator import generate_landmarks, LandmarkGeneratorConfig
+from src.simulation.backprojection_landmark_generator import (
+    generate_landmarks_via_backprojection,
+    BackprojectionConfig
+)
 from src.simulation.camera_model import PinholeCamera, generate_camera_observations
 from src.simulation.imu_model import IMUModel, IMUNoiseConfig
 from src.common.data_structures import (
     CameraCalibration, CameraIntrinsics, CameraExtrinsics, CameraModel,
-    IMUCalibration, CameraData, PreintegratedIMUData
+    IMUCalibration, CameraData, PreintegratedIMUData,
+    Map, Pose, CameraFrame, CameraObservation
 )
 from src.common.json_io import save_simulation_data
 from src.estimation.imu_integration import IMUPreintegrator
@@ -33,6 +38,65 @@ from src.utils.config_loader import ConfigLoader
 import numpy as np
 
 console = Console()
+
+
+def create_frame_from_precomputed(
+    landmarks: Map,
+    observations: List[Tuple[int, np.ndarray]],
+    pose: Pose,
+    camera: PinholeCamera,
+    timestamp: float,
+    camera_id: str = "cam0",
+    add_noise: bool = False
+) -> CameraFrame:
+    """
+    Create camera frame from precomputed observations.
+    
+    Args:
+        landmarks: Map containing landmarks
+        observations: List of (landmark_id, pixel) tuples
+        pose: Current camera pose (kept for API compatibility, not used)
+        camera: Camera model
+        timestamp: Frame timestamp
+        camera_id: Camera identifier
+        add_noise: Whether to add noise to pixels
+        
+    Returns:
+        CameraFrame with observations
+    """
+    from src.common.data_structures import CameraFrame
+    from src.simulation.camera_model import create_observation_from_pixel
+    
+    # Note: pose parameter is kept for API compatibility but not used
+    # since we work directly with precomputed pixel observations
+    _ = pose  # Mark as intentionally unused
+    
+    frame_observations = []
+    
+    for landmark_id, pixel in observations:
+        # Get landmark for descriptor
+        landmark = landmarks.get_landmark(landmark_id)
+        if landmark is None:
+            continue
+        
+        # Use the shared helper function to create observation
+        obs = create_observation_from_pixel(
+            landmark_id=landmark_id,
+            pixel=pixel,
+            camera=camera,
+            descriptor=landmark.descriptor if landmark else None,
+            add_noise=add_noise and camera.noise_config.add_noise
+        )
+        frame_observations.append(obs)
+    
+    # Sort by landmark ID for consistency
+    frame_observations.sort(key=lambda x: x.landmark_id)
+    
+    return CameraFrame(
+        timestamp=timestamp,
+        camera_id=camera_id,
+        observations=frame_observations
+    )
 
 
 def run_simulation(
@@ -168,20 +232,71 @@ def run_simulation(
             
             # Generate landmarks adaptively around trajectory
             landmark_params = noise_params.get("landmarks", {})
-            landmark_config = LandmarkGeneratorConfig(
-                num_landmarks=landmark_params.get("num_landmarks", 500),
-                distribution=landmark_params.get("distribution", "uniform"),
-                min_separation=landmark_params.get("min_separation", 0.1),
-                seed=seed
-            )
             
-            # Use adaptive generation to place landmarks near trajectory
-            use_adaptive = landmark_params.get("adaptive", True)
-            landmarks = generate_landmarks(
-                config=landmark_config,
-                trajectory=traj,
-                adaptive=use_adaptive
-            )
+            # Check if we should use backprojection method
+            use_backprojection = landmark_params.get("use_backprojection", False)
+            
+            if use_backprojection:
+                # Create camera for backprojection
+                camera_intrinsics = CameraIntrinsics(
+                    model=CameraModel.PINHOLE,
+                    width=640,
+                    height=480,
+                    fx=500.0,
+                    fy=500.0,
+                    cx=320.0,
+                    cy=240.0,
+                    distortion=np.zeros(5)
+                )
+                
+                camera_extrinsics = CameraExtrinsics(
+                    B_T_C=np.eye(4)  # Camera at body center for simplicity
+                )
+                
+                camera_calib = CameraCalibration(
+                    camera_id="cam0",
+                    intrinsics=camera_intrinsics,
+                    extrinsics=camera_extrinsics
+                )
+                
+                # Use backprojection-based landmark generation
+                backproj_config = BackprojectionConfig(
+                    min_landmarks_per_frame=landmark_params.get("min_landmarks_per_frame", 30),
+                    max_landmarks_per_frame=landmark_params.get("max_landmarks_per_frame", 50),
+                    mean_depth=landmark_params.get("mean_depth", 8.0),
+                    depth_std=landmark_params.get("depth_std", 3.0),
+                    min_visibility_count=landmark_params.get("min_visibility_count", 5),
+                    seed=seed
+                )
+                
+                backproj_camera = PinholeCamera(camera_calib)
+                
+                landmarks, precomputed_observations = generate_landmarks_via_backprojection(
+                    trajectory=traj,
+                    camera=backproj_camera,
+                    config=backproj_config
+                )
+                
+                # Store precomputed observations for later use
+                # We'll use these when generating camera frames
+                
+            else:
+                # Use standard landmark generation
+                landmark_config = LandmarkGeneratorConfig(
+                    num_landmarks=landmark_params.get("num_landmarks", 500),
+                    distribution=landmark_params.get("distribution", "uniform"),
+                    min_separation=landmark_params.get("min_separation", 0.1),
+                    seed=seed
+                )
+                
+                # Use adaptive generation to place landmarks near trajectory
+                use_adaptive = landmark_params.get("adaptive", True)
+                landmarks = generate_landmarks(
+                    config=landmark_config,
+                    trajectory=traj,
+                    adaptive=use_adaptive
+                )
+                precomputed_observations = None
             
             progress.update(task, description="Generating sensor measurements...")
             
@@ -237,15 +352,44 @@ def run_simulation(
             time_range = traj.get_time_range()
             camera_times = np.arange(time_range[0], time_range[1], camera_dt)
             
-            for t in camera_times:
+            # Map time to frame index for precomputed observations
+            if precomputed_observations:
+                # We need to map from frame indices to timestamps
+                # Assuming frames are generated at trajectory state indices
+                traj_times = [state.pose.timestamp for state in traj.states]
+            
+            for i, t in enumerate(camera_times):
                 # Get pose at this time
                 pose = traj.get_pose_at_time(t)
                 if pose is not None:
-                    frame = generate_camera_observations(
-                        camera, landmarks, pose, t, "cam0"
-                    )
-                    if len(frame.observations) > 0:  # Only add if there are observations
-                        camera_data.add_frame(frame)
+                    if precomputed_observations:
+                        # Find nearest trajectory frame index
+                        nearest_idx = np.argmin(np.abs(np.array(traj_times) - t))
+                        
+                        # Get precomputed observations for this frame
+                        if nearest_idx in precomputed_observations:
+                            # IMPORTANT: Use the exact pose from the trajectory state
+                            # that was used to generate these observations
+                            traj_pose = traj.states[nearest_idx].pose
+                            
+                            frame = create_frame_from_precomputed(
+                                landmarks=landmarks,
+                                observations=precomputed_observations[nearest_idx],
+                                pose=traj_pose,  # Use trajectory pose, not interpolated pose
+                                camera=camera,
+                                timestamp=t,
+                                camera_id="cam0",
+                                add_noise=add_noise and camera_noise_params.get("add_noise", True)
+                            )
+                            if len(frame.observations) > 0:
+                                camera_data.add_frame(frame)
+                    else:
+                        # Use standard observation generation
+                        frame = generate_camera_observations(
+                            camera, landmarks, pose, t, "cam0"
+                        )
+                        if len(frame.observations) > 0:
+                            camera_data.add_frame(frame)
             
             # Generate IMU measurements
             imu_noise_params = noise_params.get("imu", {})

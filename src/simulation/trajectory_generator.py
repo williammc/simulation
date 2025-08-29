@@ -80,16 +80,21 @@ class CircleTrajectory:
             vz = 0.0
             velocity = np.array([vx, vy, vz])
             
-            # Orientation: facing tangent direction (forward along velocity)
-            # Yaw angle is theta + pi/2 (perpendicular to radius)
-            yaw = theta + np.pi / 2
+            # Orientation: facing INWARD toward the center (to see landmarks)
+            # The camera should look from current position toward origin
+            # Forward direction (z-axis) points from position toward center
+            forward = -position / np.linalg.norm(position[:2])  # Only normalize x,y
+            forward[2] = 0  # Keep z=0 for forward direction
             
-            # Create rotation matrix (yaw only, no pitch or roll)
-            R = np.array([
-                [np.cos(yaw), -np.sin(yaw), 0],
-                [np.sin(yaw), np.cos(yaw), 0],
-                [0, 0, 1]
-            ])
+            # Right direction is perpendicular to forward in xy-plane
+            right = np.array([-forward[1], forward[0], 0])
+            
+            # Up direction is world z-axis
+            up = np.array([0, 0, 1])
+            
+            # Build rotation matrix [right, -up, forward] for camera convention
+            # Camera convention: x=right, y=down, z=forward
+            R = np.column_stack([right, -up, forward])
             # Angular velocity (only yaw rate)
             angular_velocity = np.array([0, 0, self.angular_velocity])
             
@@ -228,15 +233,19 @@ class QuarterCircleTrajectory:
                 omega_z = 0.0
             velocity = np.array([vx, vy, vz])
             
-            # Orientation: facing tangent direction
-            yaw = theta + np.pi / 2
+            # Orientation: facing INWARD toward the center (to see landmarks)
+            # Forward direction points from position toward center
+            forward = -position / np.linalg.norm(position[:2])
+            forward[2] = 0
             
-            # Create rotation matrix
-            R = np.array([
-                [np.cos(yaw), -np.sin(yaw), 0],
-                [np.sin(yaw), np.cos(yaw), 0],
-                [0, 0, 1]
-            ])
+            # Right direction is perpendicular to forward in xy-plane
+            right = np.array([-forward[1], forward[0], 0])
+            
+            # Up direction is world z-axis
+            up = np.array([0, 0, 1])
+            
+            # Build rotation matrix for camera convention
+            R = np.column_stack([right, -up, forward])
             
             # Angular velocity
             angular_velocity = np.array([0, 0, omega_z])

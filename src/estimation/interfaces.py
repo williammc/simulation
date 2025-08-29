@@ -20,41 +20,48 @@ class VisualMeasurement:
     This structure contains all information needed for visual updates
     without requiring the estimator to perform projection operations.
     """
+    # ========== OBSERVATIONAL DATA (fixed, from sensor) ==========
+    
     # Landmark identification
-    landmark_id: int
+    landmark_id: int  # Unique ID of the observed 3D landmark
     
-    # Pixel coordinates
-    observed_pixel: np.ndarray  # shape: (2,) - actual camera observation
-    predicted_pixel: np.ndarray  # shape: (2,) - predicted from current state
+    # Pixel coordinates - OBSERVATIONAL DATA
+    observed_pixel: np.ndarray  # shape: (2,) - actual camera observation (raw sensor data)
+    predicted_pixel: np.ndarray  # shape: (2,) - predicted from current state estimate (COMPUTED, changes with state)
     
-    # Pre-computed residual (observed - predicted)
-    residual: np.ndarray  # shape: (2,)
+    # Pre-computed residual (observed - predicted) - COMPUTED VALUE
+    residual: np.ndarray  # shape: (2,) - reprojection error, changes as state estimate changes
     
-    # Measurement uncertainty
-    pixel_covariance: np.ndarray  # shape: (2, 2)
+    # Measurement uncertainty - OBSERVATIONAL/CALIBRATION DATA
+    pixel_covariance: np.ndarray  # shape: (2, 2) - sensor noise model, typically fixed from calibration
     
-    # Ideal/Normalized coordinates (camera-model independent)
+    # ========== IDEAL/NORMALIZED COORDINATES (camera-model independent) ==========
     # These are in the ideal pinhole camera plane (z=1)
-    observed_ideal: Optional[np.ndarray] = None  # shape: (2,) - undistorted normalized coordinates
-    predicted_ideal: Optional[np.ndarray] = None  # shape: (2,) - predicted normalized coordinates
-    ideal_residual: Optional[np.ndarray] = None  # shape: (2,) - residual in ideal plane
     
-    # Optional pre-computed Jacobians for optimization
+    observed_ideal: Optional[np.ndarray] = None  # shape: (2,) - undistorted normalized coords (COMPUTED from observed_pixel)
+    predicted_ideal: Optional[np.ndarray] = None  # shape: (2,) - predicted normalized coords (COMPUTED from state)
+    ideal_residual: Optional[np.ndarray] = None  # shape: (2,) - residual in ideal plane (COMPUTED)
+    
+    # ========== OPTIMIZATION JACOBIANS (all COMPUTED, state-dependent) ==========
+    # These change whenever the state estimate changes
+    
     jacobian_wrt_pose: Optional[np.ndarray] = None  # shape: (2, 6) for SE(3) or (2, 15) for full state
-    jacobian_wrt_landmark: Optional[np.ndarray] = None  # shape: (2, 3)
+    jacobian_wrt_landmark: Optional[np.ndarray] = None  # shape: (2, 3) - how residual changes with landmark position
     
-    # Jacobians in ideal/normalized coordinates (more stable for optimization)
+    # Jacobians in ideal/normalized coordinates (more numerically stable for optimization)
     ideal_jacobian_wrt_pose: Optional[np.ndarray] = None  # shape: (2, 6) or (2, 15)
     ideal_jacobian_wrt_landmark: Optional[np.ndarray] = None  # shape: (2, 3)
     
-    # Bearing vector and depth (for triangulation)
-    bearing_vector: Optional[np.ndarray] = None  # shape: (3,) - unit vector in camera frame
-    estimated_depth: Optional[float] = None  # estimated distance along bearing vector
+    # ========== GEOMETRIC PROPERTIES (COMPUTED from observations) ==========
     
-    # Pre-computed robust weight (1.0 for no robustification)
-    robust_weight: float = 1.0
+    bearing_vector: Optional[np.ndarray] = None  # shape: (3,) - unit vector in camera frame (COMPUTED from pixel)
+    estimated_depth: Optional[float] = None  # estimated distance along bearing vector (COMPUTED via triangulation)
     
-    # Information matrix (inverse of covariance)
+    # ========== ROBUSTIFICATION/WEIGHTING (COMPUTED during optimization) ==========
+    
+    robust_weight: float = 1.0  # Outlier down-weighting factor (COMPUTED, e.g., from Huber loss)
+    
+    # Information matrix (inverse of covariance) - DERIVED from pixel_covariance
     information_matrix: Optional[np.ndarray] = None  # shape: (2, 2)
     
     def __post_init__(self):

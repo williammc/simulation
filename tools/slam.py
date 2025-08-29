@@ -42,8 +42,6 @@ def run_slam(
     from src.estimation.legacy.swba_slam import SlidingWindowBA
     from src.estimation.legacy.srif_slam import SRIFSlam
     # Import estimators
-    # Camera-model-independent estimator
-    from src.estimation.new.swba_estimator import NewSWBAEstimator, NewSWBAConfig
     from src.estimation.preprocessing import VisualMeasurementPreprocessor
     from src.estimation.base_estimator import EstimatorConfig
     from src.common.json_io import load_simulation_data
@@ -56,7 +54,7 @@ def run_slam(
     
     # Validate estimator type
     estimator_lower = estimator.lower()
-    valid_estimators = ['ekf', 'swba', 'srif', 'raw-imu-ekf', 'new-swba', 'cpp-swba']
+    valid_estimators = ['ekf', 'swba', 'srif', 'raw-imu-ekf', 'clean-swba', 'cpp-swba']
     if estimator_lower not in valid_estimators:
         console.print(f"[red]✗ Error: Unknown estimator: {estimator}[/red]")
         console.print(f"  Available estimators: {', '.join(valid_estimators)}")
@@ -65,9 +63,9 @@ def run_slam(
     # Warn about legacy estimators
     if estimator_lower in ['ekf', 'swba', 'srif']:
         console.print(f"[yellow]⚠ Warning: '{estimator}' is a legacy estimator.[/yellow]")
-        console.print(f"[yellow]  Consider using 'new-swba' for better performance.[/yellow]")
-    elif estimator_lower == 'new-swba':
-        console.print(f"[green]Using camera-model-independent SWBA estimator[/green]")
+        console.print(f"[yellow]  Consider using 'clean-swba' for better performance.[/yellow]")
+    elif estimator_lower == 'clean-swba':
+        console.print(f"[green]Using clean SWBA estimator (simplified flow)[/green]")
     elif estimator_lower == 'cpp-swba':
         console.print(f"[green]Using C++ SWBA estimator (camera-model-independent)[/green]")
     
@@ -204,25 +202,19 @@ def run_slam(
             estimator_instance = EKFSlam(ekf_config, camera_calib, imu_calib, use_preintegrated_imu=False)
             console.print("[cyan]Using raw IMU processing (no preintegration)[/cyan]")
         
-        elif estimator_lower == 'new-swba':
-            # Create camera-model-independent SWBA estimator
-            new_swba_config_data = config_data.get('new_swba', {})
-            new_swba_config = NewSWBAConfig(
-                estimator_type=EstimatorType.NEW_SWBA,
-                window_size=new_swba_config_data.get('window_size', 10),
-                min_keyframe_distance=new_swba_config_data.get('min_keyframe_distance', 0.5),
-                min_keyframe_angle=new_swba_config_data.get('min_keyframe_angle', 10.0),
-                keyframe_selection_method=new_swba_config_data.get('keyframe_selection_method', 'distance'),
-                max_optimization_iterations=new_swba_config_data.get('max_optimization_iterations', 50),
-                optimization_convergence_threshold=new_swba_config_data.get('optimization_convergence_threshold', 1e-6),
-                use_robust_kernels=new_swba_config_data.get('use_robust_kernels', True),
-                verbose_optimization=new_swba_config_data.get('verbose_optimization', False)
+        elif estimator_lower == 'clean-swba':
+            # Create clean SWBA estimator with simplified flow
+            from src.estimation.new.swba_estimator_clean import CleanSWBAEstimator, CleanSWBAConfig
+            clean_swba_config = CleanSWBAConfig(
+                window_size=config_data.get('clean_swba', {}).get('window_size', 10),
+                min_pnp_points=4,
+                pnp_reprojection_threshold=3.0,
+                max_iterations=10,
+                pixel_noise=1.0,
+                ideal_noise=0.01
             )
-            estimator_instance = NewSWBAEstimator(new_swba_config)
-            console.print("[green]Created camera-model-independent SWBA estimator[/green]")
-            # Note: We'll need to create a preprocessor to convert raw frames to processed frames
-            preprocessor = None  # Will be created later when we have camera calibration
-        
+            estimator_instance = CleanSWBAEstimator(clean_swba_config)
+            
         elif estimator_lower == 'cpp-swba':
             # C++ SWBA is run as external process - no Python instance needed
             estimator_instance = None
@@ -239,7 +231,7 @@ def run_slam(
             initial_velocity = trajectory_gt.states[0].velocity if hasattr(trajectory_gt.states[0], 'velocity') else None
             
             # Check if estimator supports initial velocity 
-            if estimator_lower in ['ekf', 'swba', 'srif', 'new-swba'] and initial_velocity is not None:
+            if estimator_lower in ['ekf', 'swba', 'srif'] and initial_velocity is not None:
                 estimator_instance.initialize(initial_pose, initial_velocity=initial_velocity)
                 console.print(f"[cyan]Initialized with velocity: [{initial_velocity[0]:.2f}, {initial_velocity[1]:.2f}, {initial_velocity[2]:.2f}] m/s[/cyan]")
             else:
@@ -337,7 +329,7 @@ def run_slam(
                             console.print(f"  [red]{line}[/red]")
                 return None
             
-        elif estimator_lower == 'new-swba':
+        elif estimator_lower == 'clean-swba':
             # Special processing for camera-model-independent SWBA
             # Create preprocessor with projection service
             from src.estimation.projection_adapters import PinholeProjectionAdapter
