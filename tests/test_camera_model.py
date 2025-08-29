@@ -1,5 +1,12 @@
 """
 Unit tests for camera measurement model.
+
+============================= DEPRECATED =============================
+This test file tests the wrong camera model (estimation layer).
+Camera projection belongs in simulation, not estimation.
+
+TODO: Update these tests to test src/simulation/camera_model.py instead
+======================================================================
 """
 
 import pytest

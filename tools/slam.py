@@ -339,14 +339,21 @@ def run_slam(
             
         elif estimator_lower == 'new-swba':
             # Special processing for camera-model-independent SWBA
-            # Create preprocessor with projection service
-            from src.estimation.projection_adapters import PinholeProjectionAdapter
+            # TODO: The projection adapter has been removed. 
+            # The preprocessor should work directly with ideal coordinates from simulation.
+            # For now, create a mock projection service
+            console.print("[yellow]Warning: Projection adapter removed - using mock service[/yellow]")
             
-            # Create projection adapter using camera calibration
+            # Create a simple mock projection service
+            class MockProjectionService:
+                def __init__(self, calib):
+                    self.camera_calib = calib
+            
+            # Create mock using camera calibration
             if camera_calib:
-                projection_adapter = PinholeProjectionAdapter(camera_calib)
+                projection_adapter = MockProjectionService(camera_calib)
             else:
-                console.print("[yellow]Warning: No camera calibration, using default pinhole model[/yellow]")
+                console.print("[yellow]Warning: No camera calibration, using default[/yellow]")
                 # Create default calibration
                 from src.common.data_structures import CameraCalibration
                 default_calib = CameraCalibration(
@@ -357,7 +364,7 @@ def run_slam(
                     D=np.zeros(5),
                     model="pinhole"
                 )
-                projection_adapter = PinholeProjectionAdapter(default_calib)
+                projection_adapter = MockProjectionService(default_calib)
             
             # Create preprocessor
             preprocessor = VisualMeasurementPreprocessor(

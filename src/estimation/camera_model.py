@@ -1,5 +1,26 @@
 """
 Camera measurement model for SLAM estimation.
+
+================================================================
+======================== DEPRECATED ============================
+================================================================
+
+THIS FILE SHOULD NOT EXIST IN THE ESTIMATION LAYER!
+
+Camera projection/reprojection belongs in src/simulation/camera_model.py
+Estimators should work with pre-processed ideal/normalized coordinates only.
+
+This file is only kept for backward compatibility with legacy code:
+- src/estimation/legacy/swba_slam.py (deprecated)
+- src/estimation/legacy/srif_slam.py (deprecated)  
+- src/estimation/legacy/ekf_slam.py (deprecated)
+- src/estimation/stereo_camera.py (deprecated)
+- src/estimation/projection_adapters.py (deprecated)
+
+Use src/simulation/camera_model.py for camera projection.
+Use ideal_coordinates from CameraObservation for estimation.
+
+================================================================
 """
 
 import numpy as np

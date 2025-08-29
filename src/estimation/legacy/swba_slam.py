@@ -1,8 +1,13 @@
 """
 Simplified Sliding Window Bundle Adjustment (SWBA) for trajectory estimation.
 
-DEPRECATED: This implementation is maintained for backward compatibility only.
-Please use GtsamSWBAEstimator instead for better performance and stability.
+============================= DEPRECATED =============================
+This implementation is maintained for backward compatibility only.
+Please use new/swba_estimator.py which correctly uses ideal coordinates.
+
+THIS FILE INCORRECTLY USES CAMERA PROJECTION IN THE ESTIMATION LAYER.
+Estimators should work with pre-processed ideal coordinates only.
+======================================================================
 
 Minimal implementation that:
 - Maintains a sliding window of keyframes

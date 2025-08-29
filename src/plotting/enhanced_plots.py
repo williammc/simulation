@@ -561,7 +561,10 @@ def project_landmarks_to_frame(
     Returns:
         Array of projected pixels
     """
-    from src.estimation.camera_model import CameraMeasurementModel
+    from src.simulation.camera_model import PinholeCamera
+    from src.common.config import CameraConfig
+    from src.common.config import CameraIntrinsics as ConfigIntrinsics
+    from src.common.config import CameraExtrinsics as ConfigExtrinsics
     
     # Find pose at frame timestamp
     pose_idx = min(
@@ -570,8 +573,35 @@ def project_landmarks_to_frame(
     )
     pose = trajectory.states[pose_idx].pose
     
-    # Create camera model
-    camera_model = CameraMeasurementModel(calibration)
+    # Create minimal camera config for projection (PinholeCamera uses calibration for intrinsics)
+    # We need to convert data_structures types to config types
+    config_intrinsics = ConfigIntrinsics(
+        fx=calibration.intrinsics.fx,
+        fy=calibration.intrinsics.fy,
+        cx=calibration.intrinsics.cx,
+        cy=calibration.intrinsics.cy,
+        width=calibration.intrinsics.width,
+        height=calibration.intrinsics.height,
+        distortion=calibration.intrinsics.distortion.tolist() if calibration.intrinsics.distortion is not None else []
+    )
+    
+    # Convert extrinsics transformation matrix to translation and rotation
+    B_T_C = calibration.extrinsics.B_T_C
+    translation = B_T_C[:3, 3].tolist()
+    rotation = B_T_C[:3, :3].flatten().tolist()  # Row-major order
+    
+    config_extrinsics = ConfigExtrinsics(
+        translation=translation,
+        rotation=rotation
+    )
+    
+    camera_config = CameraConfig(
+        intrinsics=config_intrinsics,
+        extrinsics=config_extrinsics,
+        add_noise=False,  # No noise for visualization
+        check_fov=False   # Don't filter for visualization
+    )
+    camera_model = PinholeCamera(calibration, camera_config)
     
     # Project landmarks
     projected = []
@@ -582,7 +612,13 @@ def project_landmarks_to_frame(
         landmark_list = landmarks.landmarks
     
     for landmark in landmark_list:
-        pixel, _, _ = camera_model.project(landmark.position, pose, False)
+        # Project landmark to camera frame
+        # Create world-to-body transformation matrix from pose
+        W_T_B = np.eye(4)
+        W_T_B[:3, :3] = pose.rotation_matrix
+        W_T_B[:3, 3] = pose.position
+        
+        pixel, depth = camera_model.project_point(landmark.position, W_T_B)
         if pixel is not None:
             projected.append([pixel.u, pixel.v])
     
