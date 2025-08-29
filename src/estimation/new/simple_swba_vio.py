@@ -10,6 +10,8 @@ Core functionality:
 from typing import List, Optional, Dict, Tuple, Any
 import numpy as np
 import logging
+import json
+from pathlib import Path
 from pydantic import Field
 
 from src.estimation.base_estimator import (
@@ -36,7 +38,7 @@ class SimpleSWBAConfig(EstimatorConfig):
     
     # Window parameters
     window_size: int = Field(10, ge=3, le=20, description="Number of keyframes in window")
-    keyframe_spacing: int = Field(10, ge=1, description="Create keyframe every N frames")
+    keyframe_spacing: int = Field(5, ge=1, description="Create keyframe every N frames")
     
     # Optimization parameters
     max_iterations: int = Field(10, ge=1, le=50, description="Max optimization iterations")
@@ -75,6 +77,11 @@ class SimpleSWBAVIO(BaseEstimator):
         self.current_velocity: np.ndarray = np.zeros(3)
         self.current_bias = {'accel': np.zeros(3), 'gyro': np.zeros(3)}
         
+        # All poses (for complete trajectory)
+        self.all_poses: List[Pose] = []
+        self.pnp_poses: List[Pose] = []  # PnP solved poses
+        self.ground_truth_poses: List[Pose] = []  # Ground truth for comparison
+        
         # Keyframe data
         self.keyframes: List[Tuple[Pose, ProcessedVisualFrame]] = []
         self.keyframe_ids: List[int] = []
@@ -91,6 +98,10 @@ class SimpleSWBAVIO(BaseEstimator):
         self.frame_count = 0
         self.keyframe_count = 0
         
+        # Debug settings
+        self.debug_dir = Path("debug_output")
+        self.debug_enabled = True
+        
     def initialize(self, initial_pose: Pose, initial_covariance: Optional[np.ndarray] = None, initial_velocity: Optional[np.ndarray] = None):
         """Initialize with first pose and optional velocity."""
         self.current_pose = initial_pose
@@ -101,6 +112,14 @@ class SimpleSWBAVIO(BaseEstimator):
             robot_velocity=self.current_velocity,
             robot_covariance=initial_covariance if initial_covariance else np.eye(15) * 0.1
         )
+        
+        # Add initial pose to all_poses
+        self.all_poses.append(Pose(
+            timestamp=initial_pose.timestamp,
+            position=initial_pose.position.copy(),
+            rotation_matrix=initial_pose.rotation_matrix.copy()
+        ))
+        
         logger.info("SimpleSWBAVIO initialized")
         
     def predict(self, imu_data: Any, dt: float):
@@ -145,6 +164,13 @@ class SimpleSWBAVIO(BaseEstimator):
         )
         self.current_velocity = new_v
         
+        # Store all poses for complete trajectory
+        self.all_poses.append(Pose(
+            timestamp=self.current_pose.timestamp,
+            position=self.current_pose.position.copy(),
+            rotation_matrix=self.current_pose.rotation_matrix.copy()
+        ))
+        
         self.total_predictions += 1
         
     def update(self, visual_frame: Any, landmarks: Optional[Map] = None):
@@ -164,6 +190,8 @@ class SimpleSWBAVIO(BaseEstimator):
         # Decide if this should be a keyframe
         is_keyframe = (self.frame_count % self.config.keyframe_spacing == 0) or \
                       len(self.keyframes) == 0
+        
+        logger.debug(f"Frame {self.frame_count}: is_keyframe={is_keyframe}, total_keyframes={len(self.keyframes)}")
         
         if is_keyframe:
             # Store keyframe (create new Pose object instead of copy)
@@ -387,7 +415,85 @@ class SimpleSWBAVIO(BaseEstimator):
             del self.imu_constraints[k]
             
         logger.debug(f"Marginalized keyframe {old_id}")
+    
+    def _dump_debug_data(self):
+        """Dump debug data to JSON files."""
+        try:
+            # Create debug directory
+            self.debug_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Dump estimated poses
+            estimated_data = {
+                'all_poses': [
+                    {
+                        'timestamp': p.timestamp,
+                        'position': p.position.tolist(),
+                        'rotation': p.rotation_matrix.tolist()
+                    } for p in self.all_poses
+                ],
+                'keyframe_poses': [
+                    {
+                        'timestamp': p.timestamp,
+                        'position': p.position.tolist(),
+                        'rotation': p.rotation_matrix.tolist()
+                    } for p, _ in self.keyframes
+                ],
+                'num_frames': self.frame_count,
+                'num_keyframes': len(self.keyframes),
+                'num_landmarks': len(self.landmarks)
+            }
+            
+            with open(self.debug_dir / 'simple_swba_poses.json', 'w') as f:
+                json.dump(estimated_data, f, indent=2)
+            
+            # Dump PnP poses if available
+            if self.pnp_poses:
+                pnp_data = {
+                    'pnp_poses': [
+                        {
+                            'timestamp': p.timestamp,
+                            'position': p.position.tolist(),
+                            'rotation': p.rotation_matrix.tolist()
+                        } for p in self.pnp_poses
+                    ]
+                }
+                with open(self.debug_dir / 'pnp_poses.json', 'w') as f:
+                    json.dump(pnp_data, f, indent=2)
+            
+            # Dump landmarks
+            landmark_data = {
+                'landmarks': {
+                    str(lid): pos.tolist() for lid, pos in self.landmarks.items()
+                }
+            }
+            with open(self.debug_dir / 'simple_swba_landmarks.json', 'w') as f:
+                json.dump(landmark_data, f, indent=2)
+            
+            # Dump ground truth if available
+            if self.ground_truth_poses:
+                gt_data = {
+                    'ground_truth_poses': [
+                        {
+                            'timestamp': p.timestamp,
+                            'position': p.position.tolist(),
+                            'rotation': p.rotation_matrix.tolist()
+                        } for p in self.ground_truth_poses
+                    ]
+                }
+                with open(self.debug_dir / 'ground_truth_poses.json', 'w') as f:
+                    json.dump(gt_data, f, indent=2)
+            
+            logger.info(f"Debug data dumped to {self.debug_dir}")
+            
+        except Exception as e:
+            logger.warning(f"Failed to dump debug data: {e}")
         
+    def set_ground_truth(self, gt_trajectory: Any):
+        """Store ground truth trajectory for comparison."""
+        if hasattr(gt_trajectory, 'states'):
+            self.ground_truth_poses = [state.pose for state in gt_trajectory.states]
+            logger.info(f"Stored {len(self.ground_truth_poses)} ground truth poses")
+    
     def marginalize(self):
         """Public marginalize for compatibility."""
         self._marginalize_oldest()
@@ -411,9 +517,21 @@ class SimpleSWBAVIO(BaseEstimator):
     
     def get_result(self) -> EstimatorResult:
         """Get estimation result."""
-        # Build trajectory from keyframes
+        # Dump debug data if enabled
+        if self.debug_enabled:
+            self._dump_debug_data()
+        
+        # Build trajectory from ALL poses (not just keyframes)
         trajectory = Trajectory()
-        for pose, _ in self.keyframes:
+        
+        # Use all_poses if available, otherwise use keyframes
+        poses_to_use = self.all_poses if self.all_poses else [pose for pose, _ in self.keyframes]
+        
+        # If still no poses, add current pose
+        if not poses_to_use and self.current_pose:
+            poses_to_use = [self.current_pose]
+        
+        for pose in poses_to_use:
             state = TrajectoryState(pose=pose)
             trajectory.add_state(state)
         
@@ -427,9 +545,9 @@ class SimpleSWBAVIO(BaseEstimator):
             )
             landmark_map.add_landmark(landmark)
         
-        # Get states history
+        # Get states history from all poses
         states = []
-        for pose, _ in self.keyframes:
+        for pose in poses_to_use:
             state = EstimatorState(
                 timestamp=pose.timestamp,
                 robot_pose=pose,
@@ -437,6 +555,8 @@ class SimpleSWBAVIO(BaseEstimator):
                 robot_covariance=self.get_covariance_matrix()
             )
             states.append(state)
+        
+        logger.info(f"Returning result with {len(poses_to_use)} poses, {len(self.keyframes)} keyframes, {len(self.landmarks)} landmarks")
         
         return EstimatorResult(
             trajectory=trajectory,
@@ -446,5 +566,10 @@ class SimpleSWBAVIO(BaseEstimator):
             iterations=self.total_iterations,
             converged=True,
             final_cost=0.0,
-            metadata={'estimator_type': 'simple_swba'}
+            metadata={
+                'estimator_type': 'simple_swba',
+                'num_keyframes': len(self.keyframes),
+                'num_all_poses': len(self.all_poses),
+                'num_landmarks': len(self.landmarks)
+            }
         )

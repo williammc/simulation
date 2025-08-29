@@ -264,6 +264,11 @@ def run_slam(
                 estimator_instance.initialize(initial_pose)
                 if initial_velocity is not None and np.linalg.norm(initial_velocity) > 0.1:
                     console.print(f"[yellow]Warning: Initial velocity [{initial_velocity[0]:.2f}, {initial_velocity[1]:.2f}, {initial_velocity[2]:.2f}] m/s not used[/yellow]")
+            
+            # Pass ground truth to simple-swba for debugging
+            if estimator_lower == 'simple-swba' and hasattr(estimator_instance, 'set_ground_truth'):
+                estimator_instance.set_ground_truth(trajectory_gt)
+                console.print("[cyan]Ground truth trajectory stored for debugging[/cyan]")
         else:
             console.print("[red]✗ Error: No ground truth trajectory found[/red]")
             return None
