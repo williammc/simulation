@@ -159,18 +159,8 @@ class SimulationData:
     def add_camera_measurements(self, camera_data: CameraData):
         """Add camera measurements."""
         for frame in camera_data.frames:
-            observations = []
-            for obs in frame.observations:
-                obs_dict = obs.to_dict()
-                observations.append(obs_dict)
-            
-            frame_dict = {
-                "timestamp": frame.timestamp,
-                "camera_id": frame.camera_id,
-                "observations": observations,
-                "is_keyframe": getattr(frame, 'is_keyframe', False),
-                "keyframe_id": getattr(frame, 'keyframe_id', None)
-            }
+            # Use the frame's to_dict() method which includes preintegrated_imu
+            frame_dict = frame.to_dict()
             self.measurements["camera_frames"].append(frame_dict)
     
     def set_preintegrated_imu(self, preintegrated_data: Dict[int, 'PreintegratedIMUData']):
@@ -351,18 +341,8 @@ class SimulationData:
             if cam_id not in camera_frames:
                 camera_frames[cam_id] = []
             
-            observations = []
-            for obs_dict in frame_dict["observations"]:
-                observation = CameraObservation.from_dict(obs_dict)
-                observations.append(observation)
-            
-            frame = CameraFrame(
-                timestamp=frame_dict["timestamp"],
-                camera_id=cam_id,
-                observations=observations,
-                is_keyframe=frame_dict.get("is_keyframe", False),
-                keyframe_id=frame_dict.get("keyframe_id", None)
-            )
+            # Use CameraFrame.from_dict() which properly loads preintegrated_imu
+            frame = CameraFrame.from_dict(frame_dict)
             camera_frames[cam_id].append(frame)
         
         # Return requested camera or first available

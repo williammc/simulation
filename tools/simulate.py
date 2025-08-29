@@ -26,6 +26,8 @@ from src.simulation.imu_integration import IMUPreintegrator
 from src.utils.preintegration_utils import (
     preintegrate_between_keyframes,
     attach_preintegrated_to_frames,
+    preintegrate_between_frames,
+    attach_preintegrated_to_all_frames,
     PreintegrationCache
 )
 from src.simulation.keyframe_selector import mark_keyframes_in_camera_data
@@ -367,7 +369,38 @@ def run_simulation(
                     # Create cache for efficiency
                     cache = PreintegrationCache()
                     
-                    # Preintegrate between keyframes with initial orientations
+                    # Option 1: Preintegrate between ALL frames (for continuous tracking)
+                    # Get all frame times and orientations
+                    all_frame_times = [frame.timestamp for frame in camera_data.frames]
+                    all_frame_orientations = []
+                    for frame_time in all_frame_times:
+                        pose = traj.get_pose_at_time(frame_time)
+                        if pose is not None:
+                            all_frame_orientations.append(pose.rotation_matrix)
+                        else:
+                            all_frame_orientations.append(np.eye(3))
+                    
+                    # Preintegrate between all consecutive frames
+                    per_frame_preintegrated = preintegrate_between_frames(
+                        imu_data.measurements,
+                        all_frame_times,
+                        preintegrator,
+                        all_frame_orientations
+                    )
+                    
+                    # Attach to all frames
+                    attach_preintegrated_to_all_frames(
+                        camera_data.frames,
+                        per_frame_preintegrated
+                    )
+                    
+                    # Debug: Check how many frames have IMU attached
+                    frames_with_imu = sum(1 for f in camera_data.frames if f.preintegrated_imu is not None)
+                    console.print(f"  [green]✓[/green] Preintegrated IMU between {len(all_frame_times)} frames")
+                    console.print(f"  [cyan]Frames with IMU attached: {frames_with_imu}/{len(camera_data.frames)}[/cyan]")
+                    
+                    # Option 2: Also keep keyframe-only preintegration for backward compatibility
+                    # (Some estimators may still expect keyframe-only data)
                     preintegrated_imu_data = preintegrate_between_keyframes(
                         imu_data.measurements,
                         keyframe_ids,
@@ -376,14 +409,6 @@ def run_simulation(
                         cache,
                         keyframe_orientations
                     )
-                    
-                    # Attach preintegrated data to camera frames
-                    attach_preintegrated_to_frames(
-                        camera_data.frames,
-                        preintegrated_imu_data
-                    )
-                    
-                    console.print(f"  [green]✓[/green] Preintegrated IMU between {len(keyframe_schedule)} keyframes")
             
             progress.update(task, description="Saving data...")
             

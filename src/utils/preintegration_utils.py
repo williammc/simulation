@@ -246,3 +246,111 @@ def split_measurements_by_keyframes(
         segments.append(segment)
     
     return segments
+
+
+def preintegrate_between_frames(
+    imu_measurements: List[IMUMeasurement],
+    frame_times: List[float],
+    preintegrator: Optional[IMUPreintegrator] = None,
+    frame_orientations: Optional[List[np.ndarray]] = None
+) -> List[PreintegratedIMUData]:
+    """
+    Preintegrate IMU measurements between ALL consecutive camera frames.
+    
+    This function creates preintegrated IMU data for every consecutive pair
+    of camera frames, not just keyframes. This allows estimators to track
+    poses for all frames.
+    
+    Args:
+        imu_measurements: All IMU measurements
+        frame_times: Timestamps of all camera frames (in order)
+        preintegrator: IMU preintegrator (creates default if None)
+        frame_orientations: Optional list of rotation matrices (3x3) at frames
+        
+    Returns:
+        List of PreintegratedIMUData, one for each frame transition
+    """
+    if len(frame_times) < 2:
+        return []
+    
+    # Create preintegrator if not provided
+    if preintegrator is None:
+        preintegrator = IMUPreintegrator()
+    
+    # Sort frames by time
+    sorted_times = sorted(frame_times)
+    
+    # Preintegrate between each consecutive frame pair
+    result = []
+    
+    for i in range(len(sorted_times) - 1):
+        from_time = sorted_times[i]
+        to_time = sorted_times[i + 1]
+        
+        # Extract measurements in this interval
+        interval_measurements = []
+        for meas in imu_measurements:
+            if from_time <= meas.timestamp < to_time:
+                interval_measurements.append(meas)
+        
+        if not interval_measurements:
+            logger.warning(f"No IMU measurements between frames at t={from_time:.3f} and t={to_time:.3f}")
+            # Create empty preintegrated data
+            empty_data = PreintegratedIMUData(
+                from_keyframe_id=i,
+                to_keyframe_id=i+1,
+                delta_t=to_time - from_time,
+                delta_position=np.zeros(3),
+                delta_velocity=np.zeros(3),
+                delta_rotation=np.eye(3),
+                covariance=np.eye(9) * 1e-6,
+                original_measurements=[]
+            )
+            result.append(empty_data)
+            continue
+        
+        # Get initial orientation for this interval if available
+        initial_orientation = None
+        if frame_orientations is not None and i < len(frame_orientations):
+            initial_orientation = frame_orientations[i]
+        
+        # Preintegrate measurements with initial orientation
+        preintegrated_data = preintegrator.batch_process(
+            interval_measurements,
+            i,  # Use frame index as ID
+            i + 1,
+            initial_orientation
+        )
+        
+        result.append(preintegrated_data)
+    
+    return result
+
+
+def attach_preintegrated_to_all_frames(
+    camera_frames: List[CameraFrame],
+    preintegrated_data: List[PreintegratedIMUData]
+) -> None:
+    """
+    Attach preintegrated IMU data to ALL camera frames.
+    
+    Each frame (except the first) gets the preintegrated IMU from the
+    previous frame to itself.
+    
+    Args:
+        camera_frames: List of camera frames to modify
+        preintegrated_data: List of preintegrated data for each frame transition
+    """
+    if len(camera_frames) < 2 or len(preintegrated_data) < 1:
+        return
+    
+    # Sort frames by timestamp
+    sorted_frames = sorted(camera_frames, key=lambda f: f.timestamp)
+    
+    # Attach preintegrated data to each frame (except first)
+    for i in range(1, len(sorted_frames)):
+        if i - 1 < len(preintegrated_data):
+            sorted_frames[i].preintegrated_imu = preintegrated_data[i - 1]
+            logger.debug(f"Attached preintegrated IMU to frame at t={sorted_frames[i].timestamp:.3f}")
+        else:
+            logger.warning(f"No preintegrated data for frame {i} at t={sorted_frames[i].timestamp:.3f}")

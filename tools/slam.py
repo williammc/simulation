@@ -360,7 +360,112 @@ def run_slam(
                             console.print(f"  [red]{line}[/red]")
                 return None
             
-        elif estimator_lower in ['new-swba', 'simple-swba']:
+        elif estimator_lower == 'simple-swba':
+            # Simple SWBA processes ALL frames with per-frame IMU preintegration
+            console.print("[cyan]Simple SWBA: Processing ALL frames with per-frame IMU[/cyan]")
+            
+            # Create mock projection service
+            console.print("[yellow]Warning: Projection adapter removed - using mock service[/yellow]")
+            
+            # Create a simple mock projection service
+            class MockProjectionService:
+                def __init__(self, calib):
+                    self.camera_calib = calib
+            
+            # Create mock using camera calibration
+            if camera_calib:
+                projection_adapter = MockProjectionService(camera_calib)
+            else:
+                console.print("[yellow]Warning: No camera calibration, using default[/yellow]")
+                # Create default calibration
+                from src.common.data_structures import CameraCalibration
+                default_calib = CameraCalibration(
+                    camera_id="cam0",
+                    image_width=640,
+                    image_height=480,
+                    K=np.array([[500, 0, 320], [0, 500, 240], [0, 0, 1]]),
+                    D=np.zeros(5),
+                    model="pinhole"
+                )
+                projection_adapter = MockProjectionService(default_calib)
+            
+            # Create preprocessor
+            preprocessor = VisualMeasurementPreprocessor(
+                projection_service=projection_adapter,
+                pixel_noise_std=1.0,
+                robust_kernel='huber',
+                huber_delta=1.0
+            )
+            
+            # Get ALL frames (not just keyframes)
+            all_frames = []
+            if camera_data and hasattr(camera_data, 'frames'):
+                all_frames = camera_data.frames
+            elif isinstance(camera_data, list):
+                all_frames = camera_data
+            
+            if all_frames:
+                task = progress.add_task(
+                    f"Processing {len(all_frames)} camera frames with IMU...", 
+                    total=len(all_frames)
+                )
+                
+                console.print(f"[cyan]Processing all {len(all_frames)} frames (not just keyframes)[/cyan]")
+                
+                for i, frame in enumerate(all_frames):
+                    # Check if frame has preintegrated IMU (all frames except the first should have it)
+                    if hasattr(frame, 'preintegrated_imu') and frame.preintegrated_imu is not None:
+                        preint_data = frame.preintegrated_imu
+                        
+                        # Convert simulation PreintegratedIMUData to our PreprocessedIMUData interface
+                        from src.estimation.interfaces import PreprocessedIMUData
+                        converted_imu = PreprocessedIMUData(
+                            from_keyframe_id=preint_data.from_keyframe_id,
+                            to_keyframe_id=preint_data.to_keyframe_id,
+                            delta_position=preint_data.delta_position,
+                            delta_velocity=preint_data.delta_velocity,
+                            delta_rotation=preint_data.delta_rotation,
+                            covariance=preint_data.covariance,
+                            delta_t=preint_data.delta_t if hasattr(preint_data, 'delta_t') else preint_data.dt,
+                            num_measurements=preint_data.num_measurements if hasattr(preint_data, 'num_measurements') else len(preint_data.original_measurements)
+                        )
+                        
+                        # Predict with IMU data
+                        estimator_instance.predict(converted_imu, converted_imu.delta_t)
+                        console.print(f"[dim]Frame {i}: Predicted with IMU (dt={converted_imu.delta_t:.3f})[/dim]")
+                    else:
+                        console.print(f"[dim]Frame {i}: No IMU data available[/dim]")
+                    
+                    # Get current state for preprocessing
+                    from src.common.data_structures import TrajectoryState, Pose
+                    current_pose = estimator_instance.current_pose
+                    current_state = TrajectoryState(
+                        pose=current_pose,
+                        velocity=estimator_instance.current_velocity,
+                        angular_velocity=None
+                    )
+                    
+                    # Preprocess the frame
+                    processed_frame = preprocessor.process_frame(
+                        frame,
+                        current_state,
+                        landmarks,
+                        compute_jacobians=True,
+                        chi2_threshold=5.991
+                    )
+                    
+                    # Update with processed frame (estimator decides if it's a keyframe)
+                    estimator_instance.update(processed_frame, landmarks)
+                    
+                    # Run optimization periodically
+                    if (i + 1) % 10 == 0:
+                        estimator_instance.optimize()
+                    
+                    progress.update(task, advance=1)
+            else:
+                console.print("[yellow]Warning: No camera frames for simple-swba[/yellow]")
+                
+        elif estimator_lower == 'new-swba':
             # Special processing for camera-model-independent SWBA
             # TODO: The projection adapter has been removed. 
             # The preprocessor should work directly with ideal coordinates from simulation.

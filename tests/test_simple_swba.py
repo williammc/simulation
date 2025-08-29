@@ -47,11 +47,13 @@ class TestSimpleSWBAVIO:
     def imu_data(self):
         """Create sample preintegrated IMU data."""
         return PreprocessedIMUData(
+            from_keyframe_id=0,
+            to_keyframe_id=1,
             delta_position=np.array([0.1, 0.05, 0.01]),
             delta_velocity=np.array([0.5, 0.2, 0.05]),
-            rotation_matrix=np.eye(3),
-            dt=0.1,
-            information_matrix=np.eye(9),
+            delta_rotation=np.eye(3),  # Changed from rotation_matrix to delta_rotation
+            delta_t=0.1,  # Changed from dt to delta_t
+            covariance=np.eye(9),  # Changed from information_matrix to covariance
             num_measurements=10
         )
     
@@ -66,15 +68,12 @@ class TestSimpleSWBAVIO:
             pixel_covariance=np.eye(2),
             jacobian_wrt_pose=np.random.randn(2, 6) * 0.1,
             jacobian_wrt_landmark=np.random.randn(2, 3) * 0.1,
-            is_valid=True,
-            robust_weight=1.0,
             # Ideal coordinates
             observed_ideal=np.array([0.0, 0.0]),
             predicted_ideal=np.array([0.001, 0.001]),
             ideal_residual=np.array([-0.001, -0.001]),
             ideal_jacobian_wrt_pose=np.random.randn(2, 6) * 0.01,
-            ideal_jacobian_wrt_landmark=np.random.randn(2, 3) * 0.01,
-            has_ideal_coordinates=True
+            ideal_jacobian_wrt_landmark=np.random.randn(2, 3) * 0.01
         )
     
     @pytest.fixture
@@ -90,15 +89,13 @@ class TestSimpleSWBAVIO:
                 residual=np.array([0.1, 0.1]),
                 pixel_covariance=np.eye(2),
                 jacobian_wrt_pose=np.random.randn(2, 6) * 0.1,
-                jacobian_wrt_landmark=np.random.randn(2, 3) * 0.1,
-                is_valid=True,
-                robust_weight=1.0,
-                has_ideal_coordinates=False
+                jacobian_wrt_landmark=np.random.randn(2, 3) * 0.1
             )
             measurements.append(meas)
             
         return ProcessedVisualFrame(
             timestamp=0.1,
+            frame_id=1,
             measurements=measurements,
             is_keyframe=True
         )

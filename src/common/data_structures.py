@@ -89,18 +89,18 @@ class IMUData:
 @dataclass
 class PreintegratedIMUData:
     """
-    Preintegrated IMU measurements between two keyframes.
+    Preintegrated IMU measurements between two frames (or keyframes).
     
     Represents the integrated effect of multiple IMU measurements between
-    two keyframes, enabling efficient visual-inertial optimization.
+    two frames, enabling efficient visual-inertial optimization.
     """
     delta_position: np.ndarray      # Relative position change (3x1)
     delta_velocity: np.ndarray      # Relative velocity change (3x1)
     delta_rotation: np.ndarray      # Relative rotation as SO3 matrix (3x3)
     covariance: np.ndarray          # Uncertainty covariance (15x15)
     dt: float                       # Total time interval
-    from_keyframe_id: int           # Source keyframe ID
-    to_keyframe_id: int             # Target keyframe ID
+    from_keyframe_id: int           # Source frame/keyframe ID (legacy naming kept for compatibility)
+    to_keyframe_id: int             # Target frame/keyframe ID (legacy naming kept for compatibility)
     num_measurements: int           # Number of integrated measurements
     jacobian: Optional[np.ndarray] = None  # Jacobian w.r.t biases (15x6)
     source_measurements: Optional[List[IMUMeasurement]] = None  # Original measurements
@@ -250,21 +250,32 @@ class CameraFrame:
         result = {
             "timestamp": self.timestamp,
             "camera_id": self.camera_id,
-            "observations": [obs.to_dict() for obs in self.observations]
+            "observations": [obs.to_dict() for obs in self.observations],
+            "is_keyframe": self.is_keyframe
         }
         if self.image_path:
             result["image_path"] = self.image_path
+        if self.keyframe_id is not None:
+            result["keyframe_id"] = self.keyframe_id
+        if self.preintegrated_imu is not None:
+            result["preintegrated_imu"] = self.preintegrated_imu.to_dict()
         return result
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'CameraFrame':
         """Create from dictionary."""
-        return cls(
+        frame = cls(
             timestamp=data["timestamp"],
             camera_id=data["camera_id"],
             observations=[CameraObservation.from_dict(obs) for obs in data["observations"]],
-            image_path=data.get("image_path")
+            image_path=data.get("image_path"),
+            is_keyframe=data.get("is_keyframe", False),
+            keyframe_id=data.get("keyframe_id")
         )
+        # Load preintegrated IMU if present
+        if "preintegrated_imu" in data and data["preintegrated_imu"] is not None:
+            frame.preintegrated_imu = PreintegratedIMUData.from_dict(data["preintegrated_imu"])
+        return frame
 
 
 @dataclass

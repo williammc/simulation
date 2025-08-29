@@ -175,7 +175,7 @@ class SimpleSWBAVIO(BaseEstimator):
         
     def update(self, visual_frame: Any, landmarks: Optional[Map] = None):
         """
-        Update step - decide on keyframes and optimize.
+        Update step - process ALL frames and decide on keyframes for optimization.
         
         Args:
             visual_frame: Processed visual measurements with Jacobians
@@ -187,7 +187,26 @@ class SimpleSWBAVIO(BaseEstimator):
             
         self.frame_count += 1
         
-        # Decide if this should be a keyframe
+        # IMPORTANT: Process every frame, not just keyframes
+        # This ensures we track poses for all camera frames
+        
+        # Note: pending_imu is kept until we create a keyframe to store the constraint
+        
+        # Store current pose for this frame (already updated by predict())
+        # This happens for EVERY frame
+        current_frame_pose = Pose(
+            timestamp=self.current_pose.timestamp,
+            position=self.current_pose.position.copy(),
+            rotation_matrix=self.current_pose.rotation_matrix.copy()
+        )
+        
+        # Don't add duplicate poses (predict already added it)
+        # Check if this pose was already added by predict()
+        if (not self.all_poses or 
+            self.all_poses[-1].timestamp != current_frame_pose.timestamp):
+            self.all_poses.append(current_frame_pose)
+        
+        # Decide if this should be a keyframe for optimization
         is_keyframe = (self.frame_count % self.config.keyframe_spacing == 0) or \
                       len(self.keyframes) == 0
         
