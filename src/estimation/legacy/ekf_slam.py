@@ -23,7 +23,7 @@ from src.estimation.base_estimator import (
     EstimatorResult, EstimatorType
 )
 from src.common.config import EKFConfig
-from src.estimation.imu_integration import IMUState
+from src.simulation.imu_integration import IMUState
 from src.common.data_structures import (
     CameraFrame, Map, Landmark,
     Trajectory, TrajectoryState, Pose,

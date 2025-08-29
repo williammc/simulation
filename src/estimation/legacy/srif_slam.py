@@ -20,7 +20,7 @@ from src.estimation.base_estimator import (
     EstimatorResult, EstimatorType
 )
 from src.common.config import SRIFConfig
-from src.estimation.imu_integration import (
+from src.simulation.imu_integration import (
     IMUIntegrator, IMUState, IntegrationMethod
 )
 from src.estimation.camera_model import CameraMeasurementModel

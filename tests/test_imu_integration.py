@@ -6,7 +6,7 @@ import pytest
 import numpy as np
 from typing import List
 
-from src.estimation.imu_integration import (
+from src.simulation.imu_integration import (
     IMUState, IMUIntegrator, IMUPreintegrator,
     IntegrationMethod, PreintegrationResult,
     compute_imu_jacobian

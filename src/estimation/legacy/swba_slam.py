@@ -24,7 +24,7 @@ from src.estimation.base_estimator import (
     EstimatorResult, EstimatorType
 )
 from src.common.config import SWBAConfig
-from src.estimation.imu_integration import IMUState, PreintegrationResult
+from src.simulation.imu_integration import IMUState, PreintegrationResult
 from src.estimation.camera_model import (
     CameraMeasurementModel, batch_compute_reprojection_errors
 )

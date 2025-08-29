@@ -11,7 +11,7 @@ from src.estimation.legacy.swba_slam import (
 )
 from src.common.config import SWBAConfig
 from src.estimation.base_estimator import EstimatorType
-from src.estimation.imu_integration import IMUState
+from src.simulation.imu_integration import IMUState
 from src.common.data_structures import (
     Pose, IMUMeasurement, CameraFrame, CameraObservation,
     ImagePoint, Map, Landmark, Trajectory, TrajectoryState,

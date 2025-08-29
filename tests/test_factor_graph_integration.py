@@ -14,7 +14,7 @@ from src.common.data_structures import (
     IMUCalibration, PreintegratedIMUData
 )
 from src.estimation.legacy.swba_slam import SlidingWindowBA, Keyframe
-from src.estimation.imu_integration import IMUPreintegrator, PreintegrationResult, IMUState
+from src.simulation.imu_integration import IMUPreintegrator, PreintegrationResult, IMUState
 from src.simulation.keyframe_selector import mark_keyframes_in_camera_data
 from src.utils.preintegration_utils import preintegrate_between_keyframes
 

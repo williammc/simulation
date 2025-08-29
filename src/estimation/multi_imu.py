@@ -10,7 +10,7 @@ from enum import Enum
 from src.common.data_structures import (
     IMUMeasurement, IMUCalibration
 )
-from src.estimation.imu_integration import IMUIntegrator, IntegrationMethod, IMUState
+from src.simulation.imu_integration import IMUIntegrator, IntegrationMethod, IMUState
 from src.utils.math_utils import skew
 
 

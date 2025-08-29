@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 from scipy.spatial.transform import Rotation
 
-from src.estimation.imu_integration import IMUPreintegrator
+from src.simulation.imu_integration import IMUPreintegrator
 from src.common.data_structures import IMUMeasurement
 from src.simulation.imu_model import IMUModel
 from src.common.config import IMUConfig, IMUNoiseParams

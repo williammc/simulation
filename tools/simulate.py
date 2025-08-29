@@ -22,7 +22,7 @@ from src.common.data_structures import (
     IMUCalibration, CameraData, PreintegratedIMUData
 )
 from src.common.json_io import save_simulation_data
-from src.estimation.imu_integration import IMUPreintegrator
+from src.simulation.imu_integration import IMUPreintegrator
 from src.utils.preintegration_utils import (
     preintegrate_between_keyframes,
     attach_preintegrated_to_frames,

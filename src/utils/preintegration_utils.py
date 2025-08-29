@@ -13,7 +13,7 @@ import logging
 from src.common.data_structures import (
     IMUMeasurement, CameraFrame, PreintegratedIMUData
 )
-from src.estimation.imu_integration import IMUPreintegrator
+from src.simulation.imu_integration import IMUPreintegrator
 
 logger = logging.getLogger(__name__)
 

@@ -18,7 +18,7 @@ from src.common.config import EKFConfig, SWBAConfig, SRIFConfig
 from src.estimation.legacy.ekf_slam import EKFSlam
 from src.estimation.legacy.swba_slam import SlidingWindowBA
 from src.estimation.legacy.srif_slam import SRIFSlam
-from src.estimation.imu_integration import IMUPreintegrator
+from src.simulation.imu_integration import IMUPreintegrator
 from src.utils.preintegration_utils import preintegrate_between_keyframes
 
 

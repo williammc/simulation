@@ -13,7 +13,7 @@ from src.common.data_structures import (
 from src.simulation.keyframe_selector import (
     create_keyframe_selector, mark_keyframes_in_camera_data
 )
-from src.estimation.imu_integration import IMUPreintegrator
+from src.simulation.imu_integration import IMUPreintegrator
 from src.utils.preintegration_utils import (
     preintegrate_between_keyframes,
     attach_preintegrated_to_frames,

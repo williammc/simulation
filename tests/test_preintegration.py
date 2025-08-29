@@ -13,7 +13,7 @@ from src.common.data_structures import (
     IMUMeasurement, CameraFrame, PreintegratedIMUData,
     Pose, TrajectoryState, Trajectory
 )
-from src.estimation.imu_integration import IMUPreintegrator, IMUState
+from src.simulation.imu_integration import IMUPreintegrator, IMUState
 from src.utils.preintegration_utils import (
     PreintegrationCache,
     preintegrate_between_keyframes,
