@@ -10,7 +10,8 @@ from scipy.spatial.transform import Rotation as R
 import matplotlib.pyplot as plt
 
 from src.simulation.trajectory_generator import generate_trajectory
-from src.simulation.imu_model import IMUModel, IMUNoiseConfig
+from src.simulation.imu_model import IMUModel
+from src.common.config import IMUConfig, IMUNoiseParams
 from src.common.data_structures import IMUCalibration, Pose, TrajectoryState
 
 
@@ -93,14 +94,17 @@ def compare_raw_imu_simulations():
         rate=200.0
     )
     
-    noise_config = IMUNoiseConfig(
-        accel_noise_density=0.0,
-        gyro_noise_density=0.0,
-        gravity_magnitude=9.81,
-        seed=42
+    noise_params = IMUNoiseParams(
+        accelerometer_noise_density=0.0,
+        gyroscope_noise_density=0.0
     )
     
-    our_imu_model = IMUModel(calibration=imu_calib, noise_config=noise_config)
+    imu_config = IMUConfig(
+        noise_params=noise_params,
+        gravity_magnitude=9.81
+    )
+    
+    our_imu_model = IMUModel(calibration=imu_calib, config=imu_config)
     our_imu_data = our_imu_model.generate_perfect_measurements(static_traj)
     
     # GTSAM-style simulation

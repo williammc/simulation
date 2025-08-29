@@ -6,12 +6,11 @@ import pytest
 import numpy as np
 
 from src.simulation.camera_model import (
-    PinholeCamera, CameraViewConfig,
+    PinholeCamera,
     generate_camera_observations
 )
-from src.simulation.imu_model import (
-    IMUModel, IMUNoiseConfig
-)
+from src.simulation.imu_model import IMUModel
+from src.common.config import CameraConfig, IMUConfig
 from src.common.data_structures import (
     CameraCalibration, CameraIntrinsics, CameraExtrinsics, CameraModel,
     IMUCalibration,
@@ -49,7 +48,31 @@ class TestPinholeCamera:
             extrinsics=extrinsics
         )
         
-        self.camera = PinholeCamera(self.calibration)
+        # Create camera config
+        from src.common.config import CameraIntrinsics as ConfigIntrinsics
+        from src.common.config import CameraExtrinsics as ConfigExtrinsics
+        
+        intrinsics_config = ConfigIntrinsics(
+            fx=intrinsics.fx,
+            fy=intrinsics.fy,
+            cx=intrinsics.cx,
+            cy=intrinsics.cy,
+            width=intrinsics.width,
+            height=intrinsics.height,
+            distortion=list(intrinsics.distortion)
+        )
+        
+        extrinsics_config = ConfigExtrinsics(
+            translation=[0.0, 0.0, 0.0],
+            rotation_matrix=[[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
+        )
+        
+        self.camera_config = CameraConfig(
+            intrinsics=intrinsics_config,
+            extrinsics=extrinsics_config
+        )
+        
+        self.camera = PinholeCamera(self.calibration, self.camera_config)
     
     def test_project_point(self):
         """Test point projection."""
@@ -96,7 +119,7 @@ class TestPinholeCamera:
         ])
         
         # Configure max depth
-        self.camera.view_config.max_depth = 50.0
+        self.camera.config.max_depth = 50.0
         
         mask = self.camera.frustum_culling(points, W_T_B)
         
@@ -164,14 +187,18 @@ class TestIMUModel:
             rate=100.0  # 100 Hz
         )
         
-        self.noise_config = IMUNoiseConfig(
-            accel_noise_density=0.01,
-            gyro_noise_density=0.001,
-            gravity_magnitude=9.81,
-            seed=42
+        from src.common.config import IMUNoiseParams
+        noise_params = IMUNoiseParams(
+            accelerometer_noise_density=0.01,
+            gyroscope_noise_density=0.001
         )
         
-        self.imu = IMUModel(self.calibration, self.noise_config)
+        self.imu_config = IMUConfig(
+            noise_params=noise_params,
+            gravity_magnitude=9.81
+        )
+        
+        self.imu = IMUModel(self.calibration, self.imu_config)
     
     def test_perfect_measurements_stationary(self):
         """Test perfect IMU measurements for stationary trajectory."""

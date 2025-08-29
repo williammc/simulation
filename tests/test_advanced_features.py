@@ -11,9 +11,10 @@ from src.simulation.trajectory_generator import (
     TrajectoryParams
 )
 from src.simulation.trajectory_interpolation import (
-    TrajectoryInterpolator, SplineTrajectoryConfig,
+    TrajectoryInterpolator,
     smooth_trajectory, create_bezier_trajectory
 )
+from src.common.config import SplineInterpolationConfig
 from src.estimation.stereo_camera import (
     StereoCameraModel, StereoCalibration, StereoObservation,
     create_stereo_calibration
@@ -143,7 +144,7 @@ class TestTrajectoryInterpolation:
             trajectory.add_state(TrajectoryState(pose=pose))
         
         # Interpolate
-        config = SplineTrajectoryConfig()
+        config = SplineInterpolationConfig()
         interpolator = TrajectoryInterpolator(config)
         interpolator.fit(trajectory)
         

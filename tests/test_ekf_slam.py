@@ -19,7 +19,8 @@ from src.common.data_structures import (
     CameraModel, IMUCalibration
 )
 from src.simulation.trajectory_generator import CircleTrajectory
-from src.simulation.landmark_generator import LandmarkGenerator, LandmarkGeneratorConfig
+from src.simulation.landmark_generator import LandmarkGenerator
+from src.common.config import EnvironmentConfig
 from src.evaluation.metrics import compute_ate, compute_nees
 
 

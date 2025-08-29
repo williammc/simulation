@@ -4,32 +4,13 @@ Camera projection model and visibility checking for SLAM simulation.
 
 import numpy as np
 from typing import Optional, List, Tuple, Dict, Any
-from dataclasses import dataclass
 
 from src.common.data_structures import (
-    CameraCalibration, CameraIntrinsics, CameraExtrinsics,
+    CameraCalibration,
     Pose, Landmark, Map, ImagePoint,
-    CameraObservation, CameraFrame, CameraData
+    CameraObservation, CameraFrame
 )
-
-
-@dataclass
-class CameraViewConfig:
-    """Configuration for camera visibility checking."""
-    min_depth: float = 0.1  # Minimum depth for visibility (meters)
-    max_depth: float = 50.0  # Maximum depth for visibility (meters)
-    check_fov: bool = True  # Whether to check field of view
-    margin_pixels: float = 0.0  # Margin from image edges (pixels)
-
-
-@dataclass
-class CameraNoiseConfig:
-    """Configuration for camera measurement noise."""
-    pixel_noise_std: float = 1.0  # Standard deviation of pixel noise (pixels)
-    add_noise: bool = False  # Whether to add noise to measurements
-    outlier_probability: float = 0.0  # Probability of generating an outlier
-    outlier_std: float = 10.0  # Standard deviation for outlier measurements
-    seed: Optional[int] = None  # Random seed for reproducibility
+from src.common.config import CameraConfig
 
 
 class PinholeCamera:
@@ -38,26 +19,37 @@ class PinholeCamera:
     def __init__(
         self,
         calibration: CameraCalibration,
-        view_config: Optional[CameraViewConfig] = None,
-        noise_config: Optional[CameraNoiseConfig] = None
+        config: CameraConfig
     ):
         """
         Initialize pinhole camera model.
         
         Args:
             calibration: Camera calibration (intrinsics and extrinsics)
-            view_config: Visibility checking configuration
-            noise_config: Noise configuration
+            config: Camera configuration including view and noise settings (REQUIRED)
+        
+        Raises:
+            TypeError: If config is not provided
+            ValueError: If config is not a CameraConfig instance
         """
+        if config is None:
+            raise TypeError(
+                "CameraConfig is required. Backward compatibility has been removed. "
+                "Please provide a CameraConfig instance from src.common.config"
+            )
+        
+        if not isinstance(config, CameraConfig):
+            raise ValueError(
+                f"config must be a CameraConfig instance, got {type(config).__name__}"
+            )
+        
         self.calibration = calibration
         self.intrinsics = calibration.intrinsics
         self.extrinsics = calibration.extrinsics
-        self.view_config = view_config or CameraViewConfig()
-        self.noise_config = noise_config or CameraNoiseConfig()
+        self.config = config
         
-        # Set random seed if provided
-        if self.noise_config.seed is not None:
-            np.random.seed(self.noise_config.seed)
+        # Set random seed if provided (from simulation config)
+        # Note: seed should be set at simulation level, not per-camera
         
         # Precompute camera matrix K
         self.K = np.array([
@@ -67,10 +59,10 @@ class PinholeCamera:
         ])
         
         # Image bounds for visibility checking
-        self.u_min = self.view_config.margin_pixels
-        self.u_max = self.intrinsics.width - self.view_config.margin_pixels
-        self.v_min = self.view_config.margin_pixels
-        self.v_max = self.intrinsics.height - self.view_config.margin_pixels
+        self.u_min = self.config.margin_pixels
+        self.u_max = self.intrinsics.width - self.config.margin_pixels
+        self.v_min = self.config.margin_pixels
+        self.v_max = self.intrinsics.height - self.config.margin_pixels
     
     def project_point(
         self,
@@ -106,7 +98,7 @@ class PinholeCamera:
         depth = point_camera[2]
         
         # Check depth bounds
-        if depth < self.view_config.min_depth or depth > self.view_config.max_depth:
+        if depth < self.config.min_depth or depth > self.config.max_depth:
             return None, depth
         
         # Project to image plane (simple pinhole, no distortion)
@@ -115,7 +107,7 @@ class PinholeCamera:
             v = self.intrinsics.fy * point_camera[1] / depth + self.intrinsics.cy
             
             # Check image bounds
-            if self.view_config.check_fov:
+            if self.config.check_fov:
                 if u < self.u_min or u > self.u_max or v < self.v_min or v > self.v_max:
                     return None, depth
             
@@ -206,8 +198,8 @@ class PinholeCamera:
         points_camera = (C_T_W @ points_hom.T).T[:, :3]
         
         # Depth check
-        depth_valid = (points_camera[:, 2] >= self.view_config.min_depth) & \
-                     (points_camera[:, 2] <= self.view_config.max_depth)
+        depth_valid = (points_camera[:, 2] >= self.config.min_depth) & \
+                     (points_camera[:, 2] <= self.config.max_depth)
         
         # FOV check (conservative with margin)
         h_fov, v_fov = self.compute_field_of_view()
@@ -233,18 +225,18 @@ class PinholeCamera:
         Returns:
             Noisy pixel measurement
         """
-        if not self.noise_config.add_noise:
+        if not self.config.add_noise:
             return pixel
         
         # Check if this should be an outlier
-        if np.random.random() < self.noise_config.outlier_probability:
+        if np.random.random() < self.config.outlier_probability:
             # Generate outlier measurement
-            noise_u = np.random.normal(0, self.noise_config.outlier_std)
-            noise_v = np.random.normal(0, self.noise_config.outlier_std)
+            noise_u = np.random.normal(0, self.config.outlier_std)
+            noise_v = np.random.normal(0, self.config.outlier_std)
         else:
             # Normal noise
-            noise_u = np.random.normal(0, self.noise_config.pixel_noise_std)
-            noise_v = np.random.normal(0, self.noise_config.pixel_noise_std)
+            noise_u = np.random.normal(0, self.config.noise_std)
+            noise_v = np.random.normal(0, self.config.noise_std)
         
         # Add noise and ensure pixel stays within image bounds
         noisy_u = pixel.u + noise_u
@@ -264,7 +256,7 @@ class StereoCamera:
         self,
         left_calibration: CameraCalibration,
         right_calibration: CameraCalibration,
-        view_config: Optional[CameraViewConfig] = None
+        config: CameraConfig
     ):
         """
         Initialize stereo camera model.
@@ -272,10 +264,19 @@ class StereoCamera:
         Args:
             left_calibration: Left camera calibration
             right_calibration: Right camera calibration
-            view_config: Visibility checking configuration
+            config: Camera configuration (REQUIRED)
+        
+        Raises:
+            TypeError: If config is not provided
         """
-        self.left_camera = PinholeCamera(left_calibration, view_config)
-        self.right_camera = PinholeCamera(right_calibration, view_config)
+        if config is None:
+            raise TypeError(
+                "CameraConfig is required. Backward compatibility has been removed. "
+                "Please provide a CameraConfig instance from src.common.config"
+            )
+        
+        self.left_camera = PinholeCamera(left_calibration, config)
+        self.right_camera = PinholeCamera(right_calibration, config)
         
         # Compute baseline (distance between cameras)
         left_pos = left_calibration.extrinsics.B_T_C[:3, 3]
@@ -338,7 +339,7 @@ class StereoCamera:
         # depth = baseline * fx / disparity
         depth = self.baseline * self.left_camera.intrinsics.fx / abs(disparity)
         
-        if depth < 0 or depth > self.left_camera.view_config.max_depth:
+        if depth < 0 or depth > self.left_camera.config.max_depth:
             return None
         
         # Back-project from left camera
@@ -385,7 +386,7 @@ def generate_camera_observations(
     visible = camera.get_visible_landmarks(landmarks, W_T_B)
     
     # Determine if we should add noise
-    should_add_noise = add_noise if add_noise is not None else camera.noise_config.add_noise
+    should_add_noise = add_noise if add_noise is not None else camera.config.add_noise
     
     # Create observations
     observations = []

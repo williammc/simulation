@@ -6,9 +6,10 @@ import pytest
 import numpy as np
 
 from src.simulation.trajectory_interpolation import (
-    TrajectoryInterpolator, SplineTrajectoryConfig,
+    TrajectoryInterpolator,
     smooth_trajectory, create_bezier_trajectory
 )
+from src.common.config import SplineInterpolationConfig
 from src.common.data_structures import Trajectory, TrajectoryState, Pose
 
 
@@ -36,7 +37,7 @@ class TestSplineInterpolation:
             trajectory.add_state(TrajectoryState(pose=pose))
         
         # Interpolate
-        config = SplineTrajectoryConfig()
+        config = SplineInterpolationConfig()
         interpolator = TrajectoryInterpolator(config)
         interpolator.fit(trajectory)
         
@@ -64,7 +65,7 @@ class TestSplineInterpolation:
             )
             trajectory.add_state(TrajectoryState(pose=pose))
         
-        config = SplineTrajectoryConfig()
+        config = SplineInterpolationConfig()
         interpolator = TrajectoryInterpolator(config)
         interpolator.fit(trajectory)
         dense_traj = interpolator.interpolate(rate=100.0)
@@ -92,7 +93,7 @@ class TestSplineInterpolation:
             )
             trajectory.add_state(TrajectoryState(pose=pose))
         
-        config = SplineTrajectoryConfig()
+        config = SplineInterpolationConfig()
         interpolator = TrajectoryInterpolator(config)
         interpolator.fit(trajectory)
         dense_traj = interpolator.interpolate(rate=50.0)
@@ -117,7 +118,7 @@ class TestSplineInterpolation:
             trajectory.add_state(TrajectoryState(pose=pose))
         
         for degree in [1, 3, 5]:
-            config = SplineTrajectoryConfig(position_spline_order=degree)
+            config = SplineInterpolationConfig(position_spline_order=degree)
             interpolator = TrajectoryInterpolator(config)
             interpolator.fit(trajectory)
             dense_traj = interpolator.interpolate(rate=20.0)

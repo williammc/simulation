@@ -63,32 +63,32 @@ class IMUNoiseParams(BaseModel):
     """IMU noise parameters."""
     accelerometer_noise_density: float = Field(
         default=0.00018,
-        gt=0,
+        ge=0,  # Allow 0 for noise-free testing
         description="Accelerometer noise density (m/s²/√Hz)"
     )
     accelerometer_random_walk: float = Field(
         default=0.001,
-        gt=0,
+        ge=0,  # Allow 0 for noise-free testing
         description="Accelerometer random walk (m/s²√s)"
     )
     accelerometer_bias_stability: float = Field(
         default=0.0001,
-        gt=0,
+        ge=0,  # Allow 0 for noise-free testing
         description="Accelerometer bias stability (m/s²)"
     )
     gyroscope_noise_density: float = Field(
         default=0.00026,
-        gt=0,
+        ge=0,  # Allow 0 for noise-free testing
         description="Gyroscope noise density (rad/s/√Hz)"
     )
     gyroscope_random_walk: float = Field(
         default=0.0001,
-        gt=0,
+        ge=0,  # Allow 0 for noise-free testing
         description="Gyroscope random walk (rad/s√s)"
     )
     gyroscope_bias_stability: float = Field(
         default=0.0001,
-        gt=0,
+        ge=0,  # Allow 0 for noise-free testing
         description="Gyroscope bias stability (rad/s)"
     )
 
@@ -169,6 +169,17 @@ class CameraConfig(BaseModel):
         ge=0,
         description="Measurement noise standard deviation (pixels)"
     )
+    
+    # View configuration (from CameraViewConfig)
+    min_depth: float = Field(0.1, gt=0, description="Minimum depth for visibility (meters)")
+    max_depth: float = Field(50.0, gt=0, description="Maximum depth for visibility (meters)")
+    check_fov: bool = Field(True, description="Whether to check field of view")
+    margin_pixels: float = Field(0.0, ge=0, description="Margin from image edges (pixels)")
+    
+    # Noise configuration (from CameraNoiseConfig)
+    add_noise: bool = Field(False, description="Whether to add noise to measurements")
+    outlier_probability: float = Field(0.0, ge=0, le=1, description="Probability of generating an outlier")
+    outlier_std: float = Field(10.0, gt=0, description="Standard deviation for outlier measurements")
 
 
 class IMUConfig(BaseModel):
@@ -181,15 +192,33 @@ class IMUConfig(BaseModel):
         description="Predefined noise model"
     )
     
+    # Additional fields from IMUNoiseConfig
+    gravity_magnitude: float = Field(9.81, gt=0, description="Gravity magnitude (m/s²)")
+    accel_bias_initial: Optional[List[float]] = Field(
+        default=None,
+        description="Initial accelerometer bias [x, y, z] (m/s²)"
+    )
+    gyro_bias_initial: Optional[List[float]] = Field(
+        default=None,
+        description="Initial gyroscope bias [x, y, z] (rad/s)"
+    )
+    
     @model_validator(mode='after')
     def apply_noise_model(self):
-        """Apply predefined noise model parameters."""
+        """Apply predefined noise model parameters and initialize biases."""
         if self.noise_model == NoiseModel.LOW_NOISE:
             self.noise_params.accelerometer_noise_density = 0.00009
             self.noise_params.gyroscope_noise_density = 0.00013
         elif self.noise_model == NoiseModel.AGGRESSIVE:
             self.noise_params.accelerometer_noise_density = 0.00036
             self.noise_params.gyroscope_noise_density = 0.00052
+        
+        # Initialize default biases if not provided
+        if self.accel_bias_initial is None:
+            self.accel_bias_initial = [0.0, 0.0, 0.0]
+        if self.gyro_bias_initial is None:
+            self.gyro_bias_initial = [0.0, 0.0, 0.0]
+        
         return self
 
 
@@ -251,6 +280,29 @@ class KeyframeSelectionConfig(BaseModel):
         return self
 
 
+class SplineInterpolationConfig(BaseModel):
+    """Configuration for spline trajectory interpolation."""
+    smoothing_factor: float = Field(
+        0.0,
+        ge=0,
+        description="0 = exact interpolation, >0 = smoothing"
+    )
+    boundary_condition: str = Field(
+        "natural",
+        description="Boundary condition: natural, clamped, periodic"
+    )
+    position_spline_order: int = Field(
+        3,
+        ge=1,
+        le=5,
+        description="Cubic splines for position"
+    )
+    velocity_from_spline: bool = Field(
+        True,
+        description="Compute velocity from spline derivative"
+    )
+
+
 class TrajectoryConfig(BaseModel):
     """Trajectory generation configuration."""
     type: TrajectoryType = Field(
@@ -261,6 +313,12 @@ class TrajectoryConfig(BaseModel):
     params: Dict[str, float] = Field(
         default_factory=dict,
         description="Trajectory-specific parameters"
+    )
+    
+    # Spline interpolation settings
+    interpolation: Optional[SplineInterpolationConfig] = Field(
+        default=None,
+        description="Spline interpolation configuration"
     )
     
     @model_validator(mode='after')
@@ -283,7 +341,7 @@ class EnvironmentConfig(BaseModel):
     """Environment and landmark configuration."""
     num_landmarks: int = Field(
         1000,
-        ge=100,
+        ge=1,  # Allow small numbers for testing
         le=10000,
         description="Number of 3D landmarks"
     )
@@ -302,6 +360,36 @@ class EnvironmentConfig(BaseModel):
         description="Maximum visible distance (meters)"
     )
     
+    # From LandmarkGeneratorConfig
+    distribution: str = Field(
+        "uniform",
+        description="Landmark distribution type: uniform, gaussian, clustered"
+    )
+    gaussian_mean: Optional[List[float]] = Field(
+        None,
+        description="Mean for Gaussian distribution [x, y, z]"
+    )
+    gaussian_std: float = Field(
+        5.0,
+        gt=0,
+        description="Standard deviation for Gaussian distribution"
+    )
+    num_clusters: int = Field(
+        5,
+        ge=1,
+        description="Number of clusters for clustered distribution"
+    )
+    cluster_std: float = Field(
+        1.0,
+        gt=0,
+        description="Standard deviation within clusters"
+    )
+    min_separation: float = Field(
+        0.1,
+        gt=0,
+        description="Minimum distance between landmarks (meters)"
+    )
+    
     @field_validator('landmark_range')
     @classmethod
     def validate_range(cls, v: List[float]) -> List[float]:
@@ -309,6 +397,13 @@ class EnvironmentConfig(BaseModel):
             raise ValueError('Landmark range must have exactly 3 components')
         if any(x <= 0 for x in v):
             raise ValueError('All range components must be positive')
+        return v
+    
+    @field_validator('gaussian_mean')
+    @classmethod
+    def validate_gaussian_mean(cls, v: Optional[List[float]]) -> Optional[List[float]]:
+        if v is not None and len(v) != 3:
+            raise ValueError('Gaussian mean must have exactly 3 components')
         return v
 
 

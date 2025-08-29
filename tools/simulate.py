@@ -13,9 +13,10 @@ from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from src.simulation.trajectory_generator import generate_trajectory
-from src.simulation.landmark_generator import generate_landmarks, LandmarkGeneratorConfig
+from src.simulation.landmark_generator import generate_landmarks
 from src.simulation.camera_model import PinholeCamera, generate_camera_observations
-from src.simulation.imu_model import IMUModel, IMUNoiseConfig
+from src.simulation.imu_model import IMUModel
+from src.common.config import EnvironmentConfig, IMUConfig
 from src.common.data_structures import (
     CameraCalibration, CameraIntrinsics, CameraExtrinsics, CameraModel,
     IMUCalibration, CameraData, PreintegratedIMUData
@@ -168,11 +169,10 @@ def run_simulation(
             
             # Generate landmarks adaptively around trajectory
             landmark_params = noise_params.get("landmarks", {})
-            landmark_config = LandmarkGeneratorConfig(
+            landmark_config = EnvironmentConfig(
                 num_landmarks=landmark_params.get("num_landmarks", 500),
                 distribution=landmark_params.get("distribution", "uniform"),
-                min_separation=landmark_params.get("min_separation", 0.1),
-                seed=seed
+                min_separation=landmark_params.get("min_separation", 0.1)
             )
             
             # Use adaptive generation to place landmarks near trajectory
@@ -180,7 +180,8 @@ def run_simulation(
             landmarks = generate_landmarks(
                 config=landmark_config,
                 trajectory=traj,
-                adaptive=use_adaptive
+                adaptive=use_adaptive,
+                seed=seed
             )
             
             progress.update(task, description="Generating sensor measurements...")
@@ -218,18 +219,38 @@ def run_simulation(
             )
             
             # Generate camera observations
-            from src.simulation.camera_model import CameraNoiseConfig
-            
             camera_noise_params = noise_params.get("camera", {})
-            camera_noise_config = CameraNoiseConfig(
-                pixel_noise_std=camera_noise_params.get("pixel_noise_std", 1.0),
-                add_noise=add_noise and camera_noise_params.get("add_noise", True),
-                outlier_probability=camera_noise_params.get("outlier_probability", 0.01),
-                outlier_std=camera_noise_params.get("outlier_std", 10.0),
-                seed=seed
+            
+            # Create camera config
+            from src.common.config import CameraConfig, CameraIntrinsics as ConfigIntrinsics, CameraExtrinsics as ConfigExtrinsics
+            
+            # Convert calibration to config format
+            intrinsics_config = ConfigIntrinsics(
+                fx=camera_calib.intrinsics.fx,
+                fy=camera_calib.intrinsics.fy,
+                cx=camera_calib.intrinsics.cx,
+                cy=camera_calib.intrinsics.cy,
+                width=camera_calib.intrinsics.width,
+                height=camera_calib.intrinsics.height,
+                distortion=list(camera_calib.intrinsics.distortion)
             )
             
-            camera = PinholeCamera(camera_calib, noise_config=camera_noise_config)
+            B_T_C = camera_calib.extrinsics.B_T_C
+            extrinsics_config = ConfigExtrinsics(
+                translation=B_T_C[:3, 3].tolist(),
+                rotation_matrix=B_T_C[:3, :3].tolist()
+            )
+            
+            camera_config = CameraConfig(
+                intrinsics=intrinsics_config,
+                extrinsics=extrinsics_config,
+                noise_std=camera_noise_params.get("pixel_noise_std", 1.0),
+                add_noise=add_noise and camera_noise_params.get("add_noise", True),
+                outlier_probability=camera_noise_params.get("outlier_probability", 0.01),
+                outlier_std=camera_noise_params.get("outlier_std", 10.0)
+            )
+            
+            camera = PinholeCamera(camera_calib, camera_config)
             camera_data = CameraData(camera_id="cam0", rate=30.0)
             
             # Sample camera observations at 30 Hz
@@ -252,20 +273,24 @@ def run_simulation(
             accel_params = imu_noise_params.get("accelerometer", {})
             gyro_params = imu_noise_params.get("gyroscope", {})
             
-            imu_noise_config = IMUNoiseConfig(
-                accel_noise_density=accel_params.get("noise_density", 0.01),
-                accel_random_walk=accel_params.get("random_walk", 0.001),
-                accel_bias_stability=accel_params.get("bias_stability", 0.0001),
-                gyro_noise_density=gyro_params.get("noise_density", 0.001),
-                gyro_random_walk=gyro_params.get("random_walk", 0.0001),
-                gyro_bias_stability=gyro_params.get("bias_stability", 0.0001),
-                gravity_magnitude=imu_noise_params.get("gravity_magnitude", 9.81),
-                seed=seed
+            from src.common.config import IMUNoiseParams
+            imu_noise_params_obj = IMUNoiseParams(
+                accelerometer_noise_density=accel_params.get("noise_density", 0.01),
+                accelerometer_random_walk=accel_params.get("random_walk", 0.001),
+                accelerometer_bias_stability=accel_params.get("bias_stability", 0.0001),
+                gyroscope_noise_density=gyro_params.get("noise_density", 0.001),
+                gyroscope_random_walk=gyro_params.get("random_walk", 0.0001),
+                gyroscope_bias_stability=gyro_params.get("bias_stability", 0.0001)
+            )
+            
+            imu_config = IMUConfig(
+                noise_params=imu_noise_params_obj,
+                gravity_magnitude=imu_noise_params.get("gravity_magnitude", 9.81)
             )
             
             imu_model = IMUModel(
                 calibration=imu_calib,
-                noise_config=imu_noise_config
+                config=imu_config
             )
             
             # Generate with or without noise

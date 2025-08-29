@@ -4,66 +4,60 @@ Landmark generation for SLAM simulation.
 
 import numpy as np
 from typing import Optional, List, Tuple, Dict, Any
-from dataclasses import dataclass
 
 from src.common.data_structures import Map, Landmark, Trajectory
-
-
-@dataclass
-class LandmarkGeneratorConfig:
-    """Configuration for landmark generation."""
-    # Bounding box for landmark generation
-    x_min: float = -10.0
-    x_max: float = 10.0
-    y_min: float = -10.0
-    y_max: float = 10.0
-    z_min: float = 0.0
-    z_max: float = 5.0
-    
-    # Number of landmarks
-    num_landmarks: int = 500
-    
-    # Distribution type
-    distribution: str = "uniform"  # "uniform", "gaussian", "clustered"
-    
-    # For Gaussian distribution
-    gaussian_mean: np.ndarray = None
-    gaussian_std: float = 5.0
-    
-    # For clustered distribution
-    num_clusters: int = 5
-    cluster_std: float = 1.0
-    
-    # Minimum distance between landmarks
-    min_separation: float = 0.1
-    
-    # Random seed
-    seed: Optional[int] = None
+from src.common.config import EnvironmentConfig
 
 
 class LandmarkGenerator:
     """Generate 3D landmarks for SLAM simulation."""
     
-    def __init__(self, config: Optional[LandmarkGeneratorConfig] = None):
+    def __init__(self, config: EnvironmentConfig, seed: Optional[int] = None):
         """
         Initialize landmark generator.
         
         Args:
-            config: Generation configuration
+            config: Environment configuration including landmark settings (REQUIRED)
+            seed: Random seed for reproducibility
+        
+        Raises:
+            TypeError: If config is not provided
+            ValueError: If config is not an EnvironmentConfig instance
         """
-        self.config = config or LandmarkGeneratorConfig()
+        if config is None:
+            raise TypeError(
+                "EnvironmentConfig is required. Backward compatibility has been removed. "
+                "Please provide an EnvironmentConfig instance from src.common.config"
+            )
+        
+        if not isinstance(config, EnvironmentConfig):
+            raise ValueError(
+                f"config must be an EnvironmentConfig instance, got {type(config).__name__}"
+            )
+        
+        self.config = config
         
         # Set random seed for reproducibility
-        if self.config.seed is not None:
-            np.random.seed(self.config.seed)
+        if seed is not None:
+            np.random.seed(seed)
+        
+        # Extract bounding box from landmark_range
+        self.x_min = -self.config.landmark_range[0] / 2
+        self.x_max = self.config.landmark_range[0] / 2
+        self.y_min = -self.config.landmark_range[1] / 2
+        self.y_max = self.config.landmark_range[1] / 2
+        self.z_min = 0.0
+        self.z_max = self.config.landmark_range[2]
         
         # Initialize Gaussian mean if not provided
         if self.config.gaussian_mean is None:
-            self.config.gaussian_mean = np.array([
-                (self.config.x_min + self.config.x_max) / 2,
-                (self.config.y_min + self.config.y_max) / 2,
-                (self.config.z_min + self.config.z_max) / 2
+            self.gaussian_mean = np.array([
+                (self.x_min + self.x_max) / 2,
+                (self.y_min + self.y_max) / 2,
+                (self.z_min + self.z_max) / 2
             ])
+        else:
+            self.gaussian_mean = np.array(self.config.gaussian_mean)
     
     def generate(self) -> Map:
         """
@@ -99,9 +93,9 @@ class LandmarkGenerator:
         while landmarks_added < self.config.num_landmarks and attempts < max_attempts:
             # Generate random position
             position = np.array([
-                np.random.uniform(self.config.x_min, self.config.x_max),
-                np.random.uniform(self.config.y_min, self.config.y_max),
-                np.random.uniform(self.config.z_min, self.config.z_max)
+                np.random.uniform(self.x_min, self.x_max),
+                np.random.uniform(self.y_min, self.y_max),
+                np.random.uniform(self.z_min, self.z_max)
             ])
             
             # Check minimum separation
@@ -139,15 +133,15 @@ class LandmarkGenerator:
         while landmarks_added < self.config.num_landmarks and attempts < max_attempts:
             # Generate position from Gaussian distribution
             position = np.random.normal(
-                loc=self.config.gaussian_mean,
+                loc=self.gaussian_mean,
                 scale=self.config.gaussian_std,
                 size=3
             )
             
             # Clip to bounding box
-            position[0] = np.clip(position[0], self.config.x_min, self.config.x_max)
-            position[1] = np.clip(position[1], self.config.y_min, self.config.y_max)
-            position[2] = np.clip(position[2], self.config.z_min, self.config.z_max)
+            position[0] = np.clip(position[0], self.x_min, self.x_max)
+            position[1] = np.clip(position[1], self.y_min, self.y_max)
+            position[2] = np.clip(position[2], self.z_min, self.z_max)
             
             # Check minimum separation
             if self._check_separation(position, existing_positions):
@@ -176,9 +170,9 @@ class LandmarkGenerator:
         cluster_centers = []
         for _ in range(self.config.num_clusters):
             center = np.array([
-                np.random.uniform(self.config.x_min, self.config.x_max),
-                np.random.uniform(self.config.y_min, self.config.y_max),
-                np.random.uniform(self.config.z_min, self.config.z_max)
+                np.random.uniform(self.x_min, self.x_max),
+                np.random.uniform(self.y_min, self.y_max),
+                np.random.uniform(self.z_min, self.z_max)
             ])
             cluster_centers.append(center)
         
@@ -206,9 +200,9 @@ class LandmarkGenerator:
                 )
                 
                 # Clip to bounding box
-                position[0] = np.clip(position[0], self.config.x_min, self.config.x_max)
-                position[1] = np.clip(position[1], self.config.y_min, self.config.y_max)
-                position[2] = np.clip(position[2], self.config.z_min, self.config.z_max)
+                position[0] = np.clip(position[0], self.x_min, self.x_max)
+                position[1] = np.clip(position[1], self.y_min, self.y_max)
+                position[2] = np.clip(position[2], self.z_min, self.z_max)
                 
                 # Check minimum separation
                 if self._check_separation(position, existing_positions):
@@ -256,26 +250,60 @@ class AdaptiveLandmarkGenerator:
     def __init__(
         self,
         trajectory: Trajectory,
-        config: Optional[LandmarkGeneratorConfig] = None,
+        config: EnvironmentConfig,
         density_factor: float = 2.0,
-        max_distance: float = 20.0
+        max_distance: float = 20.0,
+        seed: Optional[int] = None
     ):
         """
         Initialize adaptive landmark generator.
         
         Args:
-            trajectory: Reference trajectory for adaptive generation
-            config: Base configuration
+            trajectory: Reference trajectory for adaptive generation (REQUIRED)
+            config: Environment configuration (REQUIRED)
             density_factor: How much denser landmarks should be near trajectory
             max_distance: Maximum distance from trajectory for landmark placement
+            seed: Random seed for reproducibility
+        
+        Raises:
+            TypeError: If trajectory or config is not provided
+            ValueError: If config is not an EnvironmentConfig instance
         """
+        if trajectory is None:
+            raise TypeError(
+                "Trajectory is required for adaptive landmark generation"
+            )
+        
+        if config is None:
+            raise TypeError(
+                "EnvironmentConfig is required. Backward compatibility has been removed. "
+                "Please provide an EnvironmentConfig instance from src.common.config"
+            )
+        
+        if not isinstance(config, EnvironmentConfig):
+            raise ValueError(
+                f"config must be an EnvironmentConfig instance, got {type(config).__name__}"
+            )
+        
         self.trajectory = trajectory
-        self.config = config or LandmarkGeneratorConfig()
+        self.config = config
         self.density_factor = density_factor
         self.max_distance = max_distance
         
-        if self.config.seed is not None:
-            np.random.seed(self.config.seed)
+        if seed is not None:
+            np.random.seed(seed)
+        
+        # Extract trajectory positions
+        traj_positions = np.array([state.pose.position for state in self.trajectory.states])
+        
+        # Compute trajectory bounding box with margin
+        margin = self.max_distance
+        self.x_min = traj_positions[:, 0].min() - margin
+        self.x_max = traj_positions[:, 0].max() + margin
+        self.y_min = traj_positions[:, 1].min() - margin
+        self.y_max = traj_positions[:, 1].max() + margin
+        self.z_min = max(0, traj_positions[:, 2].min() - margin)
+        self.z_max = traj_positions[:, 2].max() + margin
     
     def generate(self) -> Map:
         """
@@ -289,23 +317,6 @@ class AdaptiveLandmarkGenerator:
         # Extract trajectory positions
         traj_positions = np.array([state.pose.position for state in self.trajectory.states])
         
-        # Compute trajectory bounding box with margin
-        margin = self.max_distance
-        x_min = traj_positions[:, 0].min() - margin
-        x_max = traj_positions[:, 0].max() + margin
-        y_min = traj_positions[:, 1].min() - margin
-        y_max = traj_positions[:, 1].max() + margin
-        z_min = max(0, traj_positions[:, 2].min() - margin)
-        z_max = traj_positions[:, 2].max() + margin
-        
-        # Update config bounds
-        self.config.x_min = x_min
-        self.config.x_max = x_max
-        self.config.y_min = y_min
-        self.config.y_max = y_max
-        self.config.z_min = z_min
-        self.config.z_max = z_max
-        
         landmarks_added = 0
         existing_positions = []
         max_attempts = self.config.num_landmarks * 20
@@ -314,9 +325,9 @@ class AdaptiveLandmarkGenerator:
         while landmarks_added < self.config.num_landmarks and attempts < max_attempts:
             # Generate candidate position
             position = np.array([
-                np.random.uniform(x_min, x_max),
-                np.random.uniform(y_min, y_max),
-                np.random.uniform(z_min, z_max)
+                np.random.uniform(self.x_min, self.x_max),
+                np.random.uniform(self.y_min, self.y_max),
+                np.random.uniform(self.z_min, self.z_max)
             ])
             
             # Compute distance to nearest trajectory point
@@ -360,24 +371,48 @@ class AdaptiveLandmarkGenerator:
 
 
 def generate_landmarks(
-    config: Optional[LandmarkGeneratorConfig] = None,
+    config: EnvironmentConfig,
     trajectory: Optional[Trajectory] = None,
-    adaptive: bool = False
+    adaptive: bool = False,
+    density_factor: float = 2.0,
+    max_distance: float = 5.0,
+    seed: Optional[int] = None
 ) -> Map:
     """
     Factory function to generate landmarks.
     
     Args:
-        config: Generation configuration
-        trajectory: Reference trajectory (for adaptive generation)
+        config: Environment configuration (REQUIRED)
+        trajectory: Reference trajectory (required if adaptive=True)
         adaptive: Whether to use adaptive generation
+        density_factor: How much denser landmarks should be near trajectory (for adaptive)
+        max_distance: Maximum distance from trajectory for landmark placement (for adaptive)
+        seed: Random seed for reproducibility
     
     Returns:
         Map containing generated landmarks
+    
+    Raises:
+        TypeError: If config is not provided
+        ValueError: If adaptive=True but trajectory is not provided
     """
-    if adaptive and trajectory is not None:
-        generator = AdaptiveLandmarkGenerator(trajectory, config)
+    if config is None:
+        raise TypeError(
+            "EnvironmentConfig is required. Please provide an EnvironmentConfig instance"
+        )
+    
+    if adaptive:
+        if trajectory is None:
+            raise ValueError(
+                "Trajectory is required when adaptive=True"
+            )
+        generator = AdaptiveLandmarkGenerator(
+            trajectory, config, 
+            density_factor=density_factor,
+            max_distance=max_distance,
+            seed=seed
+        )
     else:
-        generator = LandmarkGenerator(config)
+        generator = LandmarkGenerator(config, seed=seed)
     
     return generator.generate()

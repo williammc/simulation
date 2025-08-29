@@ -4,7 +4,6 @@ IMU measurement generation for SLAM simulation.
 
 import numpy as np
 from typing import Optional, List, Tuple
-from dataclasses import dataclass
 
 from src.common.data_structures import (
     IMUMeasurement, IMUData, IMUCalibration,
@@ -13,35 +12,7 @@ from src.common.data_structures import (
 from src.utils.math_utils import (
     so3_log
 )
-
-
-@dataclass
-class IMUNoiseConfig:
-    """Configuration for IMU noise model."""
-    # Accelerometer noise
-    accel_noise_density: float = 0.01  # m/s^2/sqrt(Hz)
-    accel_random_walk: float = 0.001  # m/s^3/sqrt(Hz)
-    accel_bias_initial: np.ndarray = None  # Initial bias
-    accel_bias_stability: float = 0.0001  # m/s^2
-    
-    # Gyroscope noise
-    gyro_noise_density: float = 0.001  # rad/s/sqrt(Hz)
-    gyro_random_walk: float = 0.0001  # rad/s^2/sqrt(Hz)
-    gyro_bias_initial: np.ndarray = None  # Initial bias
-    gyro_bias_stability: float = 0.0001  # rad/s
-    
-    # Gravity
-    gravity_magnitude: float = 9.81  # m/s^2
-    
-    # Random seed
-    seed: Optional[int] = None
-    
-    def __post_init__(self):
-        """Initialize default biases if not provided."""
-        if self.accel_bias_initial is None:
-            self.accel_bias_initial = np.zeros(3)
-        if self.gyro_bias_initial is None:
-            self.gyro_bias_initial = np.zeros(3)
+from src.common.config import IMUConfig
 
 
 class IMUModel:
@@ -49,37 +20,45 @@ class IMUModel:
     
     def __init__(
         self,
-        calibration: Optional[IMUCalibration] = None,
-        noise_config: Optional[IMUNoiseConfig] = None
+        calibration: IMUCalibration,
+        config: IMUConfig
     ):
         """
         Initialize IMU model.
         
         Args:
-            calibration: IMU calibration parameters
-            noise_config: Noise configuration
+            calibration: IMU calibration parameters (REQUIRED)
+            config: IMU configuration including noise parameters (REQUIRED)
+        
+        Raises:
+            TypeError: If calibration or config is not provided
+            ValueError: If config is not an IMUConfig instance
         """
-        self.calibration = calibration or IMUCalibration(
-            imu_id="imu0",
-            accelerometer_noise_density=0.01,
-            accelerometer_random_walk=0.001,
-            gyroscope_noise_density=0.001,
-            gyroscope_random_walk=0.0001,
-            rate=200.0
-        )
+        if calibration is None:
+            raise TypeError(
+                "IMUCalibration is required. Please provide an IMUCalibration instance"
+            )
         
-        self.noise_config = noise_config or IMUNoiseConfig()
+        if config is None:
+            raise TypeError(
+                "IMUConfig is required. Backward compatibility has been removed. "
+                "Please provide an IMUConfig instance from src.common.config"
+            )
         
-        # Set random seed
-        if self.noise_config.seed is not None:
-            np.random.seed(self.noise_config.seed)
+        if not isinstance(config, IMUConfig):
+            raise ValueError(
+                f"config must be an IMUConfig instance, got {type(config).__name__}"
+            )
         
-        # Initialize biases
-        self.accel_bias = self.noise_config.accel_bias_initial.copy()
-        self.gyro_bias = self.noise_config.gyro_bias_initial.copy()
+        self.calibration = calibration
+        self.config = config
+        
+        # Initialize biases from config
+        self.accel_bias = np.array(self.config.accel_bias_initial or [0.0, 0.0, 0.0])
+        self.gyro_bias = np.array(self.config.gyro_bias_initial or [0.0, 0.0, 0.0])
         
         # Gravity vector in world frame (pointing down in ENU)
-        self.gravity_world = np.array([0, 0, -self.noise_config.gravity_magnitude])
+        self.gravity_world = np.array([0, 0, -self.config.gravity_magnitude])
         
         # Time step
         self.dt = 1.0 / self.calibration.rate
@@ -150,37 +129,37 @@ class IMUModel:
             # Add white noise
             accel_noise = np.random.normal(
                 0, 
-                self.noise_config.accel_noise_density * np.sqrt(self.calibration.rate),
+                self.config.noise_params.accelerometer_noise_density * np.sqrt(self.calibration.rate),
                 3
             )
             gyro_noise = np.random.normal(
                 0,
-                self.noise_config.gyro_noise_density * np.sqrt(self.calibration.rate),
+                self.config.noise_params.gyroscope_noise_density * np.sqrt(self.calibration.rate),
                 3
             )
             
             # Update biases with random walk
             self.accel_bias += np.random.normal(
                 0,
-                self.noise_config.accel_random_walk * np.sqrt(self.dt),
+                self.config.noise_params.accelerometer_random_walk * np.sqrt(self.dt),
                 3
             )
             self.gyro_bias += np.random.normal(
                 0,
-                self.noise_config.gyro_random_walk * np.sqrt(self.dt),
+                self.config.noise_params.gyroscope_random_walk * np.sqrt(self.dt),
                 3
             )
             
             # Limit bias magnitude (bias stability)
             self.accel_bias = np.clip(
                 self.accel_bias,
-                -3 * self.noise_config.accel_bias_stability,
-                3 * self.noise_config.accel_bias_stability
+                -3 * self.config.noise_params.accelerometer_bias_stability,
+                3 * self.config.noise_params.accelerometer_bias_stability
             )
             self.gyro_bias = np.clip(
                 self.gyro_bias,
-                -3 * self.noise_config.gyro_bias_stability,
-                3 * self.noise_config.gyro_bias_stability
+                -3 * self.config.noise_params.gyroscope_bias_stability,
+                3 * self.config.noise_params.gyroscope_bias_stability
             )
             
             # Add noise and bias to measurements

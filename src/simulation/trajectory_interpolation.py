@@ -6,19 +6,10 @@ import numpy as np
 from scipy.interpolate import CubicSpline, interp1d
 from scipy.spatial.transform import Rotation
 from typing import List, Optional, Tuple
-from dataclasses import dataclass
 
 from src.common.data_structures import Trajectory, TrajectoryState, Pose
 from src.utils.math_utils import so3_interpolate
-
-
-@dataclass
-class SplineTrajectoryConfig:
-    """Configuration for spline trajectory interpolation."""
-    smoothing_factor: float = 0.0  # 0 = exact interpolation, >0 = smoothing
-    boundary_condition: str = "natural"  # "natural", "clamped", "periodic"
-    position_spline_order: int = 3  # Cubic splines for position
-    velocity_from_spline: bool = True  # Compute velocity from spline derivative
+from src.common.config import SplineInterpolationConfig
 
 
 class TrajectoryInterpolator:
@@ -28,14 +19,29 @@ class TrajectoryInterpolator:
     Uses cubic splines for position and SLERP for orientation.
     """
     
-    def __init__(self, config: Optional[SplineTrajectoryConfig] = None):
+    def __init__(self, config: SplineInterpolationConfig):
         """
         Initialize trajectory interpolator.
         
         Args:
-            config: Interpolation configuration
+            config: Interpolation configuration (REQUIRED)
+        
+        Raises:
+            TypeError: If config is not provided
+            ValueError: If config is not a SplineInterpolationConfig instance
         """
-        self.config = config or SplineTrajectoryConfig()
+        if config is None:
+            raise TypeError(
+                "SplineInterpolationConfig is required. Backward compatibility has been removed. "
+                "Please provide a SplineInterpolationConfig instance from src.common.config"
+            )
+        
+        if not isinstance(config, SplineInterpolationConfig):
+            raise ValueError(
+                f"config must be a SplineInterpolationConfig instance, got {type(config).__name__}"
+            )
+        
+        self.config = config
         self.position_spline = None
         self.orientation_slerp = None
         self.time_points = None

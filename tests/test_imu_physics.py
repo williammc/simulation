@@ -5,7 +5,8 @@ Ensures IMU measurements match expected physical behavior.
 
 import numpy as np
 import pytest
-from src.simulation.imu_model import IMUModel, IMUNoiseConfig
+from src.simulation.imu_model import IMUModel
+from src.common.config import IMUConfig, IMUNoiseParams
 from src.simulation.trajectory_generator import generate_trajectory
 from src.common.data_structures import (
     IMUCalibration, Trajectory, TrajectoryState, Pose
@@ -29,15 +30,19 @@ class TestIMUPhysics:
         )
         
         # Create noise-free IMU model
-        self.noise_config = IMUNoiseConfig(
-            accel_noise_density=0.0,
-            accel_random_walk=0.0,
-            gyro_noise_density=0.0,
-            gyro_random_walk=0.0,
+        noise_params = IMUNoiseParams(
+            accelerometer_noise_density=0.0,
+            accelerometer_random_walk=0.0,
+            gyroscope_noise_density=0.0,
+            gyroscope_random_walk=0.0
+        )
+        
+        self.imu_config = IMUConfig(
+            noise_params=noise_params,
             gravity_magnitude=9.81
         )
         
-        self.imu = IMUModel(self.imu_calib, self.noise_config)
+        self.imu = IMUModel(self.imu_calib, self.imu_config)
     
     def test_stationary_imu_measures_gravity(self):
         """Test that a stationary IMU measures gravity correctly."""

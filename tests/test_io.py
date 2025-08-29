@@ -745,8 +745,30 @@ class TestIdealProjection:
             extrinsics=extrinsics
         )
         
-        # Create camera
-        camera = PinholeCamera(calib)
+        # Create camera with config
+        from src.common.config import CameraConfig, CameraIntrinsics as ConfigIntrinsics, CameraExtrinsics as ConfigExtrinsics
+        
+        intrinsics_config = ConfigIntrinsics(
+            fx=intrinsics.fx,
+            fy=intrinsics.fy,
+            cx=intrinsics.cx,
+            cy=intrinsics.cy,
+            width=intrinsics.width,
+            height=intrinsics.height,
+            distortion=list(intrinsics.distortion)
+        )
+        
+        extrinsics_config = ConfigExtrinsics(
+            translation=[0.0, 0.0, 0.0],
+            rotation_matrix=[[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
+        )
+        
+        camera_config = CameraConfig(
+            intrinsics=intrinsics_config,
+            extrinsics=extrinsics_config
+        )
+        
+        camera = PinholeCamera(calib, camera_config)
         
         # Create test pose and landmarks
         pose = Pose(
@@ -814,7 +836,30 @@ class TestIdealProjection:
             intrinsics=intrinsics,
             extrinsics=extrinsics
         )
-        camera = PinholeCamera(calib)
+        # Create camera config
+        from src.common.config import CameraConfig, CameraIntrinsics as ConfigIntrinsics, CameraExtrinsics as ConfigExtrinsics
+        
+        intrinsics_config = ConfigIntrinsics(
+            fx=intrinsics.fx,
+            fy=intrinsics.fy,
+            cx=intrinsics.cx,
+            cy=intrinsics.cy,
+            width=intrinsics.width,
+            height=intrinsics.height,
+            distortion=list(intrinsics.distortion)
+        )
+        
+        extrinsics_config = ConfigExtrinsics(
+            translation=[0.0, 0.0, 0.0],
+            rotation_matrix=[[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
+        )
+        
+        camera_config = CameraConfig(
+            intrinsics=intrinsics_config,
+            extrinsics=extrinsics_config
+        )
+        
+        camera = PinholeCamera(calib, camera_config)
         
         # Create rotated pose (45 degrees around Y axis)
         angle = np.pi / 4
@@ -867,7 +912,30 @@ class TestIdealProjection:
             intrinsics=intrinsics,
             extrinsics=extrinsics
         )
-        camera = PinholeCamera(calib)
+        # Create camera config
+        from src.common.config import CameraConfig, CameraIntrinsics as ConfigIntrinsics, CameraExtrinsics as ConfigExtrinsics
+        
+        intrinsics_config = ConfigIntrinsics(
+            fx=intrinsics.fx,
+            fy=intrinsics.fy,
+            cx=intrinsics.cx,
+            cy=intrinsics.cy,
+            width=intrinsics.width,
+            height=intrinsics.height,
+            distortion=list(intrinsics.distortion)
+        )
+        
+        extrinsics_config = ConfigExtrinsics(
+            translation=[0.0, 0.0, 0.0],
+            rotation_matrix=[[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
+        )
+        
+        camera_config = CameraConfig(
+            intrinsics=intrinsics_config,
+            extrinsics=extrinsics_config
+        )
+        
+        camera = PinholeCamera(calib, camera_config)
         
         # Create translated pose
         pose = Pose(
