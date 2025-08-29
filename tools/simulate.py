@@ -175,12 +175,12 @@ def run_simulation(
                 min_separation=landmark_params.get("min_separation", 0.1)
             )
             
-            # Use adaptive generation to place landmarks near trajectory
-            use_adaptive = landmark_params.get("adaptive", True)
+            # Generate landmarks using specified method
+            use_bounding_box = landmark_params.get("bounding_box", False)
             landmarks = generate_landmarks(
                 config=landmark_config,
-                trajectory=traj,
-                adaptive=use_adaptive,
+                trajectory=traj if use_bounding_box else None,
+                bounding_box=use_bounding_box,
                 seed=seed
             )
             

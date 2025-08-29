@@ -7,7 +7,7 @@ import numpy as np
 
 from src.simulation.landmark_generator import (
     LandmarkGenerator,
-    AdaptiveLandmarkGenerator,
+    BoundingBoxLandmarkGenerator,
     generate_landmarks
 )
 from src.common.config import EnvironmentConfig
@@ -44,68 +44,26 @@ class TestLandmarkGenerator:
                 dist = np.linalg.norm(positions[i] - positions[j])
                 assert dist >= 0.1 - 1e-6  # Allow small numerical error
     
-    def test_gaussian_generation(self):
-        """Test Gaussian landmark distribution."""
+    def test_unsupported_distribution_fallback(self):
+        """Test that unsupported distributions fall back to uniform."""
         config = EnvironmentConfig(
-            landmark_range=[20.0, 20.0, 5.0],
-            num_landmarks=200,
-            distribution="gaussian",
-            gaussian_mean=[0, 0, 2.5],
-            gaussian_std=3.0,
-            min_separation=0.05
+            landmark_range=[10.0, 10.0, 3.0],
+            num_landmarks=50,
+            distribution="gaussian",  # No longer supported
+            min_separation=0.1
         )
         
         generator = LandmarkGenerator(config, seed=42)
         map_data = generator.generate()
         
-        # Check number of landmarks
-        assert len(map_data.landmarks) <= 200  # May be less due to separation constraint
-        assert len(map_data.landmarks) > 150  # Should get most of them
+        # Should still generate landmarks using uniform distribution
+        assert len(map_data.landmarks) == 50
         
-        # Check that most landmarks are near the mean
+        # Check all landmarks are within bounds (uniform distribution)
         positions = map_data.get_positions()
-        mean = np.array([0, 0, 2.5])
-        distances_from_mean = np.linalg.norm(positions - mean, axis=1)
-        
-        # Due to clipping at boundaries, adjust expectation
-        # At least 25% should be within 1 std dev (accounting for boundary effects)
-        within_1_std = np.sum(distances_from_mean <= 3.0)
-        assert within_1_std >= len(positions) * 0.25  # Lowered threshold due to clipping
-    
-    def test_clustered_generation(self):
-        """Test clustered landmark distribution."""
-        config = EnvironmentConfig(
-            landmark_range=[20.0, 20.0, 5.0],
-            num_landmarks=100,
-            distribution="clustered",
-            num_clusters=5,
-            cluster_std=1.0,
-            min_separation=0.05
-        )
-        
-        generator = LandmarkGenerator(config, seed=42)
-        map_data = generator.generate()
-        
-        # Check number of landmarks
-        assert len(map_data.landmarks) <= 100
-        assert len(map_data.landmarks) > 80  # Should get most of them
-        
-        # Landmarks should be clustered
-        # This is hard to test precisely, but we can check
-        # that the distribution is not uniform
-        positions = map_data.get_positions()
-        
-        # Compute pairwise distances
-        n = len(positions)
-        distances = []
-        for i in range(n):
-            for j in range(i + 1, n):
-                distances.append(np.linalg.norm(positions[i] - positions[j]))
-        
-        # In clustered distribution, we should see bimodal distance distribution
-        # (small within-cluster, large between-cluster)
-        distances = np.array(distances)
-        assert np.std(distances) > 2.0  # High variance indicates clustering
+        assert np.all(positions[:, 0] >= -5) and np.all(positions[:, 0] <= 5)
+        assert np.all(positions[:, 1] >= -5) and np.all(positions[:, 1] <= 5)
+        assert np.all(positions[:, 2] >= 0) and np.all(positions[:, 2] <= 3)
     
     def test_min_separation(self):
         """Test minimum separation constraint."""
@@ -130,98 +88,89 @@ class TestLandmarkGenerator:
                 assert dist >= 1.0 - 1e-6  # Check the actual separation value used
 
 
-class TestAdaptiveLandmarkGenerator:
-    """Test adaptive landmark generation based on trajectory."""
+class TestBoundingBoxLandmarkGenerator:
+    """Test bounding box landmark generation."""
     
-    def setup_method(self):
-        """Create test trajectory."""
-        params = TrajectoryParams(
-            duration=10.0,
-            rate=10.0  # Low rate for testing
-        )
-        circle_generator = CircleTrajectory(
-            radius=2.0,
-            height=1.5,
-            angular_velocity=0.5,
-            params=params
-        )
-        self.trajectory = circle_generator.generate()  # Store the generated Trajectory object
-    
-    def test_adaptive_generation(self):
-        """Test that landmarks are concentrated near trajectory."""
+    def test_bounding_box_generation(self):
+        """Test that landmarks are placed on bounding box faces."""
         config = EnvironmentConfig(
-            landmark_range=[20.0, 20.0, 5.0],
-            num_landmarks=100,
+            landmark_range=[10.0, 10.0, 5.0],
+            num_landmarks=60,  # 10 per face
             distribution="uniform"
         )
         
-        generator = AdaptiveLandmarkGenerator(
-            self.trajectory,
+        generator = BoundingBoxLandmarkGenerator(
             config,
-            density_factor=2.0,
-            max_distance=5.0,
+            trajectory=None,
             seed=42
         )
         map_data = generator.generate()
         
         # Check number of landmarks
-        assert len(map_data.landmarks) == 100
+        assert len(map_data.landmarks) == 60
         
-        # Check that landmarks are near trajectory
+        # Check that landmarks are on faces
         positions = map_data.get_positions()
-        traj_positions = np.array([state.pose.position for state in self.trajectory.states])
+        tolerance = 0.01  # Small tolerance for numerical errors
         
-        # For each landmark, find minimum distance to trajectory
-        near_count = 0
+        on_faces = 0
         for pos in positions:
-            distances = np.linalg.norm(traj_positions - pos, axis=1)
-            min_dist = distances.min()
-            if min_dist <= 5.0:  # Within max_distance
-                near_count += 1
+            # Check if on any face (at boundary)
+            on_x_min = abs(pos[0] - (-5.0)) < tolerance
+            on_x_max = abs(pos[0] - 5.0) < tolerance
+            on_y_min = abs(pos[1] - (-5.0)) < tolerance
+            on_y_max = abs(pos[1] - 5.0) < tolerance
+            on_z_min = abs(pos[2] - 0.0) < tolerance
+            on_z_max = abs(pos[2] - 5.0) < tolerance
+            
+            if on_x_min or on_x_max or on_y_min or on_y_max or on_z_min or on_z_max:
+                on_faces += 1
         
-        # Most landmarks should be near trajectory
-        assert near_count >= 80  # At least 80% near trajectory
+        # All landmarks should be on faces
+        assert on_faces == 60
     
-    def test_adaptive_vs_uniform(self):
-        """Test that adaptive generation differs from uniform."""
+    def test_face_distribution(self):
+        """Test that landmarks are distributed across all faces."""
         config = EnvironmentConfig(
-            landmark_range=[20.0, 20.0, 5.0],
-            num_landmarks=50,
+            landmark_range=[10.0, 10.0, 5.0],
+            num_landmarks=60,  # Should be 10 per face
             distribution="uniform"
         )
         
-        # Generate uniform landmarks
-        uniform_generator = LandmarkGenerator(config, seed=42)
-        uniform_map = uniform_generator.generate()
-        
-        # Generate adaptive landmarks
-        adaptive_generator = AdaptiveLandmarkGenerator(
-            self.trajectory,
+        generator = BoundingBoxLandmarkGenerator(
             config,
-            density_factor=3.0,
-            max_distance=3.0,
+            trajectory=None,
             seed=42
         )
-        adaptive_map = adaptive_generator.generate()
+        map_data = generator.generate()
         
-        # Compute average distance to trajectory for both
-        traj_positions = np.array([state.pose.position for state in self.trajectory.states])
+        positions = map_data.get_positions()
+        tolerance = 0.01
         
-        def avg_distance_to_trajectory(positions):
-            distances = []
-            for pos in positions:
-                min_dist = np.min(np.linalg.norm(traj_positions - pos, axis=1))
-                distances.append(min_dist)
-            return np.mean(distances)
+        # Count landmarks on each face
+        faces = {
+            'x_min': 0, 'x_max': 0,
+            'y_min': 0, 'y_max': 0,
+            'z_min': 0, 'z_max': 0
+        }
         
-        uniform_positions = uniform_map.get_positions()
-        adaptive_positions = adaptive_map.get_positions()
+        for pos in positions:
+            if abs(pos[0] - (-5.0)) < tolerance:
+                faces['x_min'] += 1
+            elif abs(pos[0] - 5.0) < tolerance:
+                faces['x_max'] += 1
+            elif abs(pos[1] - (-5.0)) < tolerance:
+                faces['y_min'] += 1
+            elif abs(pos[1] - 5.0) < tolerance:
+                faces['y_max'] += 1
+            elif abs(pos[2] - 0.0) < tolerance:
+                faces['z_min'] += 1
+            elif abs(pos[2] - 5.0) < tolerance:
+                faces['z_max'] += 1
         
-        uniform_avg_dist = avg_distance_to_trajectory(uniform_positions)
-        adaptive_avg_dist = avg_distance_to_trajectory(adaptive_positions)
-        
-        # Adaptive should be closer to trajectory
-        assert adaptive_avg_dist < uniform_avg_dist * 0.7  # At least 30% closer
+        # Each face should have approximately 10 landmarks (60/6)
+        for face, count in faces.items():
+            assert count >= 8 and count <= 12, f"Face {face} has {count} landmarks, expected ~10"
 
 
 class TestFactoryFunction:
@@ -245,21 +194,8 @@ class TestFactoryFunction:
         assert np.all(np.abs(positions[:, 1]) <= 5)
         assert np.all(positions[:, 2] >= 0) and np.all(positions[:, 2] <= 3)
     
-    def test_generate_landmarks_adaptive(self):
-        """Test factory function for adaptive generation."""
-        # Create trajectory
-        params = TrajectoryParams(
-            duration=5.0,
-            rate=10.0
-        )
-        circle_generator = CircleTrajectory(
-            radius=1.5,
-            height=1.0,
-            angular_velocity=1.0,
-            params=params
-        )
-        trajectory = circle_generator.generate()  # Get the generated Trajectory object
-        
+    def test_generate_landmarks_bounding_box(self):
+        """Test factory function for bounding box generation."""
         config = EnvironmentConfig(
             landmark_range=[10.0, 10.0, 3.0],
             num_landmarks=30,
@@ -268,23 +204,28 @@ class TestFactoryFunction:
         
         map_data = generate_landmarks(
             config,
-            trajectory=trajectory,
-            adaptive=True,
+            bounding_box=True,
             seed=42
         )
         
         assert len(map_data.landmarks) == 30
         
-        # Check that landmarks are concentrated near trajectory path
+        # Check that landmarks are on faces
         positions = map_data.get_positions()
-        traj_positions = np.array([state.pose.position for state in trajectory.states])
+        tolerance = 0.01
         
-        # For each landmark, find minimum distance to trajectory
-        near_count = 0
+        on_faces = 0
         for pos in positions:
-            distances = np.linalg.norm(traj_positions - pos, axis=1)
-            min_dist = distances.min()
-            if min_dist <= 5.0:  # Within reasonable distance
-                near_count += 1
+            # Check if on any face (at boundary)
+            on_x_min = abs(pos[0] - (-5.0)) < tolerance
+            on_x_max = abs(pos[0] - 5.0) < tolerance
+            on_y_min = abs(pos[1] - (-5.0)) < tolerance
+            on_y_max = abs(pos[1] - 5.0) < tolerance
+            on_z_min = abs(pos[2] - 0.0) < tolerance
+            on_z_max = abs(pos[2] - 3.0) < tolerance
+            
+            if on_x_min or on_x_max or on_y_min or on_y_max or on_z_min or on_z_max:
+                on_faces += 1
         
-        assert near_count >= 20  # At least 2/3 should be near trajectory path
+        # All landmarks should be on faces when using bounding box
+        assert on_faces == 30

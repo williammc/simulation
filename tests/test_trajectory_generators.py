@@ -6,21 +6,20 @@ import pytest
 import numpy as np
 
 from src.simulation.trajectory_generator import (
-    Figure8Trajectory, SpiralTrajectory, LineTrajectory,
+    CircleTrajectory, SpiralTrajectory,
     TrajectoryParams
 )
 from src.common.data_structures import Trajectory, TrajectoryState, Pose
 
 
-class TestFigure8Trajectory:
-    """Test Figure-8 trajectory generation."""
+class TestCircleTrajectory:
+    """Test Circle trajectory generation."""
     
     def test_basic_generation(self):
-        """Test basic Figure-8 trajectory generation."""
+        """Test basic Circle trajectory generation."""
         params = TrajectoryParams(duration=10.0, rate=100.0)
-        generator = Figure8Trajectory(
-            scale_x=3.0,
-            scale_y=2.0,
+        generator = CircleTrajectory(
+            radius=2.0,
             height=1.5,
             params=params
         )
@@ -32,12 +31,11 @@ class TestFigure8Trajectory:
         assert trajectory.states[0].pose.timestamp == 0.0
         assert trajectory.states[-1].pose.timestamp < 10.0
     
-    def test_figure8_shape(self):
-        """Test that Figure-8 actually forms the expected shape."""
+    def test_circle_shape(self):
+        """Test that Circle actually forms the expected shape."""
         params = TrajectoryParams(duration=10.0, rate=100.0)
-        generator = Figure8Trajectory(
-            scale_x=3.0,
-            scale_y=2.0,
+        generator = CircleTrajectory(
+            radius=2.0,
             height=1.5,
             params=params
         )
@@ -45,20 +43,16 @@ class TestFigure8Trajectory:
         trajectory = generator.generate()
         positions = np.array([s.pose.position for s in trajectory.states])
         
-        # Check for x-axis crossings (characteristic of figure-8)
-        x_crossings = np.where(np.diff(np.sign(positions[:, 0])))[0]
-        assert len(x_crossings) >= 1  # At least one x-axis crossing
+        # Check that all points are at the same radius
+        radii = np.sqrt(positions[:, 0]**2 + positions[:, 1]**2)
+        assert np.allclose(radii, 2.0, rtol=1e-6)
         
-        # Check that trajectory is bounded
-        assert np.all(np.abs(positions[:, 0]) <= 3.5)  # Within scale_x bounds
-        assert np.all(np.abs(positions[:, 1]) <= 2.5)  # Within scale_y bounds
     
-    def test_figure8_velocity(self):
-        """Test velocity computation for Figure-8 trajectory."""
+    def test_circle_velocity(self):
+        """Test velocity computation for Circle trajectory."""
         params = TrajectoryParams(duration=5.0, rate=50.0)
-        generator = Figure8Trajectory(
-            scale_x=2.0,
-            scale_y=1.5,
+        generator = CircleTrajectory(
+            radius=2.0,
             height=1.0,
             params=params
         )
@@ -145,102 +139,3 @@ class TestSpiralTrajectory:
         assert np.std(step_sizes) < 0.03
 
 
-class TestLineTrajectory:
-    """Test linear trajectory generation."""
-    
-    def test_basic_generation(self):
-        """Test basic line trajectory generation."""
-        start = np.array([0, 0, 1])
-        end = np.array([10, 5, 2])
-        
-        params = TrajectoryParams(duration=5.0, rate=20.0)
-        generator = LineTrajectory(
-            start_position=start,
-            end_position=end,
-            params=params
-        )
-        
-        trajectory = generator.generate()
-        
-        assert isinstance(trajectory, Trajectory)
-        assert len(trajectory.states) == 100
-        assert trajectory.states[0].pose.timestamp == 0.0
-        assert trajectory.states[-1].pose.timestamp < 5.0
-    
-    def test_linearity(self):
-        """Test that trajectory is actually linear."""
-        start = np.array([0, 0, 1])
-        end = np.array([10, 5, 2])
-        
-        params = TrajectoryParams(duration=5.0, rate=20.0)
-        generator = LineTrajectory(
-            start_position=start,
-            end_position=end,
-            params=params
-        )
-        
-        trajectory = generator.generate()
-        positions = np.array([s.pose.position for s in trajectory.states])
-        
-        # Check start and end points (allow small discretization error)
-        np.testing.assert_array_almost_equal(positions[0], start)
-        np.testing.assert_array_almost_equal(positions[-1], end, decimal=1)
-        
-        # All points should be on the line
-        direction = end - start
-        direction = direction / np.linalg.norm(direction)
-        
-        for i in range(1, len(positions) - 1):
-            vec_to_point = positions[i] - start
-            # Project onto line direction
-            projection = np.dot(vec_to_point, direction) * direction
-            # Check perpendicular distance is small
-            perpendicular = vec_to_point - projection
-            assert np.linalg.norm(perpendicular) < 1e-10
-    
-    def test_constant_velocity(self):
-        """Test that linear trajectory has constant velocity."""
-        start = np.array([0, 0, 0])
-        end = np.array([10, 0, 0])
-        
-        params = TrajectoryParams(duration=5.0, rate=20.0)
-        generator = LineTrajectory(
-            start_position=start,
-            end_position=end,
-            params=params
-        )
-        
-        trajectory = generator.generate()
-        
-        # Check velocity consistency
-        velocities = [s.velocity for s in trajectory.states if s.velocity is not None]
-        if velocities:
-            vel_array = np.array(velocities)
-            expected_velocity = (end - start) / 5.0  # distance / time
-            
-            for vel in vel_array:
-                np.testing.assert_array_almost_equal(vel, expected_velocity)
-    
-    def test_zero_length_trajectory(self):
-        """Test trajectory when start and end are the same."""
-        point = np.array([1, 2, 3])
-        
-        params = TrajectoryParams(duration=2.0, rate=10.0)
-        generator = LineTrajectory(
-            start_position=point,
-            end_position=point,
-            params=params
-        )
-        
-        trajectory = generator.generate()
-        positions = np.array([s.pose.position for s in trajectory.states])
-        
-        # All positions should be the same
-        for pos in positions:
-            np.testing.assert_array_almost_equal(pos, point)
-        
-        # Velocity should be zero
-        velocities = [s.velocity for s in trajectory.states if s.velocity is not None]
-        if velocities:
-            for vel in velocities:
-                np.testing.assert_array_almost_equal(vel, np.zeros(3))

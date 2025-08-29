@@ -74,15 +74,15 @@ def compare_raw_imu_simulations():
     print("\nTest 1: Static Hovering at Constant Height")
     print("-" * 40)
     
-    # Create static trajectory
+    # Create static trajectory (circle with radius 0 for static position)
     static_params = {
-        "start_position": [2.0, 1.0, 1.5],
-        "end_position": [2.0, 1.0, 1.5],  # Same position
+        "radius": 0.0,  # Zero radius for static position
+        "height": 1.5,
         "duration": 1.0,
         "rate": 200.0,
         "start_time": 0.0
     }
-    static_traj = generate_trajectory("line", static_params)
+    static_traj = generate_trajectory("circle", static_params)
     
     # Our IMU model
     imu_calib = IMUCalibration(
@@ -192,14 +192,17 @@ def compare_raw_imu_simulations():
     print("-" * 40)
     
     # Create trajectory with upward acceleration
+    # Use spiral with vertical motion only
     vertical_params = {
-        "start_position": [0, 0, 0],
-        "end_position": [0, 0, 5],  # Move up 5 meters
+        "initial_radius": 0.0,
+        "final_radius": 0.0,  # No horizontal motion
+        "initial_height": 0.0,
+        "final_height": 5.0,  # Move up 5 meters
         "duration": 2.0,
         "rate": 200.0,
         "start_time": 0.0
     }
-    vertical_traj = generate_trajectory("line", vertical_params)
+    vertical_traj = generate_trajectory("spiral", vertical_params)
     
     # Add constant acceleration by modifying velocities
     # For simplicity, we'll use the existing trajectory

@@ -336,14 +336,15 @@ class TestIMUSimulationAccuracy:
         imu = IMUModel(imu_calib, imu_config)
         
         # Generate stationary trajectory
+        # Use circle with radius 0 for static position
         params = {
-            "start": np.array([0, 0, 0]),
-            "end": np.array([0, 0, 0]),  # Same position
+            "radius": 0.0,  # Zero radius for static position
+            "height": 0.0,
             "duration": 1.0,
             "rate": 100.0,
             "start_time": 0.0
         }
-        traj = generate_trajectory("line", params)
+        traj = generate_trajectory("circle", params)
         
         # Generate measurements
         imu_data = imu.generate_perfect_measurements(traj)

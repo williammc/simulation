@@ -138,7 +138,7 @@ class TestCompletePipeline:
             )
             
             exit_code = run_simulation(
-                trajectory="line",
+                trajectory="circle",
                 config=None,
                 duration=2.0,
                 output=output_dir,
@@ -237,7 +237,7 @@ class TestCompletePipeline:
             )
             
             exit_code = run_simulation(
-                trajectory="figure8",
+                trajectory="circle",
                 config=None,
                 duration=3.0,
                 output=output_dir,

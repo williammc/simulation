@@ -87,7 +87,7 @@ def test_simulation_without_preintegration():
         
         # Run simulation without preintegration
         exit_code = run_simulation(
-            trajectory="line",
+            trajectory="circle",
             config=None,
             duration=1.0,
             output=output_dir,
@@ -101,7 +101,7 @@ def test_simulation_without_preintegration():
         assert exit_code == 0, "Simulation should succeed"
         
         # Check that output file was created
-        output_files = list(output_dir.glob("simulation_line_*.json"))
+        output_files = list(output_dir.glob("simulation_circle_*.json"))
         assert len(output_files) == 1, "Should create one output file"
         
         # Load the data and verify preintegration was NOT included
@@ -134,7 +134,7 @@ def test_preintegration_consistency():
         
         for i in range(2):
             exit_code = run_simulation(
-                trajectory="figure8",
+                trajectory="spiral",
                 config=None,
                 duration=1.5,
                 output=output_dir / f"run_{i}",

@@ -14,10 +14,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 class TrajectoryType(str, Enum):
     """Available trajectory types for simulation."""
     CIRCLE = "circle"
-    FIGURE8 = "figure8"
     SPIRAL = "spiral"
-    LINE = "line"
-    RANDOM_WALK = "random_walk"
 
 
 class NoiseModel(str, Enum):
@@ -326,10 +323,7 @@ class TrajectoryConfig(BaseModel):
         """Set default parameters based on trajectory type."""
         defaults = {
             TrajectoryType.CIRCLE: {"radius": 2.0, "height": 1.5, "angular_velocity": 0.5},
-            TrajectoryType.FIGURE8: {"width": 4.0, "height": 2.0, "period": 15.0},
-            TrajectoryType.SPIRAL: {"radius": 2.0, "pitch": 0.5, "turns": 3},
-            TrajectoryType.LINE: {"length": 10.0, "velocity": 0.5},
-            TrajectoryType.RANDOM_WALK: {"bounds_x": 5.0, "bounds_y": 5.0, "bounds_z": 2.0, "step_size": 0.1}
+            TrajectoryType.SPIRAL: {"initial_radius": 0.5, "final_radius": 3.0, "initial_height": 0.5, "final_height": 3.0}
         }
         
         if self.type in defaults and not self.params:
@@ -360,29 +354,10 @@ class EnvironmentConfig(BaseModel):
         description="Maximum visible distance (meters)"
     )
     
-    # From LandmarkGeneratorConfig
+    # Landmark distribution settings
     distribution: str = Field(
         "uniform",
-        description="Landmark distribution type: uniform, gaussian, clustered"
-    )
-    gaussian_mean: Optional[List[float]] = Field(
-        None,
-        description="Mean for Gaussian distribution [x, y, z]"
-    )
-    gaussian_std: float = Field(
-        5.0,
-        gt=0,
-        description="Standard deviation for Gaussian distribution"
-    )
-    num_clusters: int = Field(
-        5,
-        ge=1,
-        description="Number of clusters for clustered distribution"
-    )
-    cluster_std: float = Field(
-        1.0,
-        gt=0,
-        description="Standard deviation within clusters"
+        description="Landmark distribution type (only 'uniform' supported now)"
     )
     min_separation: float = Field(
         0.1,
@@ -397,13 +372,6 @@ class EnvironmentConfig(BaseModel):
             raise ValueError('Landmark range must have exactly 3 components')
         if any(x <= 0 for x in v):
             raise ValueError('All range components must be positive')
-        return v
-    
-    @field_validator('gaussian_mean')
-    @classmethod
-    def validate_gaussian_mean(cls, v: Optional[List[float]]) -> Optional[List[float]]:
-        if v is not None and len(v) != 3:
-            raise ValueError('Gaussian mean must have exactly 3 components')
         return v
 
 

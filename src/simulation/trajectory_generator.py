@@ -7,7 +7,6 @@ from typing import Optional, Dict, Any, List
 from dataclasses import dataclass
 
 from src.common.data_structures import Trajectory, TrajectoryState, Pose
-from src.utils.math_utils import so3_exp
 
 
 @dataclass
@@ -42,7 +41,10 @@ class CircleTrajectory:
         self.params = params or TrajectoryParams()
         
         # Compute angular velocity to complete one circle in duration
-        if angular_velocity is None:
+        # Special case: if radius is 0, set angular velocity to 0 (stationary)
+        if radius == 0:
+            self.angular_velocity = 0.0
+        elif angular_velocity is None:
             self.angular_velocity = 2 * np.pi / self.params.duration
         else:
             self.angular_velocity = angular_velocity
@@ -81,8 +83,12 @@ class CircleTrajectory:
             velocity = np.array([vx, vy, vz])
             
             # Orientation: facing tangent direction (forward along velocity)
-            # Yaw angle is theta + pi/2 (perpendicular to radius)
-            yaw = theta + np.pi / 2
+            # Special case: if radius is 0 (stationary), keep yaw at 0
+            if self.radius == 0:
+                yaw = 0.0
+            else:
+                # Yaw angle is theta + pi/2 (perpendicular to radius)
+                yaw = theta + np.pi / 2
             
             # Create rotation matrix (yaw only, no pitch or roll)
             R = np.array([
@@ -159,211 +165,6 @@ class CircleTrajectory:
         )
 
 
-class QuarterCircleTrajectory:
-    """Generate quarter-circle trajectory (90 degrees of rotation)."""
-    
-    def __init__(
-        self,
-        radius: float = 2.0,
-        height: float = 1.5,
-        angular_velocity: Optional[float] = None,
-        params: Optional[TrajectoryParams] = None
-    ):
-        """
-        Initialize quarter-circle trajectory generator.
-        
-        Args:
-            radius: Circle radius in meters
-            height: Height above ground in meters
-            angular_velocity: Angular velocity in rad/s (if None, uses duration)
-            params: Trajectory parameters
-        """
-        self.radius = radius
-        self.height = height
-        self.params = params or TrajectoryParams()
-        
-        # Set angular velocity for quarter circle (pi/2 radians)
-        if angular_velocity is None:
-            # Duration should complete a quarter circle (pi/2 radians)
-            self.angular_velocity = (np.pi / 2) / self.params.duration
-        else:
-            self.angular_velocity = angular_velocity
-    
-    def generate(self) -> Trajectory:
-        """
-        Generate the quarter-circle trajectory.
-        
-        Returns:
-            Trajectory with poses, velocities, and angular velocities
-        """
-        trajectory = Trajectory(frame_id="world")
-        
-        # Generate timestamps
-        dt = 1.0 / self.params.rate
-        timestamps = np.arange(
-            self.params.start_time,
-            self.params.start_time + self.params.duration,
-            dt
-        )
-        
-        for t in timestamps:
-            # Current angle (limited to quarter circle)
-            theta = min(self.angular_velocity * (t - self.params.start_time), np.pi / 2)
-            
-            # Position on circle
-            x = self.radius * np.cos(theta)
-            y = self.radius * np.sin(theta)
-            z = self.height
-            position = np.array([x, y, z])
-            
-            # Velocity (tangent to circle, zero if reached end)
-            if theta < np.pi / 2:
-                vx = -self.radius * self.angular_velocity * np.sin(theta)
-                vy = self.radius * self.angular_velocity * np.cos(theta)
-                vz = 0.0
-                omega_z = self.angular_velocity
-            else:
-                # Stop at quarter circle
-                vx = vy = vz = 0.0
-                omega_z = 0.0
-            velocity = np.array([vx, vy, vz])
-            
-            # Orientation: facing tangent direction
-            yaw = theta + np.pi / 2
-            
-            # Create rotation matrix
-            R = np.array([
-                [np.cos(yaw), -np.sin(yaw), 0],
-                [np.sin(yaw), np.cos(yaw), 0],
-                [0, 0, 1]
-            ])
-            
-            # Angular velocity
-            angular_velocity = np.array([0, 0, omega_z])
-            
-            # Create pose and state
-            pose = Pose(
-                timestamp=t,
-                position=position,
-                rotation_matrix=R
-            )
-            
-            state = TrajectoryState(
-                pose=pose,
-                velocity=velocity,
-                angular_velocity=angular_velocity
-            )
-            
-            trajectory.add_state(state)
-        
-        return trajectory
-
-
-class Figure8Trajectory:
-    """Generate figure-8 trajectory."""
-    
-    def __init__(
-        self,
-        scale_x: float = 3.0,
-        scale_y: float = 2.0,
-        height: float = 1.5,
-        params: Optional[TrajectoryParams] = None
-    ):
-        """
-        Initialize figure-8 trajectory generator.
-        
-        Args:
-            scale_x: X-axis scale in meters
-            scale_y: Y-axis scale in meters  
-            height: Constant height in meters
-            params: Trajectory parameters
-        """
-        self.scale_x = scale_x
-        self.scale_y = scale_y
-        self.height = height
-        self.params = params or TrajectoryParams()
-        
-        # Angular frequency to complete figure-8 in duration
-        self.omega = 2 * np.pi / self.params.duration
-    
-    def generate(self) -> Trajectory:
-        """
-        Generate the figure-8 trajectory.
-        
-        Returns:
-            Trajectory with poses and velocities
-        """
-        trajectory = Trajectory(frame_id="world")
-        
-        # Generate timestamps
-        dt = 1.0 / self.params.rate
-        timestamps = np.arange(
-            self.params.start_time,
-            self.params.start_time + self.params.duration,
-            dt
-        )
-        
-        for t in timestamps:
-            tau = self.omega * (t - self.params.start_time)
-            
-            # Lemniscate parametrization
-            x = self.scale_x * np.sin(tau)
-            y = self.scale_y * np.sin(tau) * np.cos(tau)
-            z = self.height
-            position = np.array([x, y, z])
-            
-            # Velocity
-            vx = self.scale_x * self.omega * np.cos(tau)
-            vy = self.scale_y * self.omega * (np.cos(tau)**2 - np.sin(tau)**2)
-            vz = 0.0
-            velocity = np.array([vx, vy, vz])
-            
-            # Orientation: facing velocity direction
-            if np.linalg.norm(velocity[:2]) > 1e-6:
-                yaw = np.arctan2(vy, vx)
-            else:
-                yaw = 0.0
-            
-            R = np.array([
-                [np.cos(yaw), -np.sin(yaw), 0],
-                [np.sin(yaw), np.cos(yaw), 0],
-                [0, 0, 1]
-            ])
-            # Angular velocity (yaw rate)
-            # Compute numerically as difference in yaw
-            if len(trajectory.states) > 0:
-                prev_yaw = np.arctan2(
-                    trajectory.states[-1].velocity[1],
-                    trajectory.states[-1].velocity[0]
-                ) if trajectory.states[-1].velocity is not None else 0.0
-                
-                dyaw = yaw - prev_yaw
-                # Handle angle wrap
-                if dyaw > np.pi:
-                    dyaw -= 2 * np.pi
-                elif dyaw < -np.pi:
-                    dyaw += 2 * np.pi
-                
-                angular_velocity = np.array([0, 0, dyaw / dt])
-            else:
-                angular_velocity = np.array([0, 0, 0])
-            
-            # Create pose and state
-            pose = Pose(
-                timestamp=t,
-                position=position,
-                rotation_matrix=R
-            )
-            
-            state = TrajectoryState(
-                pose=pose,
-                velocity=velocity,
-                angular_velocity=angular_velocity
-            )
-            
-            trajectory.add_state(state)
-        
-        return trajectory
 
 
 class SpiralTrajectory:
@@ -484,91 +285,6 @@ class SpiralTrajectory:
         return trajectory
 
 
-class LineTrajectory:
-    """Generate straight line trajectory with constant velocity."""
-    
-    def __init__(
-        self,
-        start_position: np.ndarray = np.array([0, 0, 1]),
-        end_position: np.ndarray = np.array([10, 0, 1]),
-        params: Optional[TrajectoryParams] = None
-    ):
-        """
-        Initialize line trajectory generator.
-        
-        Args:
-            start_position: Starting position [x, y, z]
-            end_position: Ending position [x, y, z]
-            params: Trajectory parameters
-        """
-        self.start_position = np.asarray(start_position)
-        self.end_position = np.asarray(end_position)
-        self.params = params or TrajectoryParams()
-    
-    def generate(self) -> Trajectory:
-        """
-        Generate the line trajectory.
-        
-        Returns:
-            Trajectory with constant velocity
-        """
-        trajectory = Trajectory(frame_id="world")
-        
-        # Compute constant velocity
-        displacement = self.end_position - self.start_position
-        velocity = displacement / self.params.duration
-        
-        # Orientation from velocity direction
-        if np.linalg.norm(velocity[:2]) > 1e-6:
-            yaw = np.arctan2(velocity[1], velocity[0])
-        else:
-            yaw = 0.0
-        
-        pitch = np.arctan2(velocity[2], np.linalg.norm(velocity[:2]))
-        
-        # Build rotation matrix
-        R_yaw = np.array([
-            [np.cos(yaw), -np.sin(yaw), 0],
-            [np.sin(yaw), np.cos(yaw), 0],
-            [0, 0, 1]
-        ])
-        
-        R_pitch = np.array([
-            [np.cos(pitch), 0, np.sin(pitch)],
-            [0, 1, 0],
-            [-np.sin(pitch), 0, np.cos(pitch)]
-        ])
-        
-        R = R_yaw @ R_pitch
-        # Generate timestamps
-        dt = 1.0 / self.params.rate
-        timestamps = np.arange(
-            self.params.start_time,
-            self.params.start_time + self.params.duration,
-            dt
-        )
-        
-        for t in timestamps:
-            # Position along line
-            s = (t - self.params.start_time) / self.params.duration
-            position = self.start_position + s * displacement
-            
-            # Create pose and state
-            pose = Pose(
-                timestamp=t,
-                position=position,
-                rotation_matrix=R
-            )
-            
-            state = TrajectoryState(
-                pose=pose,
-                velocity=velocity,
-                angular_velocity=np.zeros(3)  # No rotation
-            )
-            
-            trajectory.add_state(state)
-        
-        return trajectory
 
 
 def generate_trajectory(
@@ -579,7 +295,7 @@ def generate_trajectory(
     Factory function to generate trajectories.
     
     Args:
-        trajectory_type: Type of trajectory ("circle", "quarter-circle", "figure8", "spiral", "line")
+        trajectory_type: Type of trajectory ("circle" or "spiral")
         params: Parameters for trajectory generation
     
     Returns:
@@ -599,20 +315,6 @@ def generate_trajectory(
             angular_velocity=params.get("angular_velocity"),
             params=traj_params
         )
-    elif trajectory_type == "quarter-circle":
-        generator = QuarterCircleTrajectory(
-            radius=params.get("radius", 2.0),
-            height=params.get("height", 1.5),
-            angular_velocity=params.get("angular_velocity"),
-            params=traj_params
-        )
-    elif trajectory_type == "figure8":
-        generator = Figure8Trajectory(
-            scale_x=params.get("scale_x", 3.0),
-            scale_y=params.get("scale_y", 2.0),
-            height=params.get("height", 1.5),
-            params=traj_params
-        )
     elif trajectory_type == "spiral":
         generator = SpiralTrajectory(
             initial_radius=params.get("initial_radius", 0.5),
@@ -621,13 +323,7 @@ def generate_trajectory(
             final_height=params.get("final_height", 3.0),
             params=traj_params
         )
-    elif trajectory_type == "line":
-        generator = LineTrajectory(
-            start_position=np.array(params.get("start_position", [0, 0, 1])),
-            end_position=np.array(params.get("end_position", [10, 0, 1])),
-            params=traj_params
-        )
     else:
-        raise ValueError(f"Unknown trajectory type: {trajectory_type}")
+        raise ValueError(f"Unknown trajectory type: {trajectory_type}. Must be 'circle' or 'spiral'")
     
     return generator.generate()

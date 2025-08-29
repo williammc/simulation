@@ -9,9 +9,6 @@ from src.common.data_structures import (
     IMUMeasurement, IMUData, IMUCalibration,
     Trajectory, TrajectoryState
 )
-from src.utils.math_utils import (
-    so3_log
-)
 from src.common.config import IMUConfig
 
 

@@ -7,7 +7,7 @@ import numpy as np
 from pathlib import Path
 
 from src.simulation.trajectory_generator import (
-    Figure8Trajectory, SpiralTrajectory, LineTrajectory,
+    CircleTrajectory, SpiralTrajectory,
     TrajectoryParams
 )
 from src.simulation.trajectory_interpolation import (
@@ -36,12 +36,11 @@ from src.common.data_structures import (
 class TestTrajectoryGenerators:
     """Test advanced trajectory generators."""
     
-    def test_figure8_trajectory(self):
-        """Test Figure-8 trajectory generation."""
+    def test_circle_trajectory(self):
+        """Test Circle trajectory generation."""
         params = TrajectoryParams(duration=10.0, rate=100.0)
-        generator = Figure8Trajectory(
-            scale_x=3.0,
-            scale_y=2.0,
+        generator = CircleTrajectory(
+            radius=2.0,
             height=1.5,
             params=params
         )
@@ -81,43 +80,6 @@ class TestTrajectoryGenerators:
         assert radii[0] < radii[-1]  # Radius increases
         assert positions[0, 2] < positions[-1, 2]  # Height increases
     
-    def test_line_trajectory(self):
-        """Test line trajectory generation."""
-        start = np.array([0, 0, 1])
-        end = np.array([10, 5, 2])
-        
-        params = TrajectoryParams(duration=5.0, rate=20.0)
-        generator = LineTrajectory(
-            start_position=start,
-            end_position=end,
-            params=params
-        )
-        
-        trajectory = generator.generate()
-        
-        # Check trajectory properties
-        assert len(trajectory.states) == 100
-        
-        # Check linearity
-        positions = np.array([s.pose.position for s in trajectory.states])
-        
-        # All points should be on the line
-        direction = end - start
-        direction = direction / np.linalg.norm(direction)
-        
-        for i in range(1, len(positions) - 1):
-            vec_to_point = positions[i] - start
-            # Project onto line direction
-            projection = np.dot(vec_to_point, direction) * direction
-            # Check perpendicular distance is small
-            perpendicular = vec_to_point - projection
-            assert np.linalg.norm(perpendicular) < 1e-10
-        
-        # Check constant velocity
-        velocities = [s.velocity for s in trajectory.states if s.velocity is not None]
-        if velocities:
-            vel_std = np.std(velocities, axis=0)
-            assert np.all(vel_std < 1e-10)
 
 
 class TestTrajectoryInterpolation:

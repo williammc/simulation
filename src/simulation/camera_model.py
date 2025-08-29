@@ -391,29 +391,26 @@ def generate_camera_observations(
     # Create observations
     observations = []
     for landmark, pixel, depth in visible:
-        # Compute ideal coordinates (before adding noise)
-        # Get camera transformation
-        C_T_W = np.linalg.inv(W_T_B @ camera.calibration.extrinsics.B_T_C)
-        
-        # Transform landmark to camera frame
-        landmark_cam_h = C_T_W @ np.append(landmark.position, 1)  # Homogeneous coords
-        landmark_cam = landmark_cam_h[:3]
-        
-        # Compute ideal coordinates (normalized/undistorted)
-        ideal_coords = np.array([
-            landmark_cam[0] / landmark_cam[2],
-            landmark_cam[1] / landmark_cam[2]
-        ])
-        
-        # Add noise if configured (only to pixel, not ideal)
+        # Add noise to pixel observation first if configured
         if should_add_noise:
             pixel = camera.add_noise_to_pixel(pixel)
+        
+        # Compute ideal coordinates from the noisy pixel observation
+        # This ensures ideal_coordinates include the effect of pixel noise
+        # Unproject the noisy pixel to normalized coordinates
+        K_inv = np.linalg.inv(camera.K)
+        pixel_homog = np.array([pixel.u, pixel.v, 1.0])
+        
+        # Get normalized (ideal) coordinates from noisy pixel
+        # This is the undistorted, normalized coordinate that includes noise
+        ideal_coords_homog = K_inv @ pixel_homog
+        ideal_coords = ideal_coords_homog[:2] / ideal_coords_homog[2]
         
         obs = CameraObservation(
             landmark_id=landmark.id,
             pixel=pixel,
             descriptor=landmark.descriptor,  # Pass through descriptor if available
-            ideal_coordinates=ideal_coords  # Add ideal coordinates
+            ideal_coordinates=ideal_coords  # Ideal coordinates from noisy pixel
         )
         observations.append(obs)
     
