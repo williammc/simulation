@@ -156,27 +156,41 @@ class EstimatorResultStorage:
     @staticmethod
     def _config_to_dict(config: Any) -> Dict[str, Any]:
         """Convert estimator config to dictionary format."""
-        # Try to convert using Pydantic's dict() method if available
-        if hasattr(config, 'dict'):
-            return config.dict()
-        elif hasattr(config, 'model_dump'):
+        # Try to convert using Pydantic's model_dump() method if available (v2)
+        if hasattr(config, 'model_dump'):
             return config.model_dump()
+        elif hasattr(config, 'dict'):
+            # Fallback for older Pydantic versions
+            return config.dict()
         
         # Fallback: manually extract common fields
         config_dict = {
             "estimator_type": getattr(config, 'estimator_type', EstimatorType.EKF).value
         }
         
-        # Add fields that might exist
+        # Add fields that might exist (handle both old and new field names)
+        field_mappings = {
+            'outlier_threshold': 'chi2_threshold',
+            'measurement_noise_camera': 'pixel_noise_std',
+            'measurement_noise_imu_accel': 'imu_accel_noise',
+            'measurement_noise_imu_gyro': 'imu_gyro_noise',
+            'use_preintegration': 'use_preintegrated_imu'
+        }
+        
         for field in ['max_landmarks', 'max_iterations', 'convergence_threshold',
-                      'outlier_threshold', 'enable_marginalization', 'marginalization_window',
+                      'outlier_threshold', 'chi2_threshold', 'enable_marginalization', 'marginalization_window',
                       'process_noise_position', 'process_noise_orientation', 
                       'process_noise_velocity', 'process_noise_bias',
-                      'measurement_noise_camera', 'measurement_noise_imu_accel',
-                      'measurement_noise_imu_gyro', 'window_size', 'optimization_iterations',
-                      'imu_rate', 'camera_rate', 'use_preintegration']:
+                      'measurement_noise_camera', 'pixel_noise_std', 'measurement_noise_imu_accel',
+                      'measurement_noise_imu_gyro', 'imu_accel_noise', 'imu_gyro_noise',
+                      'window_size', 'optimization_iterations',
+                      'imu_rate', 'camera_rate', 'use_preintegration', 'use_preintegrated_imu']:
+            # Try new field name first, then old field name
             if hasattr(config, field):
                 config_dict[field] = getattr(config, field)
+            elif field in field_mappings and hasattr(config, field_mappings[field]):
+                # Map old field name to new value
+                config_dict[field] = getattr(config, field_mappings[field])
         
         return config_dict
     

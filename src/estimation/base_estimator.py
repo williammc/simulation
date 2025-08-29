@@ -10,8 +10,8 @@ import numpy as np
 import time
 from enum import Enum
 
-# Import EstimatorType from config to have a single definition
-from src.common.config import EstimatorType
+# Import EstimatorType and BaseEstimatorConfig from config to have a single definition
+from src.common.config import EstimatorType, BaseEstimatorConfig
 
 from src.common.data_structures import (
     Trajectory, Pose, Landmark, Map,
@@ -58,46 +58,9 @@ class EstimatorState:
         return None
 
 
-@dataclass
-class EstimatorConfig:
-    """
-    Configuration for SLAM estimator.
-    
-    Attributes:
-        estimator_type: Type of estimator
-        max_landmarks: Maximum number of landmarks to track
-        max_iterations: Maximum optimization iterations
-        convergence_threshold: Convergence criteria
-        outlier_threshold: Chi-squared threshold for outlier rejection
-        enable_marginalization: Whether to marginalize old states
-        marginalization_window: Size of sliding window
-        verbose: Enable detailed logging
-        save_intermediate: Save intermediate results
-        seed: Random seed for reproducibility
-        use_preintegrated_imu: Use preintegrated IMU (True) or raw measurements (False)
-    """
-    estimator_type: EstimatorType = EstimatorType.UNKNOWN
-    max_landmarks: int = 1000
-    max_iterations: int = 100
-    convergence_threshold: float = 1e-6
-    outlier_threshold: float = 5.991  # Chi2 95% for 2 DOF
-    enable_marginalization: bool = False
-    marginalization_window: int = 20
-    verbose: bool = False
-    save_intermediate: bool = False
-    seed: Optional[int] = None
-    use_preintegrated_imu: bool = True  # New field for raw vs preintegrated IMU
-    
-    # Process noise parameters
-    process_noise_position: float = 0.01
-    process_noise_orientation: float = 0.001
-    process_noise_velocity: float = 0.1
-    process_noise_bias: float = 0.001
-    
-    # Measurement noise parameters
-    measurement_noise_camera: float = 1.0  # pixels
-    measurement_noise_imu_accel: float = 0.01
-    measurement_noise_imu_gyro: float = 0.001
+# EstimatorConfig is now imported from config.py as BaseEstimatorConfig
+# For backward compatibility, create an alias
+EstimatorConfig = BaseEstimatorConfig
 
 
 @dataclass
@@ -418,4 +381,4 @@ class BaseEstimator(ABC):
         chi2 = innovation.T @ np.linalg.inv(S) @ innovation
         
         # Compare with threshold (e.g., chi2_95 for 2 DOF = 5.991)
-        return chi2 > self.config.outlier_threshold
+        return chi2 > self.config.chi2_threshold

@@ -5,10 +5,10 @@ This estimator works with pre-processed measurements and does not depend
 on camera models or IMU calibration parameters.
 """
 
-from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Any, Tuple
 import numpy as np
 import logging
+from pydantic import Field
 
 from src.estimation.base_estimator import (
     BaseEstimator, 
@@ -29,7 +29,6 @@ from src.common.config import EstimatorType
 logger = logging.getLogger(__name__)
 
 
-@dataclass
 class NewSWBAConfig(EstimatorConfig):
     """
     Configuration for camera-model-independent SWBA.
@@ -38,34 +37,35 @@ class NewSWBAConfig(EstimatorConfig):
     All sensor-specific parameters are embedded in pre-processed measurements.
     """
     # Sliding window parameters
-    window_size: int = 10
-    min_keyframe_distance: float = 0.5  # meters
-    min_keyframe_angle: float = 10.0  # degrees
-    keyframe_selection_method: str = "distance"  # "distance", "angle", "both", "all"
+    window_size: int = Field(10, ge=1, description="Number of keyframes in sliding window")
+    min_keyframe_distance: float = Field(0.5, gt=0, description="Minimum distance for keyframe selection (meters)")
+    min_keyframe_angle: float = Field(10.0, gt=0, description="Minimum angle for keyframe selection (degrees)")
+    keyframe_selection_method: str = Field("distance", description="Keyframe selection method: distance, angle, both, all")
     
     # Optimization parameters  
-    optimization_backend: str = "native"  # "native", "ceres", "g2o"
-    max_optimization_iterations: int = 50
-    optimization_convergence_threshold: float = 1e-6
-    use_robust_kernels: bool = True  # Uses pre-computed robust weights
-    min_measurements_for_update: int = 5  # Minimum measurements for visual correction
-    visual_correction_gain: float = 0.1  # Gain for EKF-style visual updates (moderate gain)
+    optimization_backend: str = Field("native", description="Optimization backend: native, ceres, g2o")
+    max_optimization_iterations: int = Field(50, ge=1, description="Maximum optimization iterations")
+    optimization_convergence_threshold: float = Field(1e-6, gt=0, description="Convergence threshold for optimization")
+    use_robust_kernels: bool = Field(True, description="Use pre-computed robust weights")
+    min_measurements_for_update: int = Field(5, ge=1, description="Minimum measurements for visual correction")
+    visual_correction_gain: float = Field(0.1, gt=0, le=1, description="Gain for EKF-style visual updates")
     
     # Marginalization parameters
-    marginalization_strategy: str = "oldest"  # "oldest", "information"
-    keep_marginalized_prior: bool = True
+    marginalization_strategy: str = Field("oldest", description="Marginalization strategy: oldest, information")
+    keep_marginalized_prior: bool = Field(True, description="Keep marginalized prior factors")
     
     # Feature management (for validation only, not projection)
-    min_observations_per_landmark: int = 2
-    max_track_length: int = 50
+    min_observations_per_landmark: int = Field(2, ge=2, description="Minimum observations per landmark")
+    max_track_length: int = Field(50, ge=1, description="Maximum track length for features")
     
     # Debug and visualization
-    visualize_optimization: bool = False
-    save_factor_graph: bool = False
-    verbose_optimization: bool = False
+    visualize_optimization: bool = Field(False, description="Enable optimization visualization")
+    save_factor_graph: bool = Field(False, description="Save factor graph for debugging")
+    verbose_optimization: bool = Field(False, description="Enable verbose optimization output")
     
-    def __post_init__(self):
-        """Set estimator type to new SWBA."""
+    def __init__(self, **data):
+        """Initialize with SWBA estimator type."""
+        super().__init__(**data)
         self.estimator_type = EstimatorType.SWBA  # Will need to add NEW_SWBA to enum later
 
 

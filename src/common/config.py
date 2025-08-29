@@ -416,8 +416,8 @@ class SimulationConfig(BaseModel):
 class BaseEstimatorConfig(BaseModel):
     """Base configuration for all SLAM estimators."""
     # Common fields for all estimators
-    estimator_type: Optional[EstimatorType] = Field(
-        default=None,
+    estimator_type: EstimatorType = Field(
+        default=EstimatorType.UNKNOWN,
         description="Type of estimator (set in subclasses)"
     )
     max_landmarks: int = Field(1000, ge=1, description="Maximum number of landmarks")
@@ -427,12 +427,36 @@ class BaseEstimatorConfig(BaseModel):
     # Common measurement noise
     pixel_noise_std: float = Field(1.0, gt=0, description="Pixel measurement noise (pixels)")
     
+    # IMU measurement noise
+    imu_accel_noise: float = Field(0.01, gt=0, description="IMU accelerometer measurement noise (m/s²)")
+    imu_gyro_noise: float = Field(0.001, gt=0, description="IMU gyroscope measurement noise (rad/s)")
+    
+    # Process noise parameters
+    process_noise_position: float = Field(0.01, gt=0, description="Position process noise (m)")
+    process_noise_orientation: float = Field(0.001, gt=0, description="Orientation process noise (rad)")
+    process_noise_velocity: float = Field(0.1, gt=0, description="Velocity process noise (m/s)")
+    process_noise_bias: float = Field(0.001, gt=0, description="Bias process noise")
+    
     # Common outlier rejection
     chi2_threshold: float = Field(
         5.991,
         gt=0,
         description="Chi-squared test threshold (95% confidence for 2 DOF)"
     )
+    
+    # Common optimization parameters
+    max_iterations: int = Field(100, ge=1, le=1000, description="Maximum optimization iterations")
+    convergence_threshold: float = Field(1e-6, gt=0, le=0.01, description="Convergence threshold")
+    
+    # Marginalization settings
+    enable_marginalization: bool = Field(False, description="Enable state marginalization")
+    marginalization_window: int = Field(20, ge=1, description="Marginalization window size")
+    
+    # Output settings
+    save_intermediate: bool = Field(False, description="Save intermediate results")
+    
+    # IMU configuration
+    use_preintegrated_imu: bool = Field(True, description="Use preintegrated IMU measurements")
 
 
 class SWBAConfig(BaseEstimatorConfig):
