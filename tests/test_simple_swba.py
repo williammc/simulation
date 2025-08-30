@@ -47,8 +47,8 @@ class TestSimpleSWBAVIO:
     def imu_data(self):
         """Create sample preintegrated IMU data."""
         return PreprocessedIMUData(
-            from_keyframe_id=0,
-            to_keyframe_id=1,
+            from_frame_id=0,
+            to_frame_id=1,
             delta_position=np.array([0.1, 0.05, 0.01]),
             delta_velocity=np.array([0.5, 0.2, 0.05]),
             delta_rotation=np.eye(3),  # Changed from rotation_matrix to delta_rotation

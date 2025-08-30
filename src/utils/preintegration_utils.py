@@ -297,8 +297,8 @@ def preintegrate_between_frames(
             logger.warning(f"No IMU measurements between frames at t={from_time:.3f} and t={to_time:.3f}")
             # Create empty preintegrated data
             empty_data = PreintegratedIMUData(
-                from_keyframe_id=i,
-                to_keyframe_id=i+1,
+                from_frame_id=i,
+                to_frame_id=i+1,
                 delta_t=to_time - from_time,
                 delta_position=np.zeros(3),
                 delta_velocity=np.zeros(3),

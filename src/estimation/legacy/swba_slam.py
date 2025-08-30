@@ -249,14 +249,14 @@ class SlidingWindowBA(BaseEstimator):
         """
         # Create keyframes if they don't exist yet
         # This happens when we have preintegrated IMU but no camera frames
-        while self.next_keyframe_id <= preintegrated.to_keyframe_id:
+        while self.next_keyframe_id <= preintegrated.to_frame_id:
             # Calculate timestamp for this keyframe based on its ID
             # Assuming keyframes are evenly spaced in time
             if self.next_keyframe_id == 0:
                 kf_timestamp = self.current_state.timestamp
             else:
                 # Use the preintegration dt to space keyframes
-                kf_timestamp = self.current_state.timestamp + (self.next_keyframe_id - preintegrated.from_keyframe_id) * preintegrated.dt
+                kf_timestamp = self.current_state.timestamp + (self.next_keyframe_id - preintegrated.from_frame_id) * preintegrated.dt
             
             # Create a new keyframe at the current state
             kf = Keyframe(
@@ -280,9 +280,9 @@ class SlidingWindowBA(BaseEstimator):
         to_kf = None
         
         for kf in self.keyframes:
-            if kf.id == preintegrated.from_keyframe_id:
+            if kf.id == preintegrated.from_frame_id:
                 from_kf = kf
-            if kf.id == preintegrated.to_keyframe_id:
+            if kf.id == preintegrated.to_frame_id:
                 to_kf = kf
         
         if from_kf is not None:
@@ -332,7 +332,7 @@ class SlidingWindowBA(BaseEstimator):
                     timestamp=to_kf.state.timestamp
                 )
         else:
-            logger.warning(f"Could not find source keyframe {preintegrated.from_keyframe_id} for preintegration")
+            logger.warning(f"Could not find source keyframe {preintegrated.from_frame_id} for preintegration")
     
     def update(self, camera_frame: Optional[CameraFrame], landmarks: Optional[Map]) -> None:
         """

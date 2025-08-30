@@ -170,8 +170,8 @@ class SimulationData:
         self.measurements["preintegrated_imu"] = []
         for keyframe_id, data in preintegrated_data.items():
             preint_dict = {
-                "from_keyframe_id": data.from_keyframe_id,
-                "to_keyframe_id": data.to_keyframe_id,
+                "from_frame_id": data.from_frame_id,
+                "to_frame_id": data.to_frame_id,
                 "delta_position": data.delta_position.tolist(),
                 "delta_velocity": data.delta_velocity.tolist(),
                 "delta_rotation": data.delta_rotation.tolist(),
@@ -312,8 +312,8 @@ class SimulationData:
                 jacobian = np.array(preint_dict["jacobian"])
             
             preint = PreintegratedIMUData(
-                from_keyframe_id=preint_dict["from_keyframe_id"],
-                to_keyframe_id=preint_dict["to_keyframe_id"],
+                from_frame_id=preint_dict["from_frame_id"],
+                to_frame_id=preint_dict["to_frame_id"],
                 delta_position=np.array(preint_dict["delta_position"]),
                 delta_velocity=np.array(preint_dict["delta_velocity"]),
                 delta_rotation=np.array(preint_dict["delta_rotation"]).reshape(3, 3),
@@ -506,7 +506,7 @@ def load_simulation_data(filepath: Union[str, Path]) -> Dict[str, Any]:
     # Reattach preintegrated IMU to keyframes if both exist
     if camera_data and preintegrated_imu:
         # Create a dictionary mapping keyframe_id to preintegrated data
-        preint_dict = {data.to_keyframe_id: data for data in preintegrated_imu}
+        preint_dict = {data.to_frame_id: data for data in preintegrated_imu}
         
         # Attach to frames
         for frame in camera_data.frames:

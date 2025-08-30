@@ -220,8 +220,8 @@ class TestEstimatorRunner:
                 delta_rotation=np.eye(3),  # No rotation
                 covariance=np.eye(15) * 0.01,
                 dt=0.1,
-                from_keyframe_id=i,
-                to_keyframe_id=i+1,
+                from_frame_id=i,
+                to_frame_id=i+1,
                 num_measurements=10
             )
             preintegrated_imu.append(preint_data)

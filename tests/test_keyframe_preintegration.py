@@ -93,8 +93,8 @@ class TestKeyframePreintegrationFlow:
         # Check keyframe ID references
         for to_id, data in preintegrated_data.items():
             assert to_id in keyframe_ids[1:]  # Should be destination keyframes
-            assert data.from_keyframe_id in keyframe_ids[:-1]  # Should be source keyframes
-            assert data.to_keyframe_id == to_id
+            assert data.from_frame_id in keyframe_ids[:-1]  # Should be source keyframes
+            assert data.to_frame_id == to_id
     
     def test_preintegrated_data_attached_to_keyframes(self):
         """Test that preintegrated IMU data is correctly attached to keyframes."""
@@ -114,8 +114,8 @@ class TestKeyframePreintegrationFlow:
         # Create preintegrated data
         preintegrated_data = {
             1: PreintegratedIMUData(
-                from_keyframe_id=0,
-                to_keyframe_id=1,
+                from_frame_id=0,
+                to_frame_id=1,
                 delta_position=np.array([0.3, 0, 0]),
                 delta_velocity=np.array([1.0, 0, 0]),
                 delta_rotation=np.eye(3),
@@ -124,8 +124,8 @@ class TestKeyframePreintegrationFlow:
                 num_measurements=30
             ),
             2: PreintegratedIMUData(
-                from_keyframe_id=1,
-                to_keyframe_id=2,
+                from_frame_id=1,
+                to_frame_id=2,
                 delta_position=np.array([0.3, 0, 0]),
                 delta_velocity=np.array([1.0, 0, 0]),
                 delta_rotation=np.eye(3),
@@ -134,8 +134,8 @@ class TestKeyframePreintegrationFlow:
                 num_measurements=30
             ),
             3: PreintegratedIMUData(
-                from_keyframe_id=2,
-                to_keyframe_id=3,
+                from_frame_id=2,
+                to_frame_id=3,
                 delta_position=np.array([0.3, 0, 0]),
                 delta_velocity=np.array([1.0, 0, 0]),
                 delta_rotation=np.eye(3),
@@ -152,8 +152,8 @@ class TestKeyframePreintegrationFlow:
         for frame in frames:
             if frame.is_keyframe and frame.keyframe_id > 0:
                 assert frame.preintegrated_imu is not None
-                assert frame.preintegrated_imu.to_keyframe_id == frame.keyframe_id
-                assert frame.preintegrated_imu.from_keyframe_id == frame.keyframe_id - 1
+                assert frame.preintegrated_imu.to_frame_id == frame.keyframe_id
+                assert frame.preintegrated_imu.from_frame_id == frame.keyframe_id - 1
             elif frame.is_keyframe and frame.keyframe_id == 0:
                 # First keyframe has no preintegrated data
                 assert frame.preintegrated_imu is None
@@ -242,8 +242,8 @@ class TestKeyframePreintegrationFlow:
                 assert abs(preint.dt - expected_dt) < 0.01
                 
                 # Check that keyframe IDs are consistent
-                assert preint.from_keyframe_id == keyframe_ids[i-1]
-                assert preint.to_keyframe_id == kf_id
+                assert preint.from_frame_id == keyframe_ids[i-1]
+                assert preint.to_frame_id == kf_id
                 
                 # The actual position delta would need to account for velocity and gravity
                 # Here we just verify the structure is correct
@@ -292,8 +292,8 @@ class TestKeyframePreintegrationFlow:
         # Results should be identical (from cache)
         assert len(result1) == len(result2)
         for kf_id in result1:
-            assert result1[kf_id].from_keyframe_id == result2[kf_id].from_keyframe_id
-            assert result1[kf_id].to_keyframe_id == result2[kf_id].to_keyframe_id
+            assert result1[kf_id].from_frame_id == result2[kf_id].from_frame_id
+            assert result1[kf_id].to_frame_id == result2[kf_id].to_frame_id
             assert result1[kf_id].dt == result2[kf_id].dt
             assert result1[kf_id].num_measurements == result2[kf_id].num_measurements
 

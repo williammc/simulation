@@ -368,8 +368,8 @@ class TestIMUPreprocessor:
     def valid_preintegration(self):
         """Create valid pre-integrated IMU data."""
         return PreprocessedIMUData(
-            from_keyframe_id=0,
-            to_keyframe_id=1,
+            from_frame_id=0,
+            to_frame_id=1,
             delta_position=np.array([0.1, 0.05, 0.01]),
             delta_velocity=np.array([0.5, 0.2, 0.05]),
             delta_rotation=np.eye(3),
@@ -409,8 +409,8 @@ class TestIMUPreprocessor:
     def test_validate_nan_values(self, preprocessor):
         """Test validation catches NaN values."""
         bad_data = PreprocessedIMUData(
-            from_keyframe_id=0,
-            to_keyframe_id=1,
+            from_frame_id=0,
+            to_frame_id=1,
             delta_position=np.array([np.nan, 0.0, 0.0]),
             delta_velocity=np.array([0.0, 0.0, 0.0]),
             delta_rotation=np.eye(3),
@@ -424,8 +424,8 @@ class TestIMUPreprocessor:
     def test_validate_inf_values(self, preprocessor):
         """Test validation catches infinite values."""
         bad_data = PreprocessedIMUData(
-            from_keyframe_id=0,
-            to_keyframe_id=1,
+            from_frame_id=0,
+            to_frame_id=1,
             delta_position=np.array([0.0, 0.0, 0.0]),
             delta_velocity=np.array([0.0, np.inf, 0.0]),
             delta_rotation=np.eye(3),
@@ -440,8 +440,8 @@ class TestIMUPreprocessor:
         """Test rotation matrix property."""
         # Test with identity rotation matrix
         data_identity = PreprocessedIMUData(
-            from_keyframe_id=0,
-            to_keyframe_id=1,
+            from_frame_id=0,
+            to_frame_id=1,
             delta_position=np.zeros(3),
             delta_velocity=np.zeros(3),
             delta_rotation=np.eye(3),
@@ -459,8 +459,8 @@ class TestIMUPreprocessor:
             [0, 0, 1]
         ])
         data_rotated = PreprocessedIMUData(
-            from_keyframe_id=0,
-            to_keyframe_id=1,
+            from_frame_id=0,
+            to_frame_id=1,
             delta_position=np.zeros(3),
             delta_velocity=np.zeros(3),
             delta_rotation=rotation_matrix,

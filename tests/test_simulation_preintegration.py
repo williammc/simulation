@@ -60,8 +60,8 @@ def test_simulation_with_preintegration():
         if data["measurements"]["preintegrated_imu"]:
             # Verify structure of preintegrated data
             first_preint = data["measurements"]["preintegrated_imu"][0]
-            assert "from_keyframe_id" in first_preint
-            assert "to_keyframe_id" in first_preint
+            assert "from_frame_id" in first_preint
+            assert "to_frame_id" in first_preint
             assert "delta_position" in first_preint
             assert "delta_velocity" in first_preint
             assert "delta_rotation" in first_preint
@@ -166,7 +166,7 @@ def test_preintegration_consistency():
         # Verify preintegrated values are consistent (with same seed)
         if preint1 and preint2:
             for p1, p2 in zip(preint1, preint2):
-                assert p1["from_keyframe_id"] == p2["from_keyframe_id"]
-                assert p1["to_keyframe_id"] == p2["to_keyframe_id"]
+                assert p1["from_frame_id"] == p2["from_frame_id"]
+                assert p1["to_frame_id"] == p2["to_frame_id"]
                 assert abs(p1["dt"] - p2["dt"]) < 1e-6
                 assert p1["num_measurements"] == p2["num_measurements"]

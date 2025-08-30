@@ -200,9 +200,9 @@ struct ProcessedVisualFrameT {
  */
 template<typename FLOAT>
 struct PreprocessedIMUDataT {
-    // Keyframe indices
-    int from_keyframe_id;
-    int to_keyframe_id;
+    // Frame indices
+    int from_frame_id;
+    int to_frame_id;
     
     // Pre-integrated changes
     Vector3T<FLOAT> delta_position;
@@ -228,8 +228,8 @@ struct PreprocessedIMUDataT {
     
     // Constructor
     PreprocessedIMUDataT()
-        : from_keyframe_id(-1),
-          to_keyframe_id(-1),
+        : from_frame_id(-1),
+          to_frame_id(-1),
           delta_position(Vector3T<FLOAT>::Zero()),
           delta_velocity(Vector3T<FLOAT>::Zero()),
           delta_rotation(Matrix3x3T<FLOAT>::Identity()),

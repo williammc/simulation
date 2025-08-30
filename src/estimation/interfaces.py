@@ -173,9 +173,9 @@ class PreprocessedIMUData:
     This structure contains pre-integrated IMU data with all noise parameters
     already applied, so estimators don't need IMU calibration.
     """
-    # Keyframe indices
-    from_keyframe_id: int
-    to_keyframe_id: int
+    # Frame indices
+    from_frame_id: int
+    to_frame_id: int
     
     # Pre-integrated changes
     delta_position: np.ndarray  # shape: (3,)

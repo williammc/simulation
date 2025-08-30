@@ -156,8 +156,8 @@ class TestSimplifiedIntegration:
         
         # Add preintegrated IMU
         frame.preintegrated_imu = PreintegratedIMUData(
-            from_keyframe_id=0,
-            to_keyframe_id=1,
+            from_frame_id=0,
+            to_frame_id=1,
             delta_position=np.array([0.25, 0, 0]),
             delta_velocity=np.array([0.5, 0, 0]),
             delta_rotation=np.eye(3),
@@ -220,8 +220,8 @@ class TestSimplifiedIntegration:
             
             # Add preintegrated IMU
             frame.preintegrated_imu = PreintegratedIMUData(
-                from_keyframe_id=i-1,
-                to_keyframe_id=i,
+                from_frame_id=i-1,
+                to_frame_id=i,
                 delta_position=np.array([0.25, 0.05, 0]),
                 delta_velocity=np.array([0.5, 0.1, 0]),
                 delta_rotation=np.eye(3),
@@ -302,7 +302,7 @@ class TestSimplifiedIntegration:
         
         # Check that each preintegrated segment connects correct keyframes
         for to_id, data in preintegrated_data.items():
-            assert data.to_keyframe_id == to_id
-            assert data.from_keyframe_id == to_id - 1
+            assert data.to_frame_id == to_id
+            assert data.from_frame_id == to_id - 1
             assert data.dt > 0
             assert data.num_measurements > 0

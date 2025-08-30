@@ -34,13 +34,13 @@ class TestPreintegratedIMUData:
             delta_rotation=np.eye(3),
             covariance=np.eye(15),
             dt=0.1,
-            from_keyframe_id=0,
-            to_keyframe_id=1,
+            from_frame_id=0,
+            to_frame_id=1,
             num_measurements=10
         )
         
-        assert data.from_keyframe_id == 0
-        assert data.to_keyframe_id == 1
+        assert data.from_frame_id == 0
+        assert data.to_frame_id == 1
         assert data.num_measurements == 10
         assert data.dt == 0.1
         np.testing.assert_array_equal(data.delta_position, [1, 2, 3])
@@ -57,8 +57,8 @@ class TestPreintegratedIMUData:
             delta_rotation=np.eye(3),
             covariance=np.eye(15),
             dt=0.1,
-            from_keyframe_id=0,
-            to_keyframe_id=1,
+            from_frame_id=0,
+            to_frame_id=1,
             num_measurements=10
         )
         assert data.delta_position.shape == (3,)
@@ -78,8 +78,8 @@ class TestPreintegratedIMUData:
             delta_rotation=R_bad,
             covariance=np.eye(15),
             dt=0.1,
-            from_keyframe_id=0,
-            to_keyframe_id=1,
+            from_frame_id=0,
+            to_frame_id=1,
             num_measurements=10
         )
         
@@ -131,13 +131,13 @@ class TestIMUPreintegrator:
         # Batch process
         result = preintegrator.batch_process(
             measurements,
-            from_keyframe_id=0,
-            to_keyframe_id=1
+            from_frame_id=0,
+            to_frame_id=1
         )
         
         assert isinstance(result, PreintegratedIMUData)
-        assert result.from_keyframe_id == 0
-        assert result.to_keyframe_id == 1
+        assert result.from_frame_id == 0
+        assert result.to_frame_id == 1
         assert result.num_measurements == 10
         assert result.dt > 0
         assert result.covariance.shape == (15, 15)
@@ -229,8 +229,8 @@ class TestPreintegrationUtils:
             delta_rotation=np.eye(3),
             covariance=np.eye(15),
             dt=0.1,
-            from_keyframe_id=0,
-            to_keyframe_id=1,
+            from_frame_id=0,
+            to_frame_id=1,
             num_measurements=10
         )
         
@@ -239,8 +239,8 @@ class TestPreintegrationUtils:
         # Retrieve
         retrieved = cache.get(0, 1)
         assert retrieved is not None
-        assert retrieved.from_keyframe_id == 0
-        assert retrieved.to_keyframe_id == 1
+        assert retrieved.from_frame_id == 0
+        assert retrieved.to_frame_id == 1
         
         # Non-existent should return None
         assert cache.get(1, 2) is None
@@ -331,10 +331,10 @@ class TestPreintegrationUtils:
         assert 2 in result
         
         # Check that preintegrated data has correct IDs
-        assert result[1].from_keyframe_id == 0
-        assert result[1].to_keyframe_id == 1
-        assert result[2].from_keyframe_id == 1
-        assert result[2].to_keyframe_id == 2
+        assert result[1].from_frame_id == 0
+        assert result[1].to_frame_id == 1
+        assert result[2].from_frame_id == 1
+        assert result[2].to_frame_id == 2
         
         # Check that measurements were processed
         assert result[1].num_measurements > 0
@@ -362,8 +362,8 @@ class TestPreintegrationUtils:
                 delta_rotation=np.eye(3),
                 covariance=np.eye(15),
                 dt=0.1,
-                from_keyframe_id=0,
-                to_keyframe_id=1,
+                from_frame_id=0,
+                to_frame_id=1,
                 num_measurements=10
             ),
             2: PreintegratedIMUData(
@@ -372,8 +372,8 @@ class TestPreintegrationUtils:
                 delta_rotation=np.eye(3),
                 covariance=np.eye(15),
                 dt=0.1,
-                from_keyframe_id=1,
-                to_keyframe_id=2,
+                from_frame_id=1,
+                to_frame_id=2,
                 num_measurements=10
             )
         }

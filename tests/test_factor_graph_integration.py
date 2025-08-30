@@ -104,8 +104,8 @@ class TestFactorGraphConstruction:
             # Attach preintegrated IMU data
             if i > 0:
                 frame.preintegrated_imu = PreintegratedIMUData(
-                    from_keyframe_id=i-1,
-                    to_keyframe_id=i,
+                    from_frame_id=i-1,
+                    to_frame_id=i,
                     delta_position=np.array([0.5, 0, 0]),
                     delta_velocity=np.array([1.0, 0, 0]),
                     delta_rotation=np.eye(3),  # Identity rotation matrix
@@ -132,8 +132,8 @@ class TestFactorGraphConstruction:
                 # Check connectivity
                 if isinstance(kf.imu_preintegration, PreintegratedIMUData):
                     # The preintegration stored in keyframe i connects i to i+1
-                    assert kf.imu_preintegration.from_keyframe_id == kf.id
-                    assert kf.imu_preintegration.to_keyframe_id == kf.id + 1
+                    assert kf.imu_preintegration.from_frame_id == kf.id
+                    assert kf.imu_preintegration.to_frame_id == kf.id + 1
     
     def test_factor_connectivity_in_optimization(self, camera_calibration, imu_calibration):
         """Test that factors are properly connected in the optimization."""
@@ -183,8 +183,8 @@ class TestFactorGraphConstruction:
             
             # Add preintegrated IMU
             frame.preintegrated_imu = PreintegratedIMUData(
-                from_keyframe_id=i-1,
-                to_keyframe_id=i,
+                from_frame_id=i-1,
+                to_frame_id=i,
                 delta_position=np.array([0.3, 0.1, 0]),
                 delta_velocity=np.array([0.6, 0.2, 0]),
                 delta_rotation=np.eye(3),
@@ -311,8 +311,8 @@ class TestFactorGraphConstruction:
             
             # Add preintegrated IMU
             frame.preintegrated_imu = PreintegratedIMUData(
-                from_keyframe_id=i-1,
-                to_keyframe_id=i,
+                from_frame_id=i-1,
+                to_frame_id=i,
                 delta_position=np.array([0.5, 0, 0]),
                 delta_velocity=np.array([1.0, 0, 0]),
                 delta_rotation=np.eye(3),

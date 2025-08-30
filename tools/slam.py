@@ -420,8 +420,8 @@ def run_slam(
                         # Convert simulation PreintegratedIMUData to our PreprocessedIMUData interface
                         from src.estimation.interfaces import PreprocessedIMUData
                         converted_imu = PreprocessedIMUData(
-                            from_keyframe_id=preint_data.from_keyframe_id,
-                            to_keyframe_id=preint_data.to_keyframe_id,
+                            from_frame_id=preint_data.from_frame_id,
+                            to_frame_id=preint_data.to_frame_id,
                             delta_position=preint_data.delta_position,
                             delta_velocity=preint_data.delta_velocity,
                             delta_rotation=preint_data.delta_rotation,
@@ -521,8 +521,8 @@ def run_slam(
                     # Convert simulation PreintegratedIMUData to our PreprocessedIMUData interface
                     from src.estimation.interfaces import PreprocessedIMUData
                     converted_imu = PreprocessedIMUData(
-                        from_keyframe_id=preint_data.from_keyframe_id,
-                        to_keyframe_id=preint_data.to_keyframe_id,
+                        from_frame_id=preint_data.from_frame_id,
+                        to_frame_id=preint_data.to_frame_id,
                         delta_position=preint_data.delta_position,
                         delta_velocity=preint_data.delta_velocity,
                         delta_rotation=preint_data.delta_rotation,

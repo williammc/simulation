@@ -249,8 +249,8 @@ public:
             j["measurements"]["preintegrated_imu"] = json::array();
             for (const auto& preint : data.preintegrated_imu) {
                 json preint_json;
-                preint_json["from_keyframe_id"] = preint.from_keyframe_id;
-                preint_json["to_keyframe_id"] = preint.to_keyframe_id;
+                preint_json["from_frame_id"] = preint.from_frame_id;
+                preint_json["to_frame_id"] = preint.to_frame_id;
                 preint_json["delta_position"] = detail::vector3_to_json(preint.delta_position);
                 preint_json["delta_velocity"] = detail::vector3_to_json(preint.delta_velocity);
                 preint_json["delta_rotation"] = detail::matrix3x3_to_json(preint.delta_rotation);
@@ -455,8 +455,8 @@ public:
             if (meas.contains("preintegrated_imu") && meas["preintegrated_imu"].is_array()) {
                 for (const auto& preint_json : meas["preintegrated_imu"]) {
                     PreintegratedIMUData preint;
-                    preint.from_keyframe_id = preint_json["from_keyframe_id"];
-                    preint.to_keyframe_id = preint_json["to_keyframe_id"];
+                    preint.from_frame_id = preint_json["from_frame_id"];
+                    preint.to_frame_id = preint_json["to_frame_id"];
                     preint.delta_position = detail::json_to_vector3(preint_json["delta_position"]);
                     preint.delta_velocity = detail::json_to_vector3(preint_json["delta_velocity"]);
                     

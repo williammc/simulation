@@ -201,8 +201,8 @@ using CameraFrame = CameraFrameT<double>;
 // Preintegrated IMU data structure
 template<typename FLOAT>
 struct PreintegratedIMUDataT {
-    int from_keyframe_id;
-    int to_keyframe_id;
+    int from_frame_id;
+    int to_frame_id;
     Vector3T<FLOAT> delta_position;
     Vector3T<FLOAT> delta_velocity;
     Matrix3x3T<FLOAT> delta_rotation;
@@ -212,8 +212,8 @@ struct PreintegratedIMUDataT {
     std::optional<VectorXT<FLOAT>> jacobian;  // Flattened jacobian matrix
     
     PreintegratedIMUDataT() 
-        : from_keyframe_id(-1), 
-          to_keyframe_id(-1), 
+        : from_frame_id(-1), 
+          to_frame_id(-1), 
           delta_position(Vector3T<FLOAT>::Zero()),
           delta_velocity(Vector3T<FLOAT>::Zero()),
           delta_rotation(Matrix3x3T<FLOAT>::Identity()),

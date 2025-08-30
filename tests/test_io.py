@@ -202,8 +202,8 @@ class TestSimulationDataIO:
         preintegrated = {}
         for i in range(1, 4):  # Keyframes 1, 2, 3
             preint_data = PreintegratedIMUData(
-                from_keyframe_id=i-1,
-                to_keyframe_id=i,
+                from_frame_id=i-1,
+                to_frame_id=i,
                 delta_position=np.array([0.1*i, 0.2*i, 0.0]),
                 delta_velocity=np.array([0.01*i, 0.02*i, 0.0]),
                 delta_rotation=np.eye(3),
@@ -216,8 +216,8 @@ class TestSimulationDataIO:
         sim_data.set_preintegrated_imu(preintegrated)
         
         assert len(sim_data.measurements["preintegrated_imu"]) == 3
-        assert sim_data.measurements["preintegrated_imu"][0]["from_keyframe_id"] == 0
-        assert sim_data.measurements["preintegrated_imu"][0]["to_keyframe_id"] == 1
+        assert sim_data.measurements["preintegrated_imu"][0]["from_frame_id"] == 0
+        assert sim_data.measurements["preintegrated_imu"][0]["to_frame_id"] == 1
         assert sim_data.measurements["preintegrated_imu"][0]["dt"] == 0.5
         assert sim_data.measurements["preintegrated_imu"][0]["num_measurements"] == 100
     
@@ -229,8 +229,8 @@ class TestSimulationDataIO:
         preintegrated = {}
         for i in range(1, 3):
             preint_data = PreintegratedIMUData(
-                from_keyframe_id=i-1,
-                to_keyframe_id=i,
+                from_frame_id=i-1,
+                to_frame_id=i,
                 delta_position=np.array([0.1, 0.2, 0.3]),
                 delta_velocity=np.array([0.01, 0.02, 0.03]),
                 delta_rotation=np.eye(3),
@@ -247,8 +247,8 @@ class TestSimulationDataIO:
         extracted = sim_data.get_preintegrated_imu()
         
         assert len(extracted) == 2
-        assert extracted[0].from_keyframe_id == 0
-        assert extracted[0].to_keyframe_id == 1
+        assert extracted[0].from_frame_id == 0
+        assert extracted[0].to_frame_id == 1
         assert np.allclose(extracted[0].delta_position, [0.1, 0.2, 0.3])
         assert np.allclose(extracted[0].delta_velocity, [0.01, 0.02, 0.03])
         assert extracted[0].dt == 0.1
@@ -358,8 +358,8 @@ class TestSimulationDataIO:
         preintegrated = {}
         for i in range(1, 4):  # Between keyframes 0-1, 1-2, 2-3
             preint_data = PreintegratedIMUData(
-                from_keyframe_id=i-1,
-                to_keyframe_id=i,
+                from_frame_id=i-1,
+                to_frame_id=i,
                 delta_position=np.array([0.5, 1.0, 0.0]),
                 delta_velocity=np.array([1.0, 2.0, 0.0]),
                 delta_rotation=np.eye(3),
@@ -412,8 +412,8 @@ class TestSimulationDataIO:
         
         # Verify preintegrated IMU data
         assert len(loaded_data.measurements["preintegrated_imu"]) == 3
-        assert loaded_data.measurements["preintegrated_imu"][0]["from_keyframe_id"] == 0
-        assert loaded_data.measurements["preintegrated_imu"][0]["to_keyframe_id"] == 1
+        assert loaded_data.measurements["preintegrated_imu"][0]["from_frame_id"] == 0
+        assert loaded_data.measurements["preintegrated_imu"][0]["to_frame_id"] == 1
         assert loaded_data.measurements["preintegrated_imu"][0]["dt"] == 0.5
     
     def test_extract_trajectory(self):
@@ -532,8 +532,8 @@ class TestConvenienceFunctions:
         preintegrated = {}
         for i in [1, 2]:  # Between keyframes 0-1 and 1-2
             preint_data = PreintegratedIMUData(
-                from_keyframe_id=i-1,
-                to_keyframe_id=i,
+                from_frame_id=i-1,
+                to_frame_id=i,
                 delta_position=np.array([0.5, 1.0, 1.5]),
                 delta_velocity=np.array([1.0, 2.0, 3.0]),
                 delta_rotation=np.eye(3),
@@ -561,8 +561,8 @@ class TestConvenienceFunctions:
         # Check preintegrated IMU is loaded
         assert loaded["preintegrated_imu"] is not None
         assert len(loaded["preintegrated_imu"]) == 2
-        assert loaded["preintegrated_imu"][0].from_keyframe_id == 0
-        assert loaded["preintegrated_imu"][0].to_keyframe_id == 1
+        assert loaded["preintegrated_imu"][0].from_frame_id == 0
+        assert loaded["preintegrated_imu"][0].to_frame_id == 1
         assert np.allclose(loaded["preintegrated_imu"][0].delta_position, [0.5, 1.0, 1.5])
         
         # Check camera data with keyframes
@@ -580,14 +580,14 @@ class TestConvenienceFunctions:
         # Verify the attachment is correct
         kf1 = loaded["camera_data"].frames[1]  # Keyframe 1
         assert kf1.preintegrated_imu is not None
-        assert kf1.preintegrated_imu.from_keyframe_id == 0
-        assert kf1.preintegrated_imu.to_keyframe_id == 1
+        assert kf1.preintegrated_imu.from_frame_id == 0
+        assert kf1.preintegrated_imu.to_frame_id == 1
         assert np.allclose(kf1.preintegrated_imu.delta_position, [0.5, 1.0, 1.5])
         
         kf2 = loaded["camera_data"].frames[2]  # Keyframe 2
         assert kf2.preintegrated_imu is not None
-        assert kf2.preintegrated_imu.from_keyframe_id == 1
-        assert kf2.preintegrated_imu.to_keyframe_id == 2
+        assert kf2.preintegrated_imu.from_frame_id == 1
+        assert kf2.preintegrated_imu.to_frame_id == 2
 
 
     def test_preintegrated_imu_with_jacobian(self, tmp_path):
@@ -597,8 +597,8 @@ class TestConvenienceFunctions:
         # Create preintegrated IMU data with jacobian
         preintegrated = {}
         preint_data = PreintegratedIMUData(
-            from_keyframe_id=0,
-            to_keyframe_id=1,
+            from_frame_id=0,
+            to_frame_id=1,
             delta_position=np.array([1.0, 2.0, 3.0]),
             delta_velocity=np.array([0.1, 0.2, 0.3]),
             delta_rotation=np.eye(3),

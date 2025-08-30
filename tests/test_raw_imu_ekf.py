@@ -222,8 +222,8 @@ class TestRawIMUProcessing:
             delta_rotation=np.eye(3),  # Simplified
             dt=0.5,
             covariance=np.eye(15) * 0.01,
-            from_keyframe_id=0,
-            to_keyframe_id=1,
+            from_frame_id=0,
+            to_frame_id=1,
             num_measurements=50
         )
         

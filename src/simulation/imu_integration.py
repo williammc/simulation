@@ -517,8 +517,8 @@ class IMUPreintegrator:
     def batch_process(
         self,
         measurements: List[IMUMeasurement],
-        from_keyframe_id: int,
-        to_keyframe_id: int,
+        from_frame_id: int,
+        to_frame_id: int,
         initial_orientation: Optional[np.ndarray] = None
     ) -> 'PreintegratedIMUData':
         """
@@ -526,8 +526,8 @@ class IMUPreintegrator:
         
         Args:
             measurements: List of IMU measurements between keyframes
-            from_keyframe_id: Source keyframe ID
-            to_keyframe_id: Target keyframe ID
+            from_frame_id: Source frame ID
+            to_frame_id: Target frame ID
             initial_orientation: Initial rotation matrix (3x3) for gravity compensation
         
         Returns:
@@ -575,8 +575,8 @@ class IMUPreintegrator:
             delta_rotation=self.delta_R,  # Use rotation matrix directly
             covariance=covariance_15,
             dt=self.dt,
-            from_keyframe_id=from_keyframe_id,
-            to_keyframe_id=to_keyframe_id,
+            from_frame_id=from_frame_id,
+            to_frame_id=to_frame_id,
             num_measurements=len(self.measurements),
             jacobian=jacobian_15,
             source_measurements=self.measurements.copy()

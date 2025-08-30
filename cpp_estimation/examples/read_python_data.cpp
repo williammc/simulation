@@ -89,7 +89,7 @@ int main(int argc, char* argv[]) {
             std::cout << "    Between keyframes: ";
             for (size_t i = 0; i < std::min(size_t(3), data.preintegrated_imu.size()); ++i) {
                 const auto& preint = data.preintegrated_imu[i];
-                std::cout << "[" << preint.from_keyframe_id << "->" << preint.to_keyframe_id << "] ";
+                std::cout << "[" << preint.from_frame_id << "->" << preint.to_frame_id << "] ";
             }
             if (data.preintegrated_imu.size() > 3) {
                 std::cout << "...";

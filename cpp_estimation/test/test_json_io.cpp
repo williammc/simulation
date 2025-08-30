@@ -168,8 +168,8 @@ SimulationData create_sample_data() {
     // Add preintegrated IMU data between keyframes
     for (int kf_idx = 0; kf_idx < 10; ++kf_idx) {
         PreintegratedIMUData preint;
-        preint.from_keyframe_id = kf_idx;
-        preint.to_keyframe_id = kf_idx + 1;
+        preint.from_frame_id = kf_idx;
+        preint.to_frame_id = kf_idx + 1;
         
         // Simulated preintegrated values
         preint.delta_position = Vector3(0.5, 0.3, 0.1);
@@ -293,8 +293,8 @@ void verify_data(const SimulationData& original, const SimulationData& loaded) {
     for (size_t i = 0; i < original.preintegrated_imu.size(); ++i) {
         const auto& orig = original.preintegrated_imu[i];
         const auto& load = loaded.preintegrated_imu[i];
-        assert(orig.from_keyframe_id == load.from_keyframe_id);
-        assert(orig.to_keyframe_id == load.to_keyframe_id);
+        assert(orig.from_frame_id == load.from_frame_id);
+        assert(orig.to_frame_id == load.to_frame_id);
         assert((orig.delta_position - load.delta_position).norm() < 1e-6);
         assert((orig.delta_velocity - load.delta_velocity).norm() < 1e-6);
         assert(std::abs(orig.dt - load.dt) < 1e-6);

@@ -194,7 +194,7 @@ class TestCompletePipeline:
                     
                     # Find corresponding preintegrated IMU data
                     for preint_dict in preint_imu_list:
-                        if preint_dict.get('to_keyframe_id') == keyframe_id:
+                        if preint_dict.get('to_frame_id') == keyframe_id:
                             # Create PreintegratedIMUData object from dict
                             from src.common.data_structures import PreintegratedIMUData
                             preint_data = PreintegratedIMUData(
@@ -203,8 +203,8 @@ class TestCompletePipeline:
                                 delta_rotation=np.array(preint_dict['delta_rotation']),
                                 covariance=np.array(preint_dict['covariance']),
                                 dt=preint_dict['dt'],
-                                from_keyframe_id=preint_dict.get('from_keyframe_id', -1),
-                                to_keyframe_id=preint_dict.get('to_keyframe_id', -1),
+                                from_frame_id=preint_dict.get('from_frame_id', -1),
+                                to_frame_id=preint_dict.get('to_frame_id', -1),
                                 num_measurements=preint_dict.get('num_measurements', 0)
                             )
                             ekf.predict(preint_data)
@@ -364,8 +364,8 @@ class TestCompletePipeline:
                     assert len(preint_data) > 0
                     # Check that preintegrated data connects keyframes
                     for preint in preint_data:
-                        assert preint.get('from_keyframe_id', -1) >= 0
-                        assert preint.get('to_keyframe_id', 0) > preint.get('from_keyframe_id', -1)
+                        assert preint.get('from_frame_id', -1) >= 0
+                        assert preint.get('to_frame_id', 0) > preint.get('from_frame_id', -1)
     
     def test_memory_efficiency_with_sparse_keyframes(self):
         """Test memory efficiency with sparse keyframes."""

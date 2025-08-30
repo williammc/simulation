@@ -99,8 +99,8 @@ class PreintegratedIMUData:
     delta_rotation: np.ndarray      # Relative rotation as SO3 matrix (3x3)
     covariance: np.ndarray          # Uncertainty covariance (15x15)
     dt: float                       # Total time interval
-    from_keyframe_id: int           # Source frame/keyframe ID (legacy naming kept for compatibility)
-    to_keyframe_id: int             # Target frame/keyframe ID (legacy naming kept for compatibility)
+    from_frame_id: int              # Source frame ID
+    to_frame_id: int                # Target frame ID
     num_measurements: int           # Number of integrated measurements
     jacobian: Optional[np.ndarray] = None  # Jacobian w.r.t biases (15x6)
     source_measurements: Optional[List[IMUMeasurement]] = None  # Original measurements
@@ -128,9 +128,9 @@ class PreintegratedIMUData:
         if self.jacobian is not None:
             self.jacobian = np.asarray(self.jacobian).reshape(15, 6)
         
-        # Validate keyframe IDs
-        if self.from_keyframe_id == self.to_keyframe_id:
-            raise ValueError("from_keyframe_id and to_keyframe_id must be different")
+        # Validate frame IDs
+        if self.from_frame_id == self.to_frame_id:
+            raise ValueError("from_frame_id and to_frame_id must be different")
         
         if self.dt <= 0:
             raise ValueError(f"Time interval dt must be positive, got {self.dt}")
@@ -146,8 +146,8 @@ class PreintegratedIMUData:
             "delta_rotation": self.delta_rotation.tolist(),
             "covariance": self.covariance.tolist(),
             "dt": self.dt,
-            "from_keyframe_id": self.from_keyframe_id,
-            "to_keyframe_id": self.to_keyframe_id,
+            "from_frame_id": self.from_frame_id,
+            "to_frame_id": self.to_frame_id,
             "num_measurements": self.num_measurements
         }
         if self.jacobian is not None:
@@ -164,8 +164,8 @@ class PreintegratedIMUData:
             delta_rotation=np.array(data["delta_rotation"]),
             covariance=np.array(data["covariance"]),
             dt=data["dt"],
-            from_keyframe_id=data["from_keyframe_id"],
-            to_keyframe_id=data["to_keyframe_id"],
+            from_frame_id=data["from_frame_id"],
+            to_frame_id=data["to_frame_id"],
             num_measurements=data["num_measurements"],
             jacobian=jacobian
         )
