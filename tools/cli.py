@@ -11,6 +11,11 @@ from typing import Optional
 import typer
 from rich.console import Console
 from rich.table import Table
+from rich.traceback import install
+
+# Install rich traceback handler without local variables
+install(show_locals=False)
+
 # Add parent directory to path for src imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # Add tools directory for local imports

@@ -12,6 +12,11 @@ import numpy as np
 
 from rich.console import Console
 from rich.progress import Progress, BarColumn, TaskProgressColumn, TimeRemainingColumn
+from rich.traceback import install
+
+# Install rich traceback handler without local variables
+install(show_locals=False)
+
 from src.utils.config_loader import ConfigLoader
 from src.common.config import EstimatorType
 
@@ -43,7 +48,7 @@ def run_slam(
     from src.estimation.legacy.srif_slam import SRIFSlam
     # Import estimators
     # Camera-model-independent estimator
-    from src.estimation.new.swba_estimator import NewSWBAEstimator, NewSWBAConfig
+    # from src.estimation.new.swba_estimator import NewSWBAEstimator, NewSWBAConfig  # Removed - module deleted
     from src.estimation.preprocessing import VisualMeasurementPreprocessor
     from src.estimation.base_estimator import EstimatorConfig
     from src.common.json_io import load_simulation_data
@@ -56,7 +61,7 @@ def run_slam(
     
     # Validate estimator type
     estimator_lower = estimator.lower()
-    valid_estimators = ['ekf', 'swba', 'srif', 'raw-imu-ekf', 'new-swba', 'simple-swba', 'cpp-swba']
+    valid_estimators = ['ekf', 'swba', 'srif', 'raw-imu-ekf', 'simple-swba', 'cpp-swba']
     if estimator_lower not in valid_estimators:
         console.print(f"[red]✗ Error: Unknown estimator: {estimator}[/red]")
         console.print(f"  Available estimators: {', '.join(valid_estimators)}")
@@ -65,9 +70,7 @@ def run_slam(
     # Warn about legacy estimators
     if estimator_lower in ['ekf', 'swba', 'srif']:
         console.print(f"[yellow]⚠ Warning: '{estimator}' is a legacy estimator.[/yellow]")
-        console.print(f"[yellow]  Consider using 'new-swba' for better performance.[/yellow]")
-    elif estimator_lower == 'new-swba':
-        console.print(f"[green]Using camera-model-independent SWBA estimator[/green]")
+        console.print(f"[yellow]  Consider using 'simple-swba' for better performance.[/yellow]")
     elif estimator_lower == 'simple-swba':
         console.print(f"[green]Using simplified SWBA VIO estimator[/green]")
     elif estimator_lower == 'cpp-swba':
@@ -207,39 +210,14 @@ def run_slam(
             console.print("[cyan]Using raw IMU processing (no preintegration)[/cyan]")
         
         elif estimator_lower == 'new-swba':
-            # Create camera-model-independent SWBA estimator
-            new_swba_config_data = config_data.get('new_swba', {})
-            new_swba_config = NewSWBAConfig(
-                estimator_type=EstimatorType.NEW_SWBA,
-                window_size=new_swba_config_data.get('window_size', 10),
-                min_keyframe_distance=new_swba_config_data.get('min_keyframe_distance', 0.5),
-                min_keyframe_angle=new_swba_config_data.get('min_keyframe_angle', 10.0),
-                keyframe_selection_method=new_swba_config_data.get('keyframe_selection_method', 'distance'),
-                max_optimization_iterations=new_swba_config_data.get('max_optimization_iterations', 50),
-                optimization_convergence_threshold=new_swba_config_data.get('optimization_convergence_threshold', 1e-6),
-                use_robust_kernels=new_swba_config_data.get('use_robust_kernels', True),
-                verbose_optimization=new_swba_config_data.get('verbose_optimization', False)
-            )
-            estimator_instance = NewSWBAEstimator(new_swba_config)
-            console.print("[green]Created camera-model-independent SWBA estimator[/green]")
-            # Note: We'll need to create a preprocessor to convert raw frames to processed frames
-            preprocessor = None  # Will be created later when we have camera calibration
+            # This estimator has been removed - use simple-swba instead
+            console.print("[red]✗ Error: 'new-swba' estimator has been removed. Use 'simple-swba' instead.[/red]")
+            return None
         
         elif estimator_lower == 'simple-swba':
-            # Create simplified SWBA VIO estimator
-            from src.estimation.new.simple_swba_vio import SimpleSWBAVIO, SimpleSWBAConfig
-            simple_config_data = config_data.get('simple_swba', {})
-            simple_config = SimpleSWBAConfig(
-                estimator_type=EstimatorType.SIMPLE_SWBA,
-                window_size=simple_config_data.get('window_size', 10),
-                keyframe_spacing=simple_config_data.get('keyframe_spacing', 10),
-                max_iterations=simple_config_data.get('max_iterations', 10),
-                convergence_threshold=simple_config_data.get('convergence_threshold', 1e-4),
-                min_measurements=simple_config_data.get('min_measurements', 5)
-            )
-            estimator_instance = SimpleSWBAVIO(simple_config)
-            console.print("[green]Created simplified SWBA VIO estimator[/green]")
-            preprocessor = None  # Will be created later
+            # This estimator has been removed
+            console.print("[red]✗ Error: 'simple-swba' estimator has been removed.[/red]")
+            return None
         
         elif estimator_lower == 'cpp-swba':
             # C++ SWBA is run as external process - no Python instance needed
@@ -486,108 +464,7 @@ def run_slam(
             else:
                 console.print("[yellow]Warning: No camera frames for simple-swba[/yellow]")
                 
-        elif estimator_lower == 'new-swba':
-            # Special processing for camera-model-independent SWBA
-            # TODO: The projection adapter has been removed. 
-            # The preprocessor should work directly with ideal coordinates from simulation.
-            # For now, create a mock projection service
-            console.print("[yellow]Warning: Projection adapter removed - using mock service[/yellow]")
-            
-            # Create a simple mock projection service
-            class MockProjectionService:
-                def __init__(self, calib):
-                    self.camera_calib = calib
-            
-            # Create mock using camera calibration
-            if camera_calib:
-                projection_adapter = MockProjectionService(camera_calib)
-            else:
-                console.print("[yellow]Warning: No camera calibration, using default[/yellow]")
-                # Create default calibration
-                from src.common.data_structures import CameraCalibration
-                default_calib = CameraCalibration(
-                    camera_id="cam0",
-                    image_width=640,
-                    image_height=480,
-                    K=np.array([[500, 0, 320], [0, 500, 240], [0, 0, 1]]),
-                    D=np.zeros(5),
-                    model="pinhole"
-                )
-                projection_adapter = MockProjectionService(default_calib)
-            
-            # Create preprocessor
-            preprocessor = VisualMeasurementPreprocessor(
-                projection_service=projection_adapter,
-                pixel_noise_std=1.0,
-                robust_kernel='huber',
-                huber_delta=1.0
-            )
-            
-            # Process preintegrated IMU and camera frames
-            if preintegrated_imu:
-                task = progress.add_task(
-                    f"Processing with camera-model-independent pipeline...", 
-                    total=len(preintegrated_imu)
-                )
-                
-                # Get keyframes
-                keyframes = []
-                if camera_data and hasattr(camera_data, 'frames'):
-                    keyframes = [f for f in camera_data.frames if f.is_keyframe]
-                elif isinstance(camera_data, list):
-                    keyframes = [f for f in camera_data if getattr(f, 'is_keyframe', False)]
-                
-                kf_idx = 0
-                for i, preint_data in enumerate(preintegrated_imu):
-                    # Convert simulation PreintegratedIMUData to our PreprocessedIMUData interface
-                    from src.estimation.interfaces import PreprocessedIMUData
-                    converted_imu = PreprocessedIMUData(
-                        from_frame_id=preint_data.from_frame_id,
-                        to_frame_id=preint_data.to_frame_id,
-                        delta_position=preint_data.delta_position,
-                        delta_velocity=preint_data.delta_velocity,
-                        delta_rotation=preint_data.delta_rotation,
-                        covariance=preint_data.covariance,
-                        delta_t=preint_data.dt,  # Convert dt to delta_t
-                        num_measurements=preint_data.num_measurements
-                    )
-                    
-                    # Predict with converted IMU data
-                    estimator_instance.predict(converted_imu, converted_imu.delta_t)
-                    
-                    # Process visual frame if we have a matching keyframe
-                    if kf_idx < len(keyframes) and keyframes[kf_idx].timestamp <= preint_data.dt * (i + 1):
-                        raw_frame = keyframes[kf_idx]
-                        
-                        # Get current state for preprocessing
-                        from src.common.data_structures import TrajectoryState, Pose
-                        current_pose = estimator_instance.current_pose
-                        current_state = TrajectoryState(
-                            pose=current_pose,
-                            velocity=estimator_instance.current_velocity,
-                            angular_velocity=None
-                        )
-                        
-                        # Preprocess the frame
-                        processed_frame = preprocessor.process_frame(
-                            raw_frame,
-                            current_state,
-                            landmarks,
-                            compute_jacobians=True,
-                            chi2_threshold=5.991
-                        )
-                        
-                        # Update with processed frame
-                        estimator_instance.update(processed_frame, landmarks)
-                        kf_idx += 1
-                    
-                    # Run optimization periodically
-                    if (i + 1) % 5 == 0:
-                        estimator_instance.optimize()
-                    
-                    progress.update(task, advance=1)
-            else:
-                console.print("[yellow]Warning: No preintegrated IMU for new-swba[/yellow]")
+        # new-swba case has been removed - handled in estimator creation section
         
         elif estimator_lower == 'raw-imu-ekf' and raw_imu:
             # Use raw IMU measurements for raw-imu-ekf

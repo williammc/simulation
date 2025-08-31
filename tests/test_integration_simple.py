@@ -147,7 +147,8 @@ class TestSimplifiedIntegration:
             observations=[
                 CameraObservation(
                     landmark_id=0,
-                    pixel=ImagePoint(u=320, v=240)
+                    pixel=ImagePoint(u=320, v=240),
+                    ideal_coordinates=np.array([0.0, 0.0])
                 )
             ]
         )
@@ -207,11 +208,13 @@ class TestSimplifiedIntegration:
                 observations=[
                     CameraObservation(
                         landmark_id=0,
-                        pixel=ImagePoint(u=320, v=240)
+                        pixel=ImagePoint(u=320, v=240),
+                        ideal_coordinates=np.array([0.0, 0.0])
                     ),
                     CameraObservation(
                         landmark_id=1,
-                        pixel=ImagePoint(u=340, v=240)
+                        pixel=ImagePoint(u=340, v=240),
+                        ideal_coordinates=np.array([20.0/500.0, 0.0])
                     )
                 ]
             )

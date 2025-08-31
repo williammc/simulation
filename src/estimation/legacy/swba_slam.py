@@ -820,7 +820,9 @@ class SlidingWindowBA(BaseEstimator):
         robot_rotation: np.ndarray
     ) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
         """
-        Predict pixel measurement for a landmark.
+        Predict ideal coordinate measurement for a landmark.
+        Note: This method is provided for compatibility but shouldn't be needed
+        since _compute_camera_residual handles projection directly.
         
         Args:
             landmark_position: 3D position of landmark in world frame
@@ -828,29 +830,31 @@ class SlidingWindowBA(BaseEstimator):
             robot_rotation: Robot rotation matrix (3x3)
         
         Returns:
-            (predicted_pixel, jacobian) or (None, None) if behind camera
+            (predicted_ideal_coords, jacobian) or (None, None) if behind camera
         """
-        # Create pose object
-        from scipy.spatial.transform import Rotation
-        quat = Rotation.from_matrix(robot_rotation).as_quat()  # [x, y, z, w]
-        pose = Pose(
-            timestamp=0.0,  # Not used for projection
-            position=robot_position.copy(),
-            rotation_matrix=robot_rotation.copy()
-        )
+        # Transform landmark to camera frame
+        p_cam = robot_rotation.T @ (landmark_position - robot_position)
         
-        # Use camera model to project
-        pixel, J_pose, J_landmark = self.camera_model.project(
-            landmark_position, pose, compute_jacobian=True
-        )
-        
-        if pixel is None:
+        # Check if behind camera
+        if p_cam[2] <= 0:
             return None, None
         
-        # Convert ImagePoint to numpy array
-        pixel_array = np.array([pixel.u, pixel.v])
+        # Project to ideal coordinates
+        ideal_coords = p_cam[:2] / p_cam[2]
         
-        return pixel_array, J_pose
+        # Compute Jacobian if needed
+        z = p_cam[2]
+        z2 = z * z
+        J_ideal_pcam = np.array([
+            [1/z, 0, -p_cam[0]/z2],
+            [0, 1/z, -p_cam[1]/z2]
+        ])
+        
+        # Jacobian w.r.t. pose (simplified - only for position)
+        J_pcam_pos = -robot_rotation.T
+        jacobian = J_ideal_pcam @ J_pcam_pos
+        
+        return ideal_coords, jacobian
     
     def _compute_camera_residual(
         self,
@@ -859,25 +863,71 @@ class SlidingWindowBA(BaseEstimator):
         observation: 'CameraObservation'
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
-        Compute camera reprojection residual.
+        Compute camera reprojection residual using ideal coordinates.
         
         Args:
             pose: Camera pose
             landmark_pos: 3D landmark position
-            observation: Camera observation
+            observation: Camera observation (must have ideal_coordinates)
         
         Returns:
             (residual, pose_jacobian, landmark_jacobian)
         """
-        # Create temporary landmark for projection
-        temp_landmark = Landmark(id=0, position=landmark_pos)
+        # Check that observation has ideal coordinates
+        if observation.ideal_coordinates is None:
+            raise ValueError(f"Observation for landmark {observation.landmark_id} missing ideal coordinates")
         
-        # Compute reprojection error
-        error = self.camera_model.compute_reprojection_error(
-            observation, temp_landmark, pose
-        )
+        # Transform landmark to camera frame
+        R = pose.rotation_matrix
+        t = pose.position
+        p_cam = R.T @ (landmark_pos - t)  # Transform to camera frame
         
-        return error.residual, error.jacobian_pose, error.jacobian_landmark
+        # Check if landmark is behind camera
+        if p_cam[2] <= 0:
+            # Return large residual for points behind camera
+            residual = np.array([1000.0, 1000.0])
+            J_pose = np.zeros((2, 6))
+            J_landmark = np.zeros((2, 3))
+            return residual, J_pose, J_landmark
+        
+        # Project to ideal coordinates (x/z, y/z)
+        predicted_ideal = p_cam[:2] / p_cam[2]
+        
+        # Compute residual
+        residual = predicted_ideal - observation.ideal_coordinates
+        
+        # Compute Jacobians
+        z = p_cam[2]
+        z2 = z * z
+        
+        # Jacobian of ideal coordinates w.r.t. camera-frame point
+        J_ideal_pcam = np.array([
+            [1/z, 0, -p_cam[0]/z2],
+            [0, 1/z, -p_cam[1]/z2]
+        ])
+        
+        # Jacobian of camera-frame point w.r.t. pose (rotation then position)
+        # For rotation (using axis-angle perturbation): dp_cam/dtheta = -R^T * [p_world - t]_x
+        p_world_centered = landmark_pos - t
+        skew_p = np.array([
+            [0, -p_world_centered[2], p_world_centered[1]],
+            [p_world_centered[2], 0, -p_world_centered[0]],
+            [-p_world_centered[1], p_world_centered[0], 0]
+        ])
+        J_pcam_rot = -R.T @ skew_p
+        
+        # For position: dp_cam/dt = -R^T
+        J_pcam_pos = -R.T
+        
+        # Combine pose Jacobians (rotation first, then position)
+        J_pcam_pose = np.hstack([J_pcam_rot, J_pcam_pos])
+        J_pose = J_ideal_pcam @ J_pcam_pose
+        
+        # Jacobian w.r.t. landmark position
+        J_pcam_landmark = R.T
+        J_landmark = J_ideal_pcam @ J_pcam_landmark
+        
+        return residual, J_pose, J_landmark
     
     def _compute_robust_weight(self, residual: np.ndarray) -> float:
         """

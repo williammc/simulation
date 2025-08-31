@@ -235,9 +235,15 @@ class TestSlidingWindowBA:
         # Create observations
         observations = []
         for i in range(3):
+            # Convert pixel to ideal coordinates
+            pixel_u = 320 + i*10
+            pixel_v = 240
+            ideal_x = (pixel_u - 320) / 500.0  # (u - cx) / fx
+            ideal_y = (pixel_v - 240) / 500.0  # (v - cy) / fy
             obs = CameraObservation(
                 landmark_id=i,
-                pixel=ImagePoint(u=320 + i*10, v=240)
+                pixel=ImagePoint(u=pixel_u, v=pixel_v),
+                ideal_coordinates=np.array([ideal_x, ideal_y])
             )
             observations.append(obs)
         
@@ -406,7 +412,8 @@ class TestSlidingWindowBA:
             observations=[
                 CameraObservation(
                     landmark_id=0,
-                    pixel=ImagePoint(u=320, v=240)
+                    pixel=ImagePoint(u=320, v=240),
+                    ideal_coordinates=np.array([0.0, 0.0])  # Centered pixel -> (0,0) ideal
                 )
             ]
         )
@@ -497,7 +504,8 @@ class TestSWBAIntegration:
         # Perfect observation
         obs = CameraObservation(
             landmark_id=0,
-            pixel=ImagePoint(u=320, v=240)
+            pixel=ImagePoint(u=320, v=240),
+            ideal_coordinates=np.array([0.0, 0.0])  # Centered pixel -> (0,0) ideal
         )
         
         kf2 = Keyframe(

@@ -31,7 +31,6 @@ class EstimatorType(str, Enum):
     SRIF = "srif"
     CPP_BINARY = "cpp_binary"
     NEW_SWBA = "new_swba"  # Camera-model-independent SWBA
-    SIMPLE_SWBA = "simple_swba"  # Simplified SWBA VIO
     UNKNOWN = "unknown"
 
 
