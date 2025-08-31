@@ -23,7 +23,7 @@ from src.common.config import SRIFConfig
 from src.simulation.imu_integration import (
     IMUIntegrator, IMUState, IntegrationMethod
 )
-from src.estimation.camera_model import CameraMeasurementModel
+# from src.estimation.camera_model import CameraMeasurementModel  # No longer needed - using ideal coordinates
 from src.common.data_structures import (
     IMUMeasurement, CameraFrame, Map, Landmark,
     Trajectory, TrajectoryState, Pose,
@@ -196,8 +196,8 @@ class SRIFSlam(BaseEstimator):
         # Store trajectory history
         self.trajectory_history: List[TrajectoryState] = []
         
-        # Camera model
-        self.camera_model = CameraMeasurementModel(camera_calibration)
+        # Camera calibration (for ideal coordinate conversion if needed)
+        self.camera_calib = camera_calibration
         
         # Gravity vector
         self.gravity = np.array([0, 0, -9.81])
@@ -418,17 +418,54 @@ class SRIFSlam(BaseEstimator):
             rotation_matrix=self.state.rotation_matrix
         )
         
-        # Compute measurement residual and Jacobian
-        error = self.camera_model.compute_reprojection_error(
-            observation, landmark, pose
-        )
+        # Compute measurement residual using ideal coordinates
+        # Check that observation has ideal coordinates
+        if observation.ideal_coordinates is None:
+            # Convert pixel to ideal coordinates for backward compatibility
+            fx = self.camera_calib.intrinsics.fx if self.camera_calib else 500.0
+            fy = self.camera_calib.intrinsics.fy if self.camera_calib else 500.0
+            cx = self.camera_calib.intrinsics.cx if self.camera_calib else 320.0
+            cy = self.camera_calib.intrinsics.cy if self.camera_calib else 240.0
+            observed_ideal = np.array([
+                (observation.pixel.u - cx) / fx,
+                (observation.pixel.v - cy) / fy
+            ])
+        else:
+            observed_ideal = observation.ideal_coordinates
         
-        if error is None:
+        # Transform landmark to camera frame
+        R = pose.rotation_matrix
+        t = pose.position
+        p_cam = R.T @ (landmark.position - t)
+        
+        # Check if behind camera
+        if p_cam[2] <= 0:
             return
         
-        # Extract measurement model
-        z_residual = error.residual  # 2x1
-        H = error.jacobian_pose  # 2x6 (only pose part)
+        # Project to ideal coordinates
+        predicted_ideal = p_cam[:2] / p_cam[2]
+        
+        # Compute residual
+        z_residual = predicted_ideal - observed_ideal  # 2x1
+        
+        # Compute Jacobian w.r.t. pose
+        z = p_cam[2]
+        z2 = z * z
+        
+        # Jacobian of ideal coordinates w.r.t. camera-frame point
+        J_ideal_pcam = np.array([
+            [1/z, 0, -p_cam[0]/z2],
+            [0, 1/z, -p_cam[1]/z2]
+        ])
+        
+        # Jacobian w.r.t. position
+        J_pcam_pos = -R.T
+        J_pos = J_ideal_pcam @ J_pcam_pos
+        
+        # Jacobian w.r.t. rotation (simplified for now)
+        H = np.zeros((2, 6))
+        H[:, 3:6] = J_pos  # Position part
+        # Note: Rotation Jacobian would need more careful handling
         
         # Expand H to full state dimension (2x15)
         H_full = np.zeros((2, 15))
@@ -436,9 +473,13 @@ class SRIFSlam(BaseEstimator):
         # Map rotation Jacobian (simplified)
         H_full[:, 6:9] = np.zeros((2, 3))  # Simplified SO3 Jacobian
         
-        # Measurement noise
-        R_meas = np.eye(2) * self.config.pixel_noise_std**2
-        R_meas_sqrt_inv = np.eye(2) / self.config.pixel_noise_std
+        # Measurement noise in ideal coordinate space
+        fx = self.camera_calib.intrinsics.fx if self.camera_calib else 500.0
+        fy = self.camera_calib.intrinsics.fy if self.camera_calib else 500.0
+        ideal_noise_std_x = self.config.pixel_noise_std / fx
+        ideal_noise_std_y = self.config.pixel_noise_std / fy
+        R_meas = np.diag([ideal_noise_std_x**2, ideal_noise_std_y**2])
+        R_meas_sqrt_inv = np.diag([1/ideal_noise_std_x, 1/ideal_noise_std_y])
         
         # Form augmented system for QR update
         # [R_a] = [    R    ] [R_new]
