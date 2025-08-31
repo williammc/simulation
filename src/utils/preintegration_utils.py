@@ -130,9 +130,10 @@ def preintegrate_between_keyframes(
                 continue
         
         # Extract measurements in this interval
+        # Include measurements from from_time up to and including to_time
         interval_measurements = []
         for meas in imu_measurements:
-            if from_time <= meas.timestamp < to_time:
+            if from_time <= meas.timestamp <= to_time:
                 interval_measurements.append(meas)
         
         if not interval_measurements:
@@ -288,10 +289,16 @@ def preintegrate_between_frames(
         to_time = sorted_times[i + 1]
         
         # Extract measurements in this interval
+        # Include measurements from from_time up to and including to_time
+        # This ensures we have the measurement at to_time to compute the final dt
         interval_measurements = []
         for meas in imu_measurements:
-            if from_time <= meas.timestamp < to_time:
+            if from_time <= meas.timestamp <= to_time:
                 interval_measurements.append(meas)
+        
+        # Debug: Log the number of measurements found
+        if i < 3:  # Only log first few for debugging
+            logger.debug(f"Frame {i}->{i+1}: t=[{from_time:.4f}, {to_time:.4f}], found {len(interval_measurements)} IMU measurements")
         
         if not interval_measurements:
             logger.warning(f"No IMU measurements between frames at t={from_time:.3f} and t={to_time:.3f}")
@@ -299,7 +306,7 @@ def preintegrate_between_frames(
             empty_data = PreintegratedIMUData(
                 from_frame_id=i,
                 to_frame_id=i+1,
-                delta_t=to_time - from_time,
+                dt=to_time - from_time,
                 delta_position=np.zeros(3),
                 delta_velocity=np.zeros(3),
                 delta_rotation=np.eye(3),
@@ -315,12 +322,18 @@ def preintegrate_between_frames(
             initial_orientation = frame_orientations[i]
         
         # Preintegrate measurements with initial orientation
+        # Pass the actual frame-to-frame time interval
         preintegrated_data = preintegrator.batch_process(
             interval_measurements,
             i,  # Use frame index as ID
             i + 1,
-            initial_orientation
+            initial_orientation,
+            dt_override=to_time - from_time  # Pass the actual frame interval
         )
+        
+        # Debug: Check if dt is correct
+        if i < 3:
+            logger.debug(f"  Preintegrated result: dt={preintegrated_data.dt:.4f}s, num_meas={preintegrated_data.num_measurements}")
         
         result.append(preintegrated_data)
     

@@ -50,7 +50,8 @@ class TestIMUPreintegrationAccuracy:
         
         # Create constant rotation measurements
         measurements = []
-        num_steps = int(duration / dt)
+        # Need measurements from t=0 to t=duration (inclusive) for proper integration
+        num_steps = int(duration / dt) + 1
         
         for i in range(num_steps):
             meas = IMUMeasurement(
@@ -115,7 +116,8 @@ class TestIMUPreintegrationAccuracy:
             preintegrator = IMUPreintegrator(gravity=np.zeros(3))
             
             measurements = []
-            num_steps = int(duration / dt)
+            # Need measurements from t=0 to t=duration (inclusive)
+            num_steps = int(duration / dt) + 1
             
             for i in range(num_steps):
                 meas = IMUMeasurement(
@@ -196,7 +198,8 @@ class TestIMUPreintegrationAccuracy:
         preintegrator = IMUPreintegrator(gravity=np.zeros(3))
         
         measurements = []
-        num_steps = int(duration / dt)
+        # Need measurements from t=0 to t=duration (inclusive)
+        num_steps = int(duration / dt) + 1
         
         for i in range(num_steps):
             meas = IMUMeasurement(
@@ -391,8 +394,9 @@ class TestPreintegrationConsistency:
         preintegrator_incr = IMUPreintegrator(gravity=np.array([0, 0, -9.81]))
         for i, meas in enumerate(measurements):
             if i == 0:
-                # First measurement - assume small dt (same as batch_process)
-                dt_step = 0.005  # Default 200Hz
+                # First measurement - just store it like batch_process does
+                preintegrator_incr.measurements.append(meas)
+                continue
             else:
                 dt_step = meas.timestamp - measurements[i-1].timestamp
             preintegrator_incr.add_measurement(meas, dt_step)

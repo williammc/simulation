@@ -519,7 +519,8 @@ class IMUPreintegrator:
         measurements: List[IMUMeasurement],
         from_frame_id: int,
         to_frame_id: int,
-        initial_orientation: Optional[np.ndarray] = None
+        initial_orientation: Optional[np.ndarray] = None,
+        dt_override: Optional[float] = None
     ) -> 'PreintegratedIMUData':
         """
         Batch process IMU measurements between two keyframes.
@@ -529,6 +530,7 @@ class IMUPreintegrator:
             from_frame_id: Source frame ID
             to_frame_id: Target frame ID
             initial_orientation: Initial rotation matrix (3x3) for gravity compensation
+            dt_override: If provided, use this as the total dt instead of computing from measurements
         
         Returns:
             PreintegratedIMUData ready for use in estimators
@@ -538,14 +540,25 @@ class IMUPreintegrator:
         # Reset preintegrator before processing with initial orientation
         self.reset(self.bias_accel, self.bias_gyro, initial_orientation)
         
+        # Store the total time interval
+        if dt_override is not None:
+            # Use the provided dt (e.g., frame-to-frame interval)
+            total_dt = dt_override
+        elif len(measurements) >= 2:
+            # Compute from measurements
+            total_dt = measurements[-1].timestamp - measurements[0].timestamp
+        else:
+            total_dt = 0.0
+        
         # Process all measurements
         for i, meas in enumerate(measurements):
             if i == 0:
-                # First measurement - assume small dt
-                dt = 0.005  # Default 200Hz
-            else:
-                dt = meas.timestamp - measurements[i-1].timestamp
+                # First measurement - store it but don't integrate yet
+                # We'll use it as the reference for the next measurement
+                self.measurements.append(meas)
+                continue
             
+            dt = meas.timestamp - measurements[i-1].timestamp
             if dt > 0:
                 self.add_measurement(meas, dt)
         
@@ -560,8 +573,8 @@ class IMUPreintegrator:
         covariance_15[3:6, 3:6] = self.covariance[3:6, 3:6]  # Velocity
         covariance_15[6:9, 6:9] = self.covariance[0:3, 0:3]  # Rotation
         # Add small values for bias terms
-        covariance_15[9:12, 9:12] = np.eye(3) * self.accel_random_walk**2 * self.dt
-        covariance_15[12:15, 12:15] = np.eye(3) * self.gyro_random_walk**2 * self.dt
+        covariance_15[9:12, 9:12] = np.eye(3) * self.accel_random_walk**2 * total_dt
+        covariance_15[12:15, 12:15] = np.eye(3) * self.gyro_random_walk**2 * total_dt
         
         # Expand Jacobian from 9x6 to 15x6
         jacobian_15 = np.zeros((15, 6))
@@ -574,7 +587,7 @@ class IMUPreintegrator:
             delta_velocity=result.delta_velocity,
             delta_rotation=self.delta_R,  # Use rotation matrix directly
             covariance=covariance_15,
-            dt=self.dt,
+            dt=total_dt,  # Use the actual time interval between first and last measurement
             from_frame_id=from_frame_id,
             to_frame_id=to_frame_id,
             num_measurements=len(self.measurements),

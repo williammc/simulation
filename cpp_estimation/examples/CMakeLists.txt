@@ -24,3 +24,6 @@ target_link_libraries(swba_example PRIVATE simulation_io)
 
 add_executable(run_swba_estimator run_swba_estimator.cpp)
 target_link_libraries(run_swba_estimator PRIVATE simulation_io)
+
+add_executable(run_simple_swba_estimator run_simple_swba_estimator.cpp)
+target_link_libraries(run_simple_swba_estimator PRIVATE simulation_io)

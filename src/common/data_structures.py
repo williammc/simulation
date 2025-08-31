@@ -127,10 +127,37 @@ class PreintegratedIMUData:
         # Validate jacobian if provided
         if self.jacobian is not None:
             self.jacobian = np.asarray(self.jacobian).reshape(15, 6)
-        
-        # Validate frame IDs
-        if self.from_frame_id == self.to_frame_id:
-            raise ValueError("from_frame_id and to_frame_id must be different")
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for JSON serialization."""
+        result = {
+            "from_frame_id": self.from_frame_id,
+            "to_frame_id": self.to_frame_id,
+            "delta_position": self.delta_position.tolist(),
+            "delta_velocity": self.delta_velocity.tolist(),
+            "delta_rotation": self.delta_rotation.tolist(),
+            "covariance": self.covariance.tolist(),
+            "dt": self.dt,
+            "num_measurements": self.num_measurements
+        }
+        if self.jacobian is not None:
+            result["jacobian"] = self.jacobian.tolist()
+        return result
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'PreintegratedIMUData':
+        """Create from dictionary."""
+        return cls(
+            delta_position=np.array(data["delta_position"]),
+            delta_velocity=np.array(data["delta_velocity"]),
+            delta_rotation=np.array(data["delta_rotation"]),
+            covariance=np.array(data["covariance"]),
+            dt=data["dt"],
+            from_frame_id=data["from_frame_id"],
+            to_frame_id=data["to_frame_id"],
+            num_measurements=data["num_measurements"],
+            jacobian=np.array(data["jacobian"]) if "jacobian" in data else None
+        )
         
         if self.dt <= 0:
             raise ValueError(f"Time interval dt must be positive, got {self.dt}")

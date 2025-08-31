@@ -503,15 +503,19 @@ def load_simulation_data(filepath: Union[str, Path]) -> Dict[str, Any]:
     camera_data = sim_data.get_camera_data()
     preintegrated_imu = sim_data.get_preintegrated_imu()
     
-    # Reattach preintegrated IMU to keyframes if both exist
+    # Attach preintegrated IMU to frames if available
+    # Only attach to keyframes that don't already have preintegrated IMU
     if camera_data and preintegrated_imu:
         # Create a dictionary mapping keyframe_id to preintegrated data
         preint_dict = {data.to_frame_id: data for data in preintegrated_imu}
         
-        # Attach to frames
+        # Attach to frames that don't already have preintegrated IMU
         for frame in camera_data.frames:
             if frame.is_keyframe and frame.keyframe_id in preint_dict:
-                frame.preintegrated_imu = preint_dict[frame.keyframe_id]
+                # Only attach if the frame doesn't already have preintegrated IMU
+                # This avoids overwriting frame-to-frame preintegration with keyframe preintegration
+                if not hasattr(frame, 'preintegrated_imu') or frame.preintegrated_imu is None:
+                    frame.preintegrated_imu = preint_dict[frame.keyframe_id]
     
     return {
         "metadata": sim_data.metadata,

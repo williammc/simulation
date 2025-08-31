@@ -152,8 +152,16 @@ class VisualMeasurementPreprocessor:
                 landmark_cam = R_world_to_cam @ landmark.position + t_world_to_cam
                 
                 # Check if behind camera
-                if landmark_cam[2] <= 0.1:  # Behind or too close
+                # Use a more permissive threshold to avoid rejecting landmarks due to small pose errors
+                if landmark_cam[2] <= -0.5:  # Only reject if clearly behind camera
+                    if self._debug_count <= 50 and processed_count == 0:  # Debug more frames
+                        print(f"[Preprocessor] Landmark {obs.landmark_id} behind camera: z={landmark_cam[2]:.3f}")
                     continue
+                elif landmark_cam[2] <= 0.1:
+                    # Landmark is very close or slightly behind - use with caution
+                    if self._debug_count <= 50 and processed_count == 0:
+                        print(f"[Preprocessor] Warning: Landmark {obs.landmark_id} very close: z={landmark_cam[2]:.3f}")
+                    # Still process it but with reduced weight later
                 
                 # Project to ideal plane (z=1)
                 predicted_ideal = np.array([
@@ -339,6 +347,15 @@ class VisualMeasurementPreprocessor:
         
         if self._debug_count <= 3:
             print(f"[Preprocessor] Created {len(processed.measurements)} measurements")
+        
+        # Warn if no measurements created despite having observations
+        if len(processed.measurements) == 0 and len(raw_frame.observations) > 0:
+            if not hasattr(self, '_no_meas_warning_count'):
+                self._no_meas_warning_count = 0
+            if self._no_meas_warning_count < 5:
+                logger.warning(f"Frame {raw_frame.timestamp:.3f}: No measurements created from {len(raw_frame.observations)} observations!")
+                logger.warning(f"  Current pose: pos={current_state.pose.position}, z={current_state.pose.position[2]:.3f}")
+                self._no_meas_warning_count += 1
         
         return processed
     

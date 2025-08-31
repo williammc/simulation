@@ -57,11 +57,17 @@ class EstimatorResultStorage:
             run_id = str(uuid.uuid4())[:8]
         
         # Build result dictionary
+        # Debug config type
+        if hasattr(config, 'estimator_type'):
+            print(f"DEBUG: Config has estimator_type = {config.estimator_type}")
+            if hasattr(config.estimator_type, 'value'):
+                print(f"DEBUG: estimator_type.value = {config.estimator_type.value}")
+        
         result_dict = {
             # Metadata
             "run_id": run_id,
             "timestamp": datetime.now().isoformat(),
-            "algorithm": config.type.value if hasattr(config, 'type') else config.estimator_type.value,
+            "algorithm": config.type.value if hasattr(config, 'type') else (config.estimator_type.value if hasattr(config, 'estimator_type') else 'unknown'),
             
             # Configuration - handle different config types
             "configuration": EstimatorResultStorage._config_to_dict(config),

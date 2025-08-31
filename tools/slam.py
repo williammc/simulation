@@ -417,6 +417,20 @@ def run_slam(
                     if hasattr(frame, 'preintegrated_imu') and frame.preintegrated_imu is not None:
                         preint_data = frame.preintegrated_imu
                         
+                        # Debug output for first few frames
+                        if i < 3:
+                            console.print(f"\n[yellow]Frame {i} IMU data:[/yellow]")
+                            console.print(f"  from_frame: {preint_data.from_frame_id}, to_frame: {preint_data.to_frame_id}")
+                            console.print(f"  dt: {preint_data.dt:.6f}")
+                            console.print(f"  delta_pos: {preint_data.delta_position}")
+                            console.print(f"  delta_vel: {preint_data.delta_velocity}")
+                            console.print(f"  delta_rot shape: {preint_data.delta_rotation.shape}")
+                            
+                            # Show current state before prediction
+                            console.print(f"[cyan]Before predict:[/cyan]")
+                            console.print(f"  pos: {estimator_instance.current_pose.position}")
+                            console.print(f"  vel: {estimator_instance.current_velocity}")
+                        
                         # Convert simulation PreintegratedIMUData to our PreprocessedIMUData interface
                         from src.estimation.interfaces import PreprocessedIMUData
                         converted_imu = PreprocessedIMUData(
@@ -426,13 +440,20 @@ def run_slam(
                             delta_velocity=preint_data.delta_velocity,
                             delta_rotation=preint_data.delta_rotation,
                             covariance=preint_data.covariance,
-                            delta_t=preint_data.delta_t if hasattr(preint_data, 'delta_t') else preint_data.dt,
+                            delta_t=preint_data.dt,
                             num_measurements=preint_data.num_measurements if hasattr(preint_data, 'num_measurements') else len(preint_data.original_measurements)
                         )
                         
                         # Predict with IMU data
                         estimator_instance.predict(converted_imu, converted_imu.delta_t)
-                        console.print(f"[dim]Frame {i}: Predicted with IMU (dt={converted_imu.delta_t:.3f})[/dim]")
+                        
+                        if i < 3:
+                            console.print(f"[green]After predict:[/green]")
+                            console.print(f"  pos: {estimator_instance.current_pose.position}")
+                            console.print(f"  vel: {estimator_instance.current_velocity}")
+                            console.print("")
+                        else:
+                            console.print(f"[dim]Frame {i}: Predicted with IMU (dt={converted_imu.delta_t:.3f})[/dim]")
                     else:
                         console.print(f"[dim]Frame {i}: No IMU data available[/dim]")
                     
