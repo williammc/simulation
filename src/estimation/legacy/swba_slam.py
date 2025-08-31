@@ -30,9 +30,9 @@ from src.estimation.base_estimator import (
 )
 from src.common.config import SWBAConfig
 from src.simulation.imu_integration import IMUState, PreintegrationResult
-from src.estimation.camera_model import (
-    CameraMeasurementModel, batch_compute_reprojection_errors
-)
+# from src.estimation.camera_model import (
+#     CameraMeasurementModel, batch_compute_reprojection_errors
+# )
 from src.common.data_structures import (
     IMUMeasurement, CameraFrame, Map, Landmark,
     Trajectory, TrajectoryState, Pose,
@@ -163,7 +163,7 @@ class SlidingWindowBA(BaseEstimator):
         self.landmark_observations: Dict[int, List[Tuple[int, 'CameraObservation']]] = {}
         
         # Camera model
-        self.camera_model = CameraMeasurementModel(camera_calibration)
+        # self.camera_model = CameraMeasurementModel(camera_calibration)
         
         # Gravity vector
         if imu_calibration is None:
