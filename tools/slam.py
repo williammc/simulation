@@ -574,25 +574,33 @@ def run_slam(
                         landmark_items = list(landmark_dict.items())[:max_landmarks]
                         
                         for landmark_id, landmark in landmark_items:
-                            # Try to project this landmark
-                            predicted_pixel, _ = estimator_instance._predict_measurement(
+                            # Try to project this landmark to ideal coordinates
+                            predicted_ideal, _ = estimator_instance._predict_measurement(
                                 landmark.position,
                                 current_state.position,
                                 current_state.rotation_matrix
                             )
                             
-                            if predicted_pixel is not None:
-                                # Add more realistic measurement noise (2 pixel std)
-                                pixel_noise = np.random.randn(2) * 2.0  # 2 pixel std is more realistic
-                                noisy_pixel = predicted_pixel + pixel_noise
+                            if predicted_ideal is not None:
+                                # Add noise in ideal coordinate space (more physically meaningful)
+                                ideal_noise_std = 0.004  # ~2 pixels at fx=500
+                                ideal_noise = np.random.randn(2) * ideal_noise_std
+                                noisy_ideal = predicted_ideal + ideal_noise
+                                
+                                # Convert ideal to pixel for bounds checking (using default intrinsics)
+                                fx, fy = 500.0, 500.0
+                                cx, cy = 320.0, 240.0
+                                u = fx * noisy_ideal[0] + cx
+                                v = fy * noisy_ideal[1] + cy
                                 
                                 # Check if pixel is within reasonable bounds
-                                if 0 <= noisy_pixel[0] < 640 and 0 <= noisy_pixel[1] < 480:
-                                    # Create observation
+                                if 0 <= u < 640 and 0 <= v < 480:
+                                    # Create observation with both pixel and ideal coordinates
                                     obs = CameraObservation(
-                                        pixel=ImagePoint(u=noisy_pixel[0], v=noisy_pixel[1]),
+                                        pixel=ImagePoint(u=u, v=v),
                                         landmark_id=landmark.id,
-                                        descriptor=landmark.descriptor if hasattr(landmark, 'descriptor') else None
+                                        descriptor=landmark.descriptor if hasattr(landmark, 'descriptor') else None,
+                                        ideal_coordinates=noisy_ideal
                                     )
                                     observations.append(obs)
                         

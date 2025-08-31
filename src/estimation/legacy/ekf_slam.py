@@ -475,27 +475,46 @@ class EKFSlam(BaseEstimator):
                 
                 landmark = landmarks.landmarks[obs.landmark_id]
                 
-                # Predict measurement (project landmark to camera)
-                predicted_pixel, jacobian_H = self._predict_measurement(
+                # Predict measurement (project landmark to ideal coordinates)
+                predicted_ideal, jacobian_H = self._predict_measurement(
                     landmark.position,
                     self.state.position,
                     self.state.rotation_matrix
                 )
                 
                 # Skip if projection failed
-                if predicted_pixel is None:
+                if predicted_ideal is None:
                     continue
                 
-                # Compute innovation (measurement residual)
-                z_observed = np.array([obs.pixel.u, obs.pixel.v])
-                z_predicted = np.array([predicted_pixel[0], predicted_pixel[1]])
+                # Get observed ideal coordinates
+                if obs.ideal_coordinates is not None:
+                    z_observed = obs.ideal_coordinates
+                else:
+                    # Convert pixel to ideal coordinates for backward compatibility
+                    fx = self.camera_calib.intrinsics.fx if self.camera_calib else 500.0
+                    fy = self.camera_calib.intrinsics.fy if self.camera_calib else 500.0
+                    cx = self.camera_calib.intrinsics.cx if self.camera_calib else 320.0
+                    cy = self.camera_calib.intrinsics.cy if self.camera_calib else 240.0
+                    z_observed = np.array([
+                        (obs.pixel.u - cx) / fx,
+                        (obs.pixel.v - cy) / fy
+                    ])
+                
+                # Compute innovation (measurement residual in ideal coordinates)
+                z_predicted = predicted_ideal
                 innovation = z_observed - z_predicted
                 
                 # Innovation covariance: S = H * P * H' + R
                 # H is the measurement Jacobian (2x15)
                 H = jacobian_H  # Measurement Jacobian
                 P = self.state.covariance
-                R = np.eye(2) * self.config.pixel_noise_std**2  # Measurement noise
+                # Measurement noise in ideal coordinate space
+                # Convert pixel noise to ideal coordinate noise
+                fx = self.camera_calib.intrinsics.fx if self.camera_calib else 500.0
+                fy = self.camera_calib.intrinsics.fy if self.camera_calib else 500.0
+                ideal_noise_std_x = self.config.pixel_noise_std / fx
+                ideal_noise_std_y = self.config.pixel_noise_std / fy
+                R = np.diag([ideal_noise_std_x**2, ideal_noise_std_y**2])
                 S = H @ P @ H.T + R
                 
                 # Check for outliers using Mahalanobis distance
@@ -527,7 +546,7 @@ class EKFSlam(BaseEstimator):
         robot_rotation: np.ndarray
     ) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
         """
-        Predict pixel measurement of a landmark and compute Jacobian.
+        Predict ideal coordinate measurement of a landmark and compute Jacobian.
         
         Args:
             landmark_position: 3D position of landmark in world frame
@@ -535,8 +554,8 @@ class EKFSlam(BaseEstimator):
             robot_rotation: Current robot rotation matrix (world to body)
             
         Returns:
-            (predicted_pixel, jacobian) or (None, None) if not visible
-            predicted_pixel: [u, v] pixel coordinates
+            (predicted_ideal_coords, jacobian) or (None, None) if not visible
+            predicted_ideal_coords: [x/z, y/z] ideal coordinates on z=1 plane
             jacobian: 2x15 measurement Jacobian matrix
         """
         # Transform landmark to body frame
@@ -557,40 +576,34 @@ class EKFSlam(BaseEstimator):
         if p_camera[2] <= 0.1:  # Behind or too close
             return None, None
         
-        # Standard pinhole camera projection
-        fx = self.camera_calib.intrinsics.fx if self.camera_calib else 500.0
-        fy = self.camera_calib.intrinsics.fy if self.camera_calib else 500.0
-        cx = self.camera_calib.intrinsics.cx if self.camera_calib else 320.0
-        cy = self.camera_calib.intrinsics.cy if self.camera_calib else 240.0
-        
-        # Project to pixel coordinates
-        # u = fx * X_c/Z_c + cx
-        # v = fy * Y_c/Z_c + cy
+        # Project to ideal coordinates (normalized image plane)
+        # ideal_x = X_c / Z_c
+        # ideal_y = Y_c / Z_c
         depth = p_camera[2]  # Z is depth in camera frame
-        u = fx * p_camera[0] / depth + cx
-        v = fy * p_camera[1] / depth + cy
+        ideal_x = p_camera[0] / depth
+        ideal_y = p_camera[1] / depth
         
-        # Check image bounds
-        width = self.camera_calib.intrinsics.width if self.camera_calib else 640
-        height = self.camera_calib.intrinsics.height if self.camera_calib else 480
-        if u < 0 or u >= width or v < 0 or v >= height:
+        # Optional: Check if within reasonable field of view using ideal coords
+        # Typical FOV limits in ideal coordinates (roughly ±1 for 90° FOV)
+        max_ideal = 2.0  # Conservative limit
+        if abs(ideal_x) > max_ideal or abs(ideal_y) > max_ideal:
             return None, None
         
-        predicted_pixel = np.array([u, v])
+        predicted_ideal = np.array([ideal_x, ideal_y])
         
         # Compute Jacobian of measurement w.r.t. state
         # State: [position(3), velocity(3), rotation(3), accel_bias(3), gyro_bias(3)]
         H = np.zeros((2, 15))
         
-        # Jacobian computation in camera frame
-        # u = fx * X_c/Z_c + cx, v = fy * Y_c/Z_c + cy
+        # Jacobian computation for ideal coordinates
+        # ideal_x = X_c/Z_c, ideal_y = Y_c/Z_c
         z = p_camera[2]  # depth in camera frame
         z2 = z * z
         
-        # du/dp_camera = [fx/Z, 0, -fx*X/Z²]
-        # dv/dp_camera = [0, fy/Z, -fy*Y/Z²]
-        du_dpc = np.array([fx/z, 0, -fx*p_camera[0]/z2])
-        dv_dpc = np.array([0, fy/z, -fy*p_camera[1]/z2])
+        # d(ideal_x)/dp_camera = [1/Z, 0, -X/Z²]
+        # d(ideal_y)/dp_camera = [0, 1/Z, -Y/Z²]
+        dideal_x_dpc = np.array([1/z, 0, -p_camera[0]/z2])
+        dideal_y_dpc = np.array([0, 1/z, -p_camera[1]/z2])
         
         # dp_camera/dp_body using our transform: C_x = -B_y, C_y = -B_z, C_z = B_x
         # This gives us the Jacobian matrix:
@@ -600,13 +613,13 @@ class EKFSlam(BaseEstimator):
             [1, 0, 0]    # dC_z/dB = [1, 0, 0]
         ])
         
-        # Chain rule: du/dp_body = du/dp_camera * dp_camera/dp_body
-        dp_du = du_dpc @ dpc_dpb
-        dp_dv = dv_dpc @ dpc_dpb
+        # Chain rule: d(ideal)/dp_body = d(ideal)/dp_camera * dp_camera/dp_body
+        dp_dideal_x = dideal_x_dpc @ dpc_dpb
+        dp_dideal_y = dideal_y_dpc @ dpc_dpb
         
         # dp_body/dp_world = -R^T (derivative w.r.t. robot position)
-        H[0, 0:3] = -dp_du @ robot_rotation.T
-        H[1, 0:3] = -dp_dv @ robot_rotation.T
+        H[0, 0:3] = -dp_dideal_x @ robot_rotation.T
+        H[1, 0:3] = -dp_dideal_y @ robot_rotation.T
         
         # Jacobian w.r.t. rotation (using SO3 tangent space)
         # This is more complex - simplified here
@@ -614,14 +627,14 @@ class EKFSlam(BaseEstimator):
         p_world_skew = skew(p_world)
         dp_dtheta = -robot_rotation.T @ p_world_skew
         
-        H[0, 6:9] = dp_du @ dp_dtheta
-        H[1, 6:9] = dp_dv @ dp_dtheta
+        H[0, 6:9] = dp_dideal_x @ dp_dtheta
+        H[1, 6:9] = dp_dideal_y @ dp_dtheta
         
         # Jacobians w.r.t. velocity and biases are zero for static measurements
         # H[:, 3:6] = 0  # Already zero
         # H[:, 9:15] = 0  # Already zero
         
-        return predicted_pixel, H
+        return predicted_ideal, H
     
     def _apply_correction(self, dx: np.ndarray) -> None:
         """
