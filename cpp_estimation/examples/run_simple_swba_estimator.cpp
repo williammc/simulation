@@ -313,6 +313,7 @@ int main(int argc, char* argv[]) {
         std::cout << "\nInitialized at t=" << init_state.timestamp 
                  << ", pos: " << init_state.position.transpose() 
                  << ", vel: " << init_velocity.transpose() << std::endl;
+        std::cout << "  Initial Z coordinate: " << init_state.position.z() << std::endl;
     } else {
         std::cerr << "Error: No ground truth states for initialization" << std::endl;
         return 1;

@@ -12,6 +12,10 @@
 namespace simulation_io {
 
 // Template-based Eigen types for linear algebra
+
+template<typename FLOAT>
+using Vector2T = Eigen::Matrix<FLOAT, 2, 1>;
+
 template<typename FLOAT>
 using Vector3T = Eigen::Matrix<FLOAT, 3, 1>;
 

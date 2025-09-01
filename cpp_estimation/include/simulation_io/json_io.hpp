@@ -372,8 +372,49 @@ public:
             }
         }
         
-        // Load ground truth
-        if (j.contains("groundtruth")) {
+        // Load ground truth data - support both formats
+        // 1. Try root level first (newer Python simulation format)
+        bool loaded_trajectory = false;
+        if (j.contains("trajectory") && j["trajectory"].is_array()) {
+            loaded_trajectory = true;
+            for (const auto& state_json : j["trajectory"]) {
+                TrajectoryState state;
+                state.timestamp = state_json["timestamp"];
+                state.position = detail::json_to_vector3(state_json["position"]);
+                
+                // Support both rotation_matrix and legacy quaternion format
+                if (state_json.contains("rotation_matrix")) {
+                    state.rotation_matrix = detail::json_to_matrix3x3(state_json["rotation_matrix"]);
+                } else if (state_json.contains("quaternion")) {
+                    // Legacy quaternion support - convert to rotation matrix
+                    std::cerr << "Warning: Legacy quaternion format detected, using identity rotation" << std::endl;
+                    state.rotation_matrix = Matrix3x3::Identity();
+                }
+                
+                if (state_json.contains("velocity")) {
+                    state.velocity = detail::json_to_vector3(state_json["velocity"]);
+                }
+                if (state_json.contains("angular_velocity")) {
+                    state.angular_velocity = detail::json_to_vector3(state_json["angular_velocity"]);
+                }
+                data.trajectory.push_back(state);
+            }
+            
+            // Landmarks from root level
+            if (j.contains("landmarks") && j["landmarks"].is_array()) {
+                for (const auto& lm_json : j["landmarks"]) {
+                    Landmark lm;
+                    lm.id = lm_json["id"];
+                    lm.position = detail::json_to_vector3(lm_json["position"]);
+                    if (lm_json.contains("descriptor")) {
+                        lm.descriptor = lm_json["descriptor"].get<std::vector<double>>();
+                    }
+                    data.landmarks.push_back(lm);
+                }
+            }
+        }
+        // 2. Also check groundtruth object (older format) if not already loaded
+        if (!loaded_trajectory && j.contains("groundtruth")) {
             const auto& gt = j["groundtruth"];
             
             // Trajectory

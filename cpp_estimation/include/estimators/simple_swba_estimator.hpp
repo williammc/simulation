@@ -5,6 +5,7 @@
 #include <Eigen/Dense>
 #include <vector>
 #include <unordered_map>
+#include <map>
 #include <memory>
 #include <optional>
 #include <algorithm>
@@ -63,11 +64,16 @@ public:
         
         // Visual measurement parameters
         int min_measurements = 5;                // Minimum measurements for update
-        FLOAT ideal_coord_weight = static_cast<FLOAT>(10.0);     // Weight for ideal coordinates
+        FLOAT ideal_coord_weight = static_cast<FLOAT>(1.0);      // Weight for ideal coordinates (reduced from 10.0)
         FLOAT pixel_coord_weight = static_cast<FLOAT>(1.0);      // Weight for pixel coordinates
         
+        // Robust cost function
+        std::string robust_kernel = "huber";                     // Type: "huber", "cauchy", or "l2"
+        FLOAT huber_threshold = static_cast<FLOAT>(1.0);         // Threshold for Huber kernel
+        FLOAT cauchy_threshold = static_cast<FLOAT>(1.0);        // Threshold for Cauchy kernel
+        
         // IMU parameters
-        FLOAT imu_weight = static_cast<FLOAT>(10.0);             // Weight for IMU residuals
+        FLOAT imu_weight = static_cast<FLOAT>(1.0);              // Weight for IMU residuals (matching Python default)
         bool use_preintegrated_imu = true;                       // Use preintegrated IMU measurements
         
         // Debug/logging
@@ -219,13 +225,19 @@ public:
         landmarks_.clear();
         landmark_observations_.clear();
         
-        next_keyframe_id_ = 0;
+        // CRITICAL FIX: Create first keyframe immediately, matching Python (lines 208-215)
+        // This ensures the initial state is properly captured as keyframe 0
+        Keyframe first_kf(0, timestamp, current_state_.copy());
+        keyframes_.push_back(first_kf);
+        trajectory_history_.push_back(first_kf);
+        next_keyframe_id_ = 1;  // Start at 1 since we already created keyframe 0
+        
         num_optimizations_ = 0;
         last_optimization_cost_ = 0;
         initialized_ = true;
         
         if (config_.verbose) {
-            std::cout << "[SimpleSWBA] Initialized at position: " 
+            std::cout << "[SimpleSWBA] Initialized with keyframe 0 at position: " 
                      << initial_position.transpose() << std::endl;
         }
     }
@@ -253,24 +265,45 @@ public:
         
         // Create keyframes if they don't exist yet (Python lines 252-276)
         // This happens when we have preintegrated IMU but no camera frames
+        // Note: Keyframe 0 is already created in initialize()
         while (next_keyframe_id_ <= preintegrated.to_frame_id) {
             FLOAT kf_timestamp;
-            if (next_keyframe_id_ == 0) {
-                kf_timestamp = current_state_.timestamp;
-            } else {
-                // Use the preintegration dt to space keyframes
-                kf_timestamp = current_state_.timestamp + 
-                    (next_keyframe_id_ - preintegrated.from_frame_id) * preintegrated.delta_t;
+            // Calculate timestamp for this keyframe based on its ID
+            // Match Python's formula exactly (lines 256-259)
+            // Python uses self.current_state.timestamp as base
+            kf_timestamp = current_state_.timestamp + (next_keyframe_id_ - preintegrated.from_frame_id) * preintegrated.delta_t;
+            
+            if (config_.debug_enabled && next_keyframe_id_ == 17) {
+                std::cout << "[DEBUG] Creating KF 17: current_state_.timestamp=" << current_state_.timestamp 
+                         << ", from_frame=" << preintegrated.from_frame_id 
+                         << ", next_kf=" << next_keyframe_id_ 
+                         << ", delta_t=" << preintegrated.delta_t 
+                         << ", calculated_timestamp=" << kf_timestamp << std::endl;
             }
             
             // Create a new keyframe at the current state
+            // This will be updated with propagated values below
             Keyframe kf(next_keyframe_id_, kf_timestamp, current_state_.copy());
             keyframes_.push_back(kf);
-            trajectory_history_.push_back(kf);  // Add to full history
+            
+            // Check for duplicate timestamps before adding to history
+            bool duplicate_found = false;
+            for (auto& hist_kf : trajectory_history_) {
+                if (std::abs(hist_kf.timestamp - kf.timestamp) < static_cast<FLOAT>(1e-6)) {
+                    hist_kf = kf;  // Update existing
+                    duplicate_found = true;
+                    break;
+                }
+            }
+            if (!duplicate_found) {
+                trajectory_history_.push_back(kf);
+            }
+            
             next_keyframe_id_++;
             
             if (config_.debug_enabled) {
-                std::cout << "Created keyframe " << kf.id << " at timestamp " << kf_timestamp << std::endl;
+                std::cout << "Created keyframe " << kf.id << " at timestamp " << kf_timestamp 
+                         << " (dt from base: " << (kf_timestamp - keyframes_[0].timestamp) << ")" << std::endl;
             }
         }
         
@@ -329,6 +362,11 @@ public:
                 
                 // Update current state to match the latest keyframe (Python lines 326-333)
                 current_state_ = to_kf->state.copy();
+                
+                if (config_.debug_enabled && to_kf->id >= 15) {
+                    std::cout << "[DEBUG] After propagating to KF " << to_kf->id 
+                             << ", current_state_.timestamp=" << current_state_.timestamp << std::endl;
+                }
             }
         } else {
             if (config_.verbose) {
@@ -373,8 +411,22 @@ public:
             return;
         }
         
-        // Update timestamp only - don't store poses here as Python doesn't
-        current_state_.timestamp = camera_frame->timestamp;
+        // CRITICAL FIX: Don't update timestamp if camera frame is from the past
+        // Camera frames might be processed out of order or be from earlier times
+        // Only update if the new timestamp is reasonably close or in the future
+        FLOAT old_timestamp = current_state_.timestamp;
+        
+        // Only update timestamp if it's not going backwards significantly
+        // Allow small backwards jumps (< 0.1s) for synchronization issues
+        if (camera_frame->timestamp >= old_timestamp - 0.1) {
+            current_state_.timestamp = std::max(camera_frame->timestamp, old_timestamp);
+        } else {
+            // Camera frame is from the past, don't update timestamp
+            if (config_.debug_enabled) {
+                std::cout << "[WARNING] Ignoring old camera frame timestamp: " 
+                         << camera_frame->timestamp << " (current: " << old_timestamp << ")" << std::endl;
+            }
+        }
         // NOTE: Python doesn't store poses in update() - trajectory comes from keyframes only
         
         // If we have observations, add them to the most recent keyframe
@@ -446,6 +498,33 @@ public:
     }
     
 private:
+    /**
+     * Compute robust cost weight using Huber or Cauchy kernel.
+     * This down-weights large residuals to reduce the influence of outliers.
+     * 
+     * @param residual Residual vector
+     * @return Weight to apply to residual and Jacobian
+     */
+    FLOAT compute_robust_weight(const VectorX& residual) const {
+        FLOAT r_norm = residual.norm();
+        
+        if (config_.robust_kernel == "huber") {
+            // Huber kernel: linear for small residuals, sqrt for large
+            if (r_norm <= config_.huber_threshold) {
+                return static_cast<FLOAT>(1.0);
+            } else {
+                return config_.huber_threshold / r_norm;
+            }
+        } else if (config_.robust_kernel == "cauchy") {
+            // Cauchy kernel: smooth transition
+            FLOAT c2 = config_.cauchy_threshold * config_.cauchy_threshold;
+            return std::sqrt(c2 / (c2 + r_norm * r_norm));
+        } else {  // "l2" or default
+            // Standard L2 norm (no robust weighting)
+            return static_cast<FLOAT>(1.0);
+        }
+    }
+    
     /**
      * Helper function for optimization: computes residuals and Jacobians for a given state.
      * This is refactored from the main optimize() loop to support the LM algorithm.
@@ -547,7 +626,9 @@ private:
                     std::cerr << "       The estimator requires ideal coordinates for accurate operation." << std::endl;
                     throw std::runtime_error("Visual measurement missing ideal coordinates - preprocessing error");
                 }
-                weight *= meas.robust_weight;
+                // Apply robust cost function to down-weight outliers
+                FLOAT robust_weight = compute_robust_weight(r_vis);
+                weight *= robust_weight * meas.robust_weight;
 
                 residuals_list.push_back(r_vis(0) * weight);
                 residuals_list.push_back(r_vis(1) * weight);
@@ -696,6 +777,14 @@ public:
             keyframes_[i].state.bias_accel = state.template segment<3>(idx + 9);     // accel bias
             keyframes_[i].state.bias_gyro = state.template segment<3>(idx + 12);     // gyro bias
             
+            // Debug: track change in first keyframe
+            if (i == 0) {
+                Vector3 new_pos = keyframes_[i].state.position;
+                std::cout << "[DEBUG] Keyframe 0 position change: " << old_pos.transpose() 
+                         << " -> " << new_pos.transpose() 
+                         << " (delta: " << (new_pos - old_pos).norm() << "m)" << std::endl;
+            }
+            
             if (config_.debug_enabled && i < 2) {  // Debug first two keyframes
                 Vector3 pos_change = keyframes_[i].state.position - old_pos;
                 std::cout << "Keyframe " << keyframes_[i].id << " position change: " 
@@ -732,49 +821,50 @@ public:
      * Get full estimated trajectory (all frames, not just keyframes)
      */
     std::vector<simulation_io::EstimatedPoseT<FLOAT>> getFullTrajectory() const {
-        std::vector<simulation_io::EstimatedPoseT<FLOAT>> trajectory;
+        // Use a map to ensure unique timestamps and automatic sorting
+        std::map<FLOAT, simulation_io::EstimatedPoseT<FLOAT>> trajectory_map;
         
-        // Use trajectory_history for complete trajectory (Python approach)
+        // Add trajectory_history keyframes
         for (const auto& kf : trajectory_history_) {
             simulation_io::EstimatedPoseT<FLOAT> pose;
             pose.timestamp = kf.timestamp;
             pose.position = kf.state.position;
             pose.rotation_matrix = kf.state.rotation_matrix;
             pose.velocity = kf.state.velocity;
-            trajectory.push_back(pose);
+            
+            // Use map to automatically handle duplicates (keeps latest)
+            trajectory_map[pose.timestamp] = pose;
         }
         
         // Also include all_poses if available for inter-keyframe poses
         if (!all_poses_.empty()) {
-            // Merge all_poses with trajectory_history, avoiding duplicates
-            std::set<FLOAT> existing_timestamps;
-            for (const auto& pose : trajectory) {
-                existing_timestamps.insert(pose.timestamp);
-            }
-            
             for (const auto& state : all_poses_) {
-                if (existing_timestamps.find(state.timestamp) == existing_timestamps.end()) {
+                // Only add if not already present (prefer keyframe data)
+                if (trajectory_map.find(state.timestamp) == trajectory_map.end()) {
                     simulation_io::EstimatedPoseT<FLOAT> pose;
                     pose.timestamp = state.timestamp;
                     pose.position = state.position;
                     pose.rotation_matrix = state.rotation_matrix;
                     pose.velocity = state.velocity;
-                    trajectory.push_back(pose);
+                    trajectory_map[state.timestamp] = pose;
                 }
             }
-            
-            // Sort by timestamp
-            std::sort(trajectory.begin(), trajectory.end(), 
-                     [](const auto& a, const auto& b) { return a.timestamp < b.timestamp; });
         }
         
         // If no poses yet, add current state
-        if (trajectory.empty() && initialized_) {
+        if (trajectory_map.empty() && initialized_) {
             simulation_io::EstimatedPoseT<FLOAT> pose;
             pose.timestamp = current_state_.timestamp;
             pose.position = current_state_.position;
             pose.rotation_matrix = current_state_.rotation_matrix;
             pose.velocity = current_state_.velocity;
+            trajectory_map[pose.timestamp] = pose;
+        }
+        
+        // Convert map to vector (automatically sorted by timestamp)
+        std::vector<simulation_io::EstimatedPoseT<FLOAT>> trajectory;
+        trajectory.reserve(trajectory_map.size());
+        for (const auto& [timestamp, pose] : trajectory_map) {
             trajectory.push_back(pose);
         }
         
@@ -910,7 +1000,24 @@ private: // Back to private
         
         // Add keyframe to window and history
         keyframes_.push_back(new_kf);
-        trajectory_history_.push_back(new_kf);
+        
+        // Check for duplicate timestamps before adding to history
+        bool duplicate_found = false;
+        for (auto& hist_kf : trajectory_history_) {
+            if (std::abs(hist_kf.timestamp - new_kf.timestamp) < static_cast<FLOAT>(1e-6)) {
+                // Update existing entry instead of adding duplicate
+                hist_kf = new_kf;
+                duplicate_found = true;
+                if (config_.verbose) {
+                    std::cout << "[SimpleSWBA] Updated existing keyframe in history at t=" 
+                             << new_kf.timestamp << std::endl;
+                }
+                break;
+            }
+        }
+        if (!duplicate_found) {
+            trajectory_history_.push_back(new_kf);
+        }
         
         // Marginalize old keyframe if window is full
         if (config_.marginalize_old_keyframes && keyframes_.size() > static_cast<size_t>(config_.window_size)) {
