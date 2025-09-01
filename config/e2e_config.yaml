@@ -30,13 +30,14 @@ datasets:
         config: "config/simulation/circle_medium.yaml"
         description: "Circle with medium noise"
             
-      - name: "figure8_easy"
-        config: "config/simulation/figure8_easy.yaml"
-        description: "Figure-8 with low noise"
+      # figure8 trajectory not yet implemented
+      # - name: "figure8_easy"
+      #   config: "config/simulation/figure8_easy.yaml"
+      #   description: "Figure-8 with low noise"
             
-      - name: "figure8_hard"
-        config: "config/simulation/figure8_hard.yaml"
-        description: "Figure-8 with high noise"
+      # - name: "figure8_hard"
+      #   config: "config/simulation/figure8_hard.yaml"
+      #   description: "Figure-8 with high noise"
             
       - name: "spiral_medium"
         config: "config/simulation/spiral_medium.yaml"
@@ -82,6 +83,13 @@ estimators:
         position: 0.1
         orientation: 0.01
         
+  cpp-swba:
+    enabled: false  # Enable via command line with --estimators cpp-swba
+    config:
+      use_preintegrated_imu: true
+      use_keyframes_only: false
+      window_size: 10
+      
   srif:
     enabled: true
     config:

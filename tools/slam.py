@@ -312,8 +312,8 @@ def run_slam(
             console.print(f"[cyan]Running C++ executable: {cpp_exe.name}[/cyan]")
             
             try:
-                # Run the C++ estimator
-                result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+                # Run the C++ estimator with timeout (60s datasets can take a while)
+                result = subprocess.run(cmd, capture_output=True, text=True, check=True, timeout=300)
                 
                 # Show output
                 if result.stdout:
@@ -330,6 +330,10 @@ def run_slam(
                     console.print("[red]✗ Error: Output file not created[/red]")
                     return None
                     
+            except subprocess.TimeoutExpired:
+                console.print(f"[red]✗ C++ SWBA timed out after 300 seconds[/red]")
+                console.print("[yellow]This may happen with large datasets (60s). Consider using smaller datasets or increasing timeout.[/yellow]")
+                return None
             except subprocess.CalledProcessError as e:
                 console.print(f"[red]✗ C++ SWBA failed with exit code {e.returncode}[/red]")
                 if e.stderr:

@@ -49,7 +49,7 @@ def run_simulation(
     enable_preintegration: bool = False,
     keyframe_config: Optional[KeyframeSelectionConfig] = None,
     component_overrides: Optional[Dict[str, Path]] = None,
-) -> int:
+) -> Optional[Path]:
     """
     Run simulation to generate synthetic SLAM data.
     
@@ -132,7 +132,7 @@ def run_simulation(
             }
         else:
             console.print(f"[red]Error: Unknown trajectory type: {trajectory}[/red]")
-            return 1
+            return None
     
     # Apply component overrides if provided
     if component_overrides:
@@ -441,7 +441,7 @@ def run_simulation(
             
         except Exception as e:
             console.print(f"[red]Error during simulation: {e}[/red]")
-            return 1
+            return None
     
     console.print(f"[green]✓[/green] Simulation complete: [cyan]{output_file}[/cyan]")
     
@@ -460,4 +460,5 @@ def run_simulation(
     time_range = traj.get_time_range()
     console.print(f"  Time range: {time_range[0]:.2f}s - {time_range[1]:.2f}s")
     
-    return 0
+    # Return the output file path for programmatic use
+    return output_file

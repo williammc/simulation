@@ -5,7 +5,7 @@ description: Simple circle trajectory with low noise - perfect for beginners
 # Trajectory configuration
 trajectory:
   type: circle
-  duration: 30.0  # Increased for slower, more realistic motion
+  duration: 20.0  # Increased for slower, more realistic motion
   frequency: 100.0  # Hz
   radius: 4.0  # Slightly smaller radius
   velocity: 0.8  # Slower velocity to prevent drift

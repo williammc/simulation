@@ -5,7 +5,7 @@ description: Slow circular trajectory with realistic motion - prevents EKF drift
 # Trajectory configuration
 trajectory:
   type: circle
-  duration: 40.0  # Increased duration for slower motion
+  duration: 30.0  # Increased duration for slower motion
   frequency: 100.0  # Hz
   radius: 5.0
   velocity: 0.8  # Slower velocity ~0.8 m/s

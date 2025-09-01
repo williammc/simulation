@@ -5,7 +5,7 @@ description: Figure-8 trajectory with low noise - introduces motion complexity
 # Trajectory configuration
 trajectory:
   type: figure8
-  duration: 35.0  # Increased for slower, more realistic motion
+  duration: 25.0  # Increased for slower, more realistic motion
   frequency: 100.0  # Hz
   scale_x: 2.5  # Slightly smaller scale
   scale_y: 1.5  # Slightly smaller scale

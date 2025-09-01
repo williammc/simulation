@@ -88,7 +88,9 @@ def run_e2e(
     if estimators:
         estimator_list = [e.strip().lower() for e in estimators.split(",")]
         for est_name in config.get('estimators', {}).keys():
-            if est_name not in estimator_list:
+            if est_name.lower() in estimator_list:
+                config['estimators'][est_name]['enabled'] = True
+            else:
                 config['estimators'][est_name]['enabled'] = False
     
     # Disable dashboard if requested

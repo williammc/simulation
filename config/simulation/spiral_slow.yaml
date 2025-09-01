@@ -5,7 +5,7 @@ description: Slow spiral trajectory with realistic motion - prevents EKF drift
 # Trajectory configuration
 trajectory:
   type: spiral
-  duration: 40.0  # Increased duration for slower motion
+  duration: 30.0  # Increased duration for slower motion
   frequency: 100.0  # Hz
   initial_radius: 0.5
   final_radius: 3.0

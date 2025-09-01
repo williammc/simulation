@@ -3,4 +3,4 @@ params:
   width: 4.0
   height: 2.0
   period: 15.0
-duration: 60.0
+duration: 20.0

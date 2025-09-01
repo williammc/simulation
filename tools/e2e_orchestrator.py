@@ -202,10 +202,11 @@ class E2EOrchestrator:
             # Run simulation using direct Python call
             try:
                 output_file = run_simulation(
-                    trajectory_type=trajectory_type,
+                    trajectory=trajectory_type,  # Fixed: parameter is 'trajectory' not 'trajectory_type'
                     duration=60,  # Default duration, can be extracted from config if needed
                     config=config_path,
                     output=save_dir,
+                    seed=None,  # Add required seed parameter
                     add_noise=False  # Default, can be extracted from config if needed
                 )
                 
