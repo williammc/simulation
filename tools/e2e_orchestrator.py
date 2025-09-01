@@ -638,21 +638,25 @@ class E2EOrchestrator:
             # Create performance object
             traj_metrics = TrajectoryMetrics()
             if 'metrics' in result:
-                traj_metrics.ate_rmse = result['metrics'].get('ate_rmse', 0.0)
-                traj_metrics.ate_mean = result['metrics'].get('ate_mean', 0.0)
-                traj_metrics.rpe_trans_rmse = result['metrics'].get('rpe_trans_rmse', 0.0)
+                # Use the actual metrics structure from the JSON files
+                ate_metrics = result['metrics'].get('ate', {})
+                rpe_trans_metrics = result['metrics'].get('rpe_translation', {})
+                
+                traj_metrics.ate_rmse = ate_metrics.get('rmse', 0.0)
+                traj_metrics.ate_mean = ate_metrics.get('mean', 0.0)
+                traj_metrics.rpe_trans_rmse = rpe_trans_metrics.get('rmse', 0.0)
             
             from src.evaluation.comparison import EstimatorPerformance
             from src.estimation.base_estimator import EstimatorType
             
             perf = EstimatorPerformance(
                 estimator_type=getattr(EstimatorType, estimator_name.upper(), EstimatorType.EKF),
-                runtime_ms=result.get('runtime_ms', 0.0),
-                peak_memory_mb=result.get('memory_mb', 0.0),
+                runtime_ms=result.get('computational_metrics', {}).get('runtime_ms', 0.0),
+                peak_memory_mb=result.get('simulation_metadata', {}).get('peak_memory_mb', 0.0),
                 trajectory_metrics=traj_metrics,
                 consistency_metrics=None,
-                num_iterations=result.get('iterations', 1),
-                converged=result.get('converged', True),
+                num_iterations=result.get('computational_metrics', {}).get('iterations', 1),
+                converged=result.get('computational_metrics', {}).get('converged', True),
                 metadata=result.get('metadata', {})
             )
             performances[estimator_name] = perf
