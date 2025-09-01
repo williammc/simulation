@@ -513,119 +513,90 @@ def run_slam(
                 total=len(preintegrated_imu)
             )
             
-            # Get keyframes if available
-            keyframes = []
-            if camera_data and hasattr(camera_data, 'frames'):
-                keyframes = [f for f in camera_data.frames if f.is_keyframe]
-            elif isinstance(camera_data, list):
-                keyframes = [f for f in camera_data if getattr(f, 'is_keyframe', False)]
+            # Get camera frames from simulation data
+            camera_frames = []
+            # First try to get from sim_data's measurements
+            if isinstance(sim_data, dict) and 'measurements' in sim_data:
+                measurements = sim_data['measurements']
+                if 'camera_frames' in measurements:
+                    camera_frames = measurements['camera_frames']
+                    console.print(f"[cyan]Found {len(camera_frames)} camera frames in measurements[/cyan]")
+            # Otherwise try camera_data
+            if not camera_frames:
+                if camera_data and hasattr(camera_data, 'frames'):
+                    camera_frames = camera_data.frames
+                elif isinstance(camera_data, list):
+                    camera_frames = camera_data
+            
+            # Identify keyframes
+            keyframe_indices = []
+            for idx, frame in enumerate(camera_frames):
+                if frame.get('is_keyframe', False) if isinstance(frame, dict) else getattr(frame, 'is_keyframe', False):
+                    keyframe_indices.append(idx)
+            console.print(f"[cyan]Found {len(keyframe_indices)} keyframes[/cyan]")
             
             # Process each preintegrated IMU factor
+            keyframe_idx = 0
             for i, preint_data in enumerate(preintegrated_imu):
                 # Predict with preintegrated IMU
                 estimator_instance.predict(preint_data)
                 
-                # Generate visual observations for this timestep if we have landmarks
-                # Only do visual updates every 10th keyframe (twice per trajectory)
-                # Visual observation generation for EKF and SWBA
-                if i % 10 == 0 and landmarks and hasattr(landmarks, 'landmarks') and estimator_lower in ['ekf', 'swba']:
-                    # Create a mock camera frame with observations
+                # Check if we should do a visual update with actual camera observations
+                # Update with camera measurements at each keyframe
+                if keyframe_idx < len(keyframe_indices) and i == keyframe_idx and estimator_lower in ['ekf', 'swba']:
+                    # Use actual camera frame from simulation
                     from src.common.data_structures import CameraFrame, CameraObservation, ImagePoint
                     
-                    # Get current state estimate
-                    # EKF has a 'state' attribute, others use get_state() or get_current_state()
-                    current_state = None
-                    if hasattr(estimator_instance, 'state') and estimator_instance.state is not None:
-                        # EKF case
-                        current_state = estimator_instance.state
-                    elif hasattr(estimator_instance, 'get_state'):
-                        # SWBA/SRIF case
-                        try:
-                            state_obj = estimator_instance.get_state()
-                            # Create a simple object with position and rotation_matrix attributes
-                            class SimpleState:
-                                def __init__(self, pos, rot):
-                                    self.position = pos
-                                    self.rotation_matrix = rot
-                            current_state = SimpleState(
-                                state_obj.robot_pose.position,
-                                state_obj.robot_pose.rotation_matrix
-                            )
-                        except:
-                            pass
-                    elif hasattr(estimator_instance, 'get_current_state'):
-                        # Base estimator case
-                        try:
-                            state_obj = estimator_instance.get_current_state()
-                            class SimpleState:
-                                def __init__(self, pos, rot):
-                                    self.position = pos
-                                    self.rotation_matrix = rot
-                            current_state = SimpleState(
-                                state_obj.robot_pose.position,
-                                state_obj.robot_pose.rotation_matrix
-                            )
-                        except:
-                            pass
+                    frame_idx = keyframe_indices[keyframe_idx]
+                    frame = camera_frames[frame_idx]
                     
-                    if current_state is not None:
-                        # Project landmarks and create observations
-                        observations = []
-                        # Iterate over landmark dictionary values
-                        landmark_dict = landmarks.landmarks if isinstance(landmarks.landmarks, dict) else {}
+                    # Extract observations from the frame
+                    observations = []
+                    if isinstance(frame, dict):
+                        frame_observations = frame.get('observations', [])
+                        frame_timestamp = frame.get('timestamp', i * 0.5)
+                        is_keyframe = frame.get('is_keyframe', False)
+                    else:
+                        frame_observations = getattr(frame, 'observations', [])
+                        frame_timestamp = getattr(frame, 'timestamp', i * 0.5)
+                        is_keyframe = getattr(frame, 'is_keyframe', False)
+                    
+                    # Convert observations to CameraObservation objects
+                    for obs in frame_observations:
+                        if isinstance(obs, dict):
+                            pixel_data = obs.get('pixel', {})
+                            u = pixel_data.get('u', 0)
+                            v = pixel_data.get('v', 0)
+                            landmark_id = obs.get('landmark_id', 0)
+                            ideal_coords = obs.get('ideal_coordinates', None)
+                        else:
+                            u = obs.pixel.u if hasattr(obs.pixel, 'u') else 0
+                            v = obs.pixel.v if hasattr(obs.pixel, 'v') else 0
+                            landmark_id = obs.landmark_id if hasattr(obs, 'landmark_id') else 0
+                            ideal_coords = obs.ideal_coordinates if hasattr(obs, 'ideal_coordinates') else None
                         
-                        # Limit to a subset of landmarks (max 50) for stability
-                        max_landmarks = 50
-                        landmark_items = list(landmark_dict.items())[:max_landmarks]
+                        camera_obs = CameraObservation(
+                            pixel=ImagePoint(u=u, v=v),
+                            landmark_id=landmark_id,
+                            descriptor=None,
+                            ideal_coordinates=ideal_coords
+                        )
+                        observations.append(camera_obs)
+                    
+                    # Create camera frame with actual observations
+                    if observations:
+                        console.print(f"[green]Keyframe {keyframe_idx}: Using {len(observations)} actual observations from simulation[/green]")
                         
-                        for landmark_id, landmark in landmark_items:
-                            # Try to project this landmark to ideal coordinates
-                            predicted_ideal, _ = estimator_instance._predict_measurement(
-                                landmark.position,
-                                current_state.position,
-                                current_state.rotation_matrix
-                            )
-                            
-                            if predicted_ideal is not None:
-                                # Add noise in ideal coordinate space (more physically meaningful)
-                                ideal_noise_std = 0.004  # ~2 pixels at fx=500
-                                ideal_noise = np.random.randn(2) * ideal_noise_std
-                                noisy_ideal = predicted_ideal + ideal_noise
-                                
-                                # Convert ideal to pixel for bounds checking (using default intrinsics)
-                                fx, fy = 500.0, 500.0
-                                cx, cy = 320.0, 240.0
-                                u = fx * noisy_ideal[0] + cx
-                                v = fy * noisy_ideal[1] + cy
-                                
-                                # Check if pixel is within reasonable bounds
-                                if 0 <= u < 640 and 0 <= v < 480:
-                                    # Create observation with both pixel and ideal coordinates
-                                    obs = CameraObservation(
-                                        pixel=ImagePoint(u=u, v=v),
-                                        landmark_id=landmark.id,
-                                        descriptor=landmark.descriptor if hasattr(landmark, 'descriptor') else None,
-                                        ideal_coordinates=noisy_ideal
-                                    )
-                                    observations.append(obs)
-                        
-                        # Create camera frame with observations
-                        if observations:
-                            # Get current timestamp from estimator state
-                            current_timestamp = 0.0
-                            if hasattr(estimator_instance, 'current_state') and estimator_instance.current_state:
-                                current_timestamp = estimator_instance.current_state.timestamp
-                            elif hasattr(estimator_instance, 'state') and estimator_instance.state:
-                                current_timestamp = getattr(estimator_instance.state, 'timestamp', 0.0)
-                            
-                            camera_frame = CameraFrame(
-                                timestamp=current_timestamp,
-                                camera_id="cam0",
-                                observations=observations,
-                                is_keyframe=True
-                            )
-                            # Update with visual observations
-                            estimator_instance.update(camera_frame, landmarks)
+                        camera_frame = CameraFrame(
+                            timestamp=frame_timestamp,
+                            camera_id="cam0",
+                            observations=observations,
+                            is_keyframe=is_keyframe
+                        )
+                        # Update with visual observations
+                        estimator_instance.update(camera_frame, landmarks)
+                    
+                    keyframe_idx += 1
                 
                 # Run optimization for SWBA
                 if estimator_lower == 'swba' and (i + 1) % 5 == 0:
