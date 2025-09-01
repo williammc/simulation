@@ -233,6 +233,11 @@ public:
                     if (obs.descriptor.has_value()) {
                         obs_json["descriptor"] = obs.descriptor.value();
                     }
+                    // Save ideal coordinates if present
+                    if (obs.ideal_coordinates.has_value()) {
+                        const auto& ideal = obs.ideal_coordinates.value();
+                        obs_json["ideal_coordinates"] = json::array({ideal.x(), ideal.y()});
+                    }
                     frame_json["observations"].push_back(obs_json);
                 }
                 
@@ -460,6 +465,19 @@ public:
                             }
                             if (obs_json.contains("descriptor")) {
                                 obs.descriptor = obs_json["descriptor"].get<std::vector<double>>();
+                            }
+                            // Load ideal coordinates - REQUIRED for accurate estimation
+                            if (obs_json.contains("ideal_coordinates")) {
+                                const auto& ideal = obs_json["ideal_coordinates"];
+                                if (ideal.is_array() && ideal.size() >= 2) {
+                                    obs.ideal_coordinates = Vector2T<double>(ideal[0].get<double>(), ideal[1].get<double>());
+                                }
+                            } else {
+                                // Error: ideal coordinates are required for accurate estimation
+                                std::cerr << "ERROR: Missing ideal_coordinates for observation of landmark " 
+                                         << obs.landmark_id << " in frame at timestamp " << frame.timestamp << std::endl;
+                                std::cerr << "       Simulation data must include pre-computed ideal coordinates!" << std::endl;
+                                throw std::runtime_error("Missing ideal_coordinates in observation - simulation data incomplete");
                             }
                             frame.observations.push_back(obs);
                             obs_index++;

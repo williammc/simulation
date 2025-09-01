@@ -66,6 +66,10 @@ public:
         FLOAT ideal_coord_weight = static_cast<FLOAT>(10.0);     // Weight for ideal coordinates
         FLOAT pixel_coord_weight = static_cast<FLOAT>(1.0);      // Weight for pixel coordinates
         
+        // IMU parameters
+        FLOAT imu_weight = static_cast<FLOAT>(10.0);             // Weight for IMU residuals
+        bool use_preintegrated_imu = true;                       // Use preintegrated IMU measurements
+        
         // Debug/logging
         bool verbose = false;
         bool debug_enabled = true;
@@ -483,7 +487,8 @@ private:
                 Vector3 r_v = R_i.transpose() * (v_j - v_i - gravity * dt) - preint.delta_velocity;
                 Vector3 r_R = so3_log(preint.delta_rotation.transpose() * R_i.transpose() * so3_exp(theta_j));
 
-                FLOAT imu_weight = static_cast<FLOAT>(10.0);
+                // Use configurable IMU weight from config
+                FLOAT imu_weight = config_.imu_weight;
                 for (int k = 0; k < 3; ++k) residuals_list.push_back(r_p(k) * imu_weight);
                 for (int k = 0; k < 3; ++k) residuals_list.push_back(r_v(k) * imu_weight);
                 for (int k = 0; k < 3; ++k) residuals_list.push_back(r_R(k) * imu_weight);
@@ -527,6 +532,7 @@ private:
                 Eigen::Matrix<FLOAT, 2, 3> J_lm;
 
                 if (meas.has_ideal_coordinates() && meas.ideal_residual.has_value()) {
+                    // Use ideal coordinates (required for accurate estimation)
                     r_vis = meas.ideal_residual.value();
                     if (J.rows() > 0) {
                         J_pose = meas.ideal_jacobian_wrt_pose.value_or(Eigen::Matrix<FLOAT, 2, 6>::Zero());
@@ -534,12 +540,12 @@ private:
                     }
                     weight = config_.ideal_coord_weight;
                 } else {
-                    r_vis = meas.residual;
-                    if (J.rows() > 0) {
-                        J_pose = meas.jacobian_wrt_pose.value_or(Eigen::Matrix<FLOAT, 2, 6>::Zero());
-                        J_lm = meas.jacobian_wrt_landmark.value_or(Eigen::Matrix<FLOAT, 2, 3>::Zero());
-                    }
-                    weight = config_.pixel_coord_weight;
+                    // Error: should never reach here if preprocessing is correct
+                    std::cerr << "ERROR: Visual measurement for landmark " << meas.landmark_id 
+                             << " does not have ideal coordinates!" << std::endl;
+                    std::cerr << "       This indicates the preprocessing step failed to provide ideal coordinates." << std::endl;
+                    std::cerr << "       The estimator requires ideal coordinates for accurate operation." << std::endl;
+                    throw std::runtime_error("Visual measurement missing ideal coordinates - preprocessing error");
                 }
                 weight *= meas.robust_weight;
 

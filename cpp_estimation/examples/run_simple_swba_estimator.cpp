@@ -119,9 +119,13 @@ public:
             Eigen::Vector3d lmk_cam = current_rotation.transpose() * 
                                      (lmk_it->second.position - current_position);
             
-            if (lmk_cam.z() <= 0) {
-                // Behind camera
+            // Match Python's more permissive threshold for behind-camera check
+            if (lmk_cam.z() <= -0.5) {
+                // Behind camera - only reject if clearly behind
                 continue;
+            } else if (lmk_cam.z() <= 0.1) {
+                // Landmark is very close or slightly behind - process with caution
+                // The robust weight can be adjusted later if needed
             }
             
             double x_norm = lmk_cam.x() / lmk_cam.z();
@@ -137,10 +141,21 @@ public:
             
             // Ideal/normalized coordinates
             if (use_ideal_) {
-                // Convert pixel to ideal coordinates
-                double x_obs_ideal = (meas.observed_pixel.x() - cx) / fx;
-                double y_obs_ideal = (meas.observed_pixel.y() - cy) / fy;
-                meas.observed_ideal = Eigen::Vector2d(x_obs_ideal, y_obs_ideal);
+                // Ideal coordinates from simulation data are REQUIRED
+                if (obs.ideal_coordinates.has_value()) {
+                    // Use the ground truth ideal coordinates from simulation
+                    meas.observed_ideal = Eigen::Vector2d(
+                        obs.ideal_coordinates.value().x(), 
+                        obs.ideal_coordinates.value().y()
+                    );
+                } else {
+                    // Error: ideal coordinates must be present in simulation data
+                    std::cerr << "ERROR: Observation for landmark " << obs.landmark_id 
+                             << " is missing ideal_coordinates!" << std::endl;
+                    std::cerr << "       The simulation data must include pre-computed ideal coordinates." << std::endl;
+                    std::cerr << "       Please regenerate simulation data with ideal coordinates." << std::endl;
+                    throw std::runtime_error("Missing ideal_coordinates - cannot proceed without ground truth ideal coordinates");
+                }
                 
                 meas.predicted_ideal = Eigen::Vector2d(x_norm, y_norm);
                 meas.ideal_residual = meas.observed_ideal.value() - meas.predicted_ideal.value();
@@ -177,8 +192,17 @@ public:
                 meas.ideal_jacobian_wrt_landmark = J_lmk;
             }
             
-            // Bearing vector
-            Eigen::Vector3d bearing(x_norm, y_norm, 1.0);
+            // Bearing vector (use observed ideal coordinates when available)
+            Eigen::Vector3d bearing;
+            if (use_ideal_ && meas.observed_ideal.has_value()) {
+                bearing = Eigen::Vector3d(
+                    meas.observed_ideal.value().x(),
+                    meas.observed_ideal.value().y(),
+                    1.0
+                );
+            } else {
+                bearing = Eigen::Vector3d(x_norm, y_norm, 1.0);
+            }
             bearing.normalize();
             meas.bearing_vector = bearing;
             

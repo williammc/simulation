@@ -179,6 +179,7 @@ struct CameraObservationT {
     int landmark_id;
     ImagePointT<FLOAT> pixel;
     std::optional<std::vector<FLOAT>> descriptor;
+    std::optional<Vector2T<FLOAT>> ideal_coordinates;  // Normalized/ideal coordinates from simulation
     
     CameraObservationT() : landmark_id(-1) {}
 };
