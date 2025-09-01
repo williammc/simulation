@@ -86,31 +86,20 @@ def run_e2e_simple(
         keyframe_config=keyframe_config
     )
     
-    if result != 0:
+    if result is None:
         print("  ✗ Simulation failed")
         return
     
-    # Find or use specified simulation file
+    # Use the returned path from run_simulation
+    sim_output = result
+    
+    # Optionally rename to specified filename
     if sim_filename:
-        # Rename the generated file to the specified name
-        sim_files = sorted(output_path.glob(f"simulation_{trajectory_type}_*.json"), 
-                          key=lambda x: x.stat().st_mtime, reverse=True)
-        if sim_files:
-            sim_output = output_path / sim_filename
-            sim_files[0].rename(sim_output)
-            print(f"  ✓ Saved simulation to: {sim_output}")
-        else:
-            print("  ✗ No simulation output found")
-            return
-    else:
-        # Find the most recently generated simulation file for this trajectory type
-        sim_files = sorted(output_path.glob(f"simulation_{trajectory_type}_*.json"), 
-                          key=lambda x: x.stat().st_mtime, reverse=True)
-        if not sim_files:
-            print("  ✗ No simulation output found")
-            return
-        sim_output = sim_files[0]  # Get the most recent
-        print(f"  ✓ Generated simulation: {sim_output.name}")
+        new_sim_output = output_path / sim_filename
+        sim_output.rename(new_sim_output)
+        sim_output = new_sim_output
+    
+    print(f"  ✓ Generated simulation: {sim_output.name}")
         
     # Load simulation data to get statistics
     sim_data = load_simulation_data(str(sim_output))
