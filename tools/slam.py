@@ -273,9 +273,10 @@ def run_slam(
             
             # Find the C++ executable
             cpp_exe_paths = [
-                Path("cpp_estimation/build/examples/run_swba_estimator"),
-                Path("../cpp_estimation/build/examples/run_swba_estimator"),
-                Path(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) / "cpp_estimation/build/examples/run_swba_estimator"
+                Path("cpp_estimation/build/examples/run_simple_swba_estimator"),
+                Path("build/cpp_estimation/examples/run_simple_swba_estimator"),
+                Path("../cpp_estimation/build/examples/run_simple_swba_estimator"),
+                Path(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) / "cpp_estimation/build/examples/run_simple_swba_estimator"
             ]
             
             cpp_exe = None
@@ -286,7 +287,7 @@ def run_slam(
             
             if not cpp_exe:
                 console.print("[red]✗ Error: C++ SWBA executable not found. Please build cpp_estimation first.[/red]")
-                console.print("  Run: cd cpp_estimation/build && cmake .. && make run_swba_estimator")
+                console.print("  Run: cd cpp_estimation && mkdir -p build && cd build && cmake .. && make run_simple_swba_estimator")
                 return None
             
             # Prepare output directory
@@ -321,7 +322,7 @@ def run_slam(
                             console.print(f"  {line}")
                 
                 # Check for output file
-                output_file = output_dir / "cpp_swba_result.json"
+                output_file = output_dir / "cpp_simple_swba_result.json"
                 if output_file.exists():
                     console.print(f"[green]✓ C++ SWBA completed successfully[/green]")
                     return output_file

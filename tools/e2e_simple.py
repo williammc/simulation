@@ -38,7 +38,7 @@ def run_e2e_simple(
     Args:
         duration: Simulation duration in seconds
         trajectory_type: Type of trajectory ("circle", "figure8", "spiral", "line")
-        estimator_type: SLAM estimator ("ekf", "swba", "srif", "new-swba", "simple-swba")
+        estimator_type: SLAM estimator ("ekf", "swba", "srif", "cpp-swba")
         output_dir: Directory for output files
         sim_filename: Optional custom name for simulation output
         slam_filename: Optional custom name for SLAM output
@@ -293,7 +293,7 @@ def run_e2e_simple(
     print(f"  • Visualization: {html_path}")
     print("\nNext steps:")
     print("  • Try different trajectories: 'figure8', 'spiral', 'line'")
-    print("  • Try different estimators: 'ekf', 'swba', 'srif'")
+    print("  • Try different estimators: 'ekf', 'swba', 'srif', 'cpp-swba'")
     print("  • Adjust simulation duration (default: 10s)")
     print("  • Use custom filenames for reproducibility")
     print("\nRun with: ./run.sh e2e_simple [options]")
@@ -308,8 +308,8 @@ if __name__ == "__main__":
     parser.add_argument("--trajectory", type=str, default="circle", 
                         choices=["circle", "figure8", "spiral", "line"],
                         help="Trajectory type")
-    parser.add_argument("--estimator", type=str, default="simple-swba",
-                        choices=["ekf", "swba", "srif", "new-swba", "simple-swba"],
+    parser.add_argument("--estimator", type=str, default="cpp-swba",
+                        choices=["ekf", "swba", "srif", "cpp-swba"],
                         help="SLAM estimator type")
     parser.add_argument("--output-dir", type=str, default="output",
                         help="Output directory for all files")

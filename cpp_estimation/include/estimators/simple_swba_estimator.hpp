@@ -9,6 +9,8 @@
 #include <optional>
 #include <algorithm>
 #include <iostream>
+#include <random>
+#include <set>
 
 #include "simulation_io/preprocessed_interfaces.hpp"
 #include "simulation_io/estimator_result_io.hpp"
@@ -45,7 +47,13 @@ public:
     struct Config {
         // Window parameters
         int window_size = 10;                    // Number of keyframes in window
-        int keyframe_spacing = 5;                // Create keyframe every N frames
+        bool marginalize_old_keyframes = true;   // Marginalize old keyframes
+        
+        // Keyframe selection
+        bool use_keyframes_only = false;         // Use only frames marked as keyframes
+        FLOAT keyframe_time_threshold = static_cast<FLOAT>(0.5);         // Time threshold for new keyframe
+        FLOAT keyframe_translation_threshold = static_cast<FLOAT>(0.2);  // Translation threshold
+        FLOAT keyframe_rotation_threshold = static_cast<FLOAT>(0.2);     // Rotation threshold
         
         // Optimization parameters  
         int max_iterations = 10;                 // Max optimization iterations
@@ -80,15 +88,33 @@ public:
               bias_accel(Vector3::Zero()),
               bias_gyro(Vector3::Zero()),
               timestamp(0) {}
+              
+        State copy() const {
+            State s;
+            s.position = position;
+            s.rotation_matrix = rotation_matrix;
+            s.velocity = velocity;
+            s.bias_accel = bias_accel;
+            s.bias_gyro = bias_gyro;
+            s.timestamp = timestamp;
+            return s;
+        }
     };
     
     /**
-     * Keyframe data
+     * Keyframe data (matching Python implementation)
      */
     struct Keyframe {
-        State state;
-        simulation_io::ProcessedVisualFrameT<FLOAT> visual_frame;
         int id;
+        FLOAT timestamp;
+        State state;
+        std::vector<simulation_io::VisualMeasurementT<FLOAT>> observations;
+        std::optional<simulation_io::PreprocessedIMUDataT<FLOAT>> imu_preintegration;
+        
+        Keyframe() : id(-1), timestamp(0) {}
+        
+        Keyframe(int _id, FLOAT _timestamp, const State& _state)
+            : id(_id), timestamp(_timestamp), state(_state) {}
     };
     
 private:
@@ -100,20 +126,16 @@ private:
     
     // Keyframe data for optimization window
     std::vector<Keyframe> keyframes_;
-    std::vector<int> keyframe_ids_;
-    
-    // IMU preintegration storage
-    // Key: (from_kf_id, to_kf_id), Value: PreprocessedIMUData
-    std::map<std::pair<int, int>, simulation_io::PreprocessedIMUDataT<FLOAT>> imu_constraints_;
-    std::optional<simulation_io::PreprocessedIMUDataT<FLOAT>> pending_imu_;
+    std::vector<Keyframe> trajectory_history_;  // Full history of all keyframes
+    int next_keyframe_id_;
     
     // Landmarks
     std::unordered_map<int, Vector3> landmarks_;
+    std::unordered_map<int, std::vector<std::pair<int, simulation_io::VisualMeasurementT<FLOAT>>>> landmark_observations_;
     
     // Counters
-    int frame_count_;
-    int keyframe_count_;
-    int total_iterations_;
+    int num_optimizations_;
+    FLOAT last_optimization_cost_;
     
     bool initialized_;
     
@@ -123,9 +145,9 @@ public:
      */
     explicit SimpleSWBAEstimator(const Config& config = Config())
         : config_(config),
-          frame_count_(0),
-          keyframe_count_(0),
-          total_iterations_(0),
+          next_keyframe_id_(0),
+          num_optimizations_(0),
+          last_optimization_cost_(0),
           initialized_(false) {}
     
     /**
@@ -146,14 +168,13 @@ public:
         
         // Clear data structures
         keyframes_.clear();
-        keyframe_ids_.clear();
-        imu_constraints_.clear();
-        pending_imu_.reset();
+        trajectory_history_.clear();
         landmarks_.clear();
+        landmark_observations_.clear();
         
-        frame_count_ = 0;
-        keyframe_count_ = 0;
-        total_iterations_ = 0;
+        next_keyframe_id_ = 0;
+        num_optimizations_ = 0;
+        last_optimization_cost_ = 0;
         initialized_ = true;
         
         if (config_.verbose) {
@@ -163,129 +184,187 @@ public:
     }
     
     /**
-     * Prediction step - store preintegrated IMU and propagate state
+     * Prediction step - process preintegrated IMU data (Python lines 240-336)
+     * Creates keyframes proactively and propagates state correctly.
      * 
-     * @param imu_data Preintegrated IMU measurements
-     * @param dt Time delta (already in preintegration)
+     * @param preintegrated Preintegrated IMU measurements between keyframes
      */
-    void predict(const simulation_io::PreprocessedIMUDataT<FLOAT>& imu_data, FLOAT dt) {
+    void predict(const simulation_io::PreprocessedIMUDataT<FLOAT>& preintegrated) {
         if (!initialized_) {
             std::cerr << "[SimpleSWBA] Not initialized" << std::endl;
             return;
         }
         
-        // Store preintegrated IMU for later optimization
-        pending_imu_ = imu_data;
+        // Create keyframes if they don't exist yet (Python lines 252-276)
+        // This happens when we have preintegrated IMU but no camera frames
+        while (next_keyframe_id_ <= preintegrated.to_frame_id) {
+            FLOAT kf_timestamp;
+            if (next_keyframe_id_ == 0) {
+                kf_timestamp = current_state_.timestamp;
+            } else {
+                // Use the preintegration dt to space keyframes
+                kf_timestamp = current_state_.timestamp + 
+                    (next_keyframe_id_ - preintegrated.from_frame_id) * preintegrated.delta_t;
+            }
+            
+            // Create a new keyframe at the current state
+            Keyframe kf(next_keyframe_id_, kf_timestamp, current_state_.copy());
+            keyframes_.push_back(kf);
+            trajectory_history_.push_back(kf);  // Add to full history
+            next_keyframe_id_++;
+        }
         
-        // Propagate state using preintegrated measurements
-        State prev_state = current_state_;
-        Vector3 gravity(0, 0, static_cast<FLOAT>(-9.81));
+        // Find the keyframes this preintegration corresponds to (Python lines 278-286)
+        Keyframe* from_kf = nullptr;
+        Keyframe* to_kf = nullptr;
         
-        // Get rotation matrix - handle both attribute names
-        Matrix3 delta_R = imu_data.delta_rotation;
+        for (auto& kf : keyframes_) {
+            if (kf.id == preintegrated.from_frame_id) {
+                from_kf = &kf;
+            }
+            if (kf.id == preintegrated.to_frame_id) {
+                to_kf = &kf;
+            }
+        }
         
-        // Standard VIO prediction equations
-        current_state_.rotation_matrix = prev_state.rotation_matrix * delta_R;
-        current_state_.velocity = prev_state.velocity + gravity * dt + 
-                                  prev_state.rotation_matrix * imu_data.delta_velocity;
-        current_state_.position = prev_state.position + prev_state.velocity * dt + 
-                                  static_cast<FLOAT>(0.5) * gravity * dt * dt + 
-                                  prev_state.rotation_matrix * imu_data.delta_position;
-        
-        // Update timestamp
-        current_state_.timestamp = prev_state.timestamp + dt;
+        if (from_kf != nullptr) {
+            // Store preintegration with the source keyframe (Python lines 289-299)
+            from_kf->imu_preintegration = preintegrated;
+            
+            // Update current state and to_kf state based on preintegration (Python lines 301-333)
+            if (from_kf != nullptr && to_kf != nullptr) {
+                // Propagate state using preintegrated deltas
+                Matrix3 R_old = from_kf->state.rotation_matrix;
+                Vector3 gravity(0, 0, static_cast<FLOAT>(-9.81));
+                
+                // Add small initialization noise to create non-zero residuals
+                std::default_random_engine generator;
+                std::normal_distribution<FLOAT> distribution(0.0, 1.0);
+                Vector3 position_noise(distribution(generator) * static_cast<FLOAT>(0.01),
+                                      distribution(generator) * static_cast<FLOAT>(0.01),
+                                      distribution(generator) * static_cast<FLOAT>(0.01));
+                Vector3 velocity_noise(distribution(generator) * static_cast<FLOAT>(0.001),
+                                      distribution(generator) * static_cast<FLOAT>(0.001),
+                                      distribution(generator) * static_cast<FLOAT>(0.001));
+                
+                // CORRECT position equation (Python lines 313-317)
+                to_kf->state.position = from_kf->state.position + 
+                    from_kf->state.velocity * preintegrated.delta_t +
+                    R_old * preintegrated.delta_position +
+                    static_cast<FLOAT>(0.5) * gravity * preintegrated.delta_t * preintegrated.delta_t +
+                    position_noise;
+                
+                // CORRECT velocity equation (Python lines 318-321)
+                to_kf->state.velocity = from_kf->state.velocity +
+                    R_old * preintegrated.delta_velocity +
+                    gravity * preintegrated.delta_t +
+                    velocity_noise;
+                
+                // Rotation propagation (Python line 322)
+                to_kf->state.rotation_matrix = R_old * preintegrated.delta_rotation;
+                to_kf->state.timestamp = from_kf->state.timestamp + preintegrated.delta_t;
+                
+                // Update current state to match the latest keyframe (Python lines 326-333)
+                current_state_ = to_kf->state.copy();
+            }
+        } else {
+            if (config_.verbose) {
+                std::cout << "[SimpleSWBA] Warning: Could not find source keyframe " 
+                         << preintegrated.from_frame_id << " for preintegration" << std::endl;
+            }
+        }
         
         // Store all poses for complete trajectory
         all_poses_.push_back(current_state_);
         
         if (config_.verbose) {
-            std::cout << "[SimpleSWBA] Predicted to t=" << current_state_.timestamp 
-                     << ", pos: " << current_state_.position.transpose() << std::endl;
+            std::cout << "[SimpleSWBA] Predicted with preintegration from frame " 
+                     << preintegrated.from_frame_id << " to " << preintegrated.to_frame_id << std::endl;
         }
     }
     
+    // Overload for backward compatibility with dt parameter
+    void predict(const simulation_io::PreprocessedIMUDataT<FLOAT>& imu_data, FLOAT /*dt*/) {
+        predict(imu_data);
+    }
+    
     /**
-     * Update step - process ALL frames and decide on keyframes for optimization
+     * Update step - process camera measurements (Python lines 337-393)
+     * Decides whether to create a new keyframe and triggers optimization if needed.
      * 
-     * @param visual_frame Processed visual measurements with Jacobians
-     * @param external_landmarks Optional landmark map for initialization
-     * @return Number of optimization iterations performed
+     * @param camera_frame Visual measurements (can be nullptr for simplified version)
+     * @param landmarks Known landmarks (for initialization)
      */
-    int update(const simulation_io::ProcessedVisualFrameT<FLOAT>& visual_frame,
-              const std::unordered_map<int, Vector3>* external_landmarks = nullptr) {
-        if (!initialized_) {
-            std::cerr << "[SimpleSWBA] Not initialized" << std::endl;
-            return 0;
+    void update(const simulation_io::ProcessedVisualFrameT<FLOAT>* camera_frame,
+               const std::unordered_map<int, Vector3>* landmarks = nullptr) {
+        if (!keyframes_.empty() || current_state_.timestamp > 0 || !initialized_) {
+            // OK to proceed
+        } else {
+            std::cerr << "[SimpleSWBA] Not initialized, skipping update" << std::endl;
+            return;
         }
         
-        frame_count_++;
+        // Handle nullptr camera_frame for simplified version (Python lines 353-356)
+        if (camera_frame == nullptr) {
+            // Create a minimal keyframe for tracking purposes
+            createMinimalKeyframe();
+            return;
+        }
         
-        // IMPORTANT: Process every frame, not just keyframes
-        // This ensures we track poses for all camera frames
-        
-        // Store current pose for this frame (already updated by predict())
-        State current_frame_pose = current_state_;
-        
-        // Initialize landmarks from external if provided
-        if (external_landmarks) {
-            for (const auto& [id, pos] : *external_landmarks) {
-                if (landmarks_.find(id) == landmarks_.end()) {
-                    landmarks_[id] = pos;
+        // If we have observations, add them to the most recent keyframe
+        // instead of creating a new one (to avoid timestamp conflicts) (Python lines 358-375)
+        if (!camera_frame->measurements.empty() && !keyframes_.empty()) {
+            // Find the keyframe with matching or closest timestamp
+            Keyframe* best_kf = nullptr;
+            FLOAT min_time_diff = std::numeric_limits<FLOAT>::max();
+            for (auto& kf : keyframes_) {
+                FLOAT time_diff = std::abs(kf.timestamp - camera_frame->timestamp);
+                if (time_diff < min_time_diff) {
+                    min_time_diff = time_diff;
+                    best_kf = &kf;
                 }
             }
-        }
-        
-        // Decide if this should be a keyframe for optimization
-        bool is_keyframe = (frame_count_ % config_.keyframe_spacing == 0) || 
-                          keyframes_.empty();
-        
-        if (config_.verbose) {
-            std::cout << "[SimpleSWBA] Frame " << frame_count_ 
-                     << ": is_keyframe=" << is_keyframe 
-                     << ", total_keyframes=" << keyframes_.size() << std::endl;
-        }
-        
-        int iterations = 0;
-        
-        if (is_keyframe) {
-            // Create keyframe
-            Keyframe kf;
-            kf.state = current_frame_pose;
-            kf.visual_frame = visual_frame;
-            kf.id = keyframe_count_;
             
-            keyframes_.push_back(kf);
-            keyframe_ids_.push_back(keyframe_count_);
-            
-            // Store IMU constraint if we have pending IMU data
-            if (pending_imu_ && keyframe_ids_.size() > 1) {
-                int prev_id = keyframe_ids_[keyframe_ids_.size() - 2];
-                int curr_id = keyframe_ids_.back();
-                imu_constraints_[{prev_id, curr_id}] = pending_imu_.value();
-                pending_imu_.reset();
-            }
-            
-            // Initialize new landmarks
-            initializeNewLandmarks(visual_frame);
-            
-            // Maintain window size
-            if (keyframes_.size() > static_cast<size_t>(config_.window_size)) {
-                marginalizeOldest();
-            }
-            
-            // Optimize if we have enough keyframes
-            if (keyframes_.size() >= 3) {
-                iterations = optimize();
-            }
-            
-            keyframe_count_++;
-            
-            if (config_.verbose) {
-                std::cout << "[SimpleSWBA] Created keyframe " << keyframe_count_ << std::endl;
+            if (best_kf && min_time_diff < static_cast<FLOAT>(0.01)) {  // Within 10ms - same keyframe
+                // Add observations to existing keyframe
+                addObservationsToKeyframe(best_kf, camera_frame->measurements, landmarks);
+                if (config_.verbose) {
+                    std::cout << "[SimpleSWBA] Added " << camera_frame->measurements.size() 
+                             << " observations to keyframe " << best_kf->id << std::endl;
+                }
+                return;
             }
         }
         
-        return iterations;
+        // Check keyframe-only processing (Python lines 377-384)
+        if (config_.use_keyframes_only) {
+            // Only process frames marked as keyframes
+            if (!camera_frame->is_keyframe) {
+                return;
+            }
+            // Only create new keyframe if timestamp is different
+            if (keyframes_.empty() || 
+                std::abs(keyframes_.back().timestamp - camera_frame->timestamp) > static_cast<FLOAT>(0.01)) {
+                createKeyframe(*camera_frame, landmarks);
+            }
+        } else {
+            // Use internal keyframe selection logic (Python lines 386-388)
+            if (shouldCreateKeyframe(camera_frame->timestamp)) {
+                createKeyframe(*camera_frame, landmarks);
+            }
+        }
+        
+        // Run optimization if we have enough keyframes (Python lines 390-392)
+        if (keyframes_.size() >= 2) {
+            optimize();
+        }
+    }
+    
+    // Overload for backward compatibility 
+    int update(const simulation_io::ProcessedVisualFrameT<FLOAT>& visual_frame,
+              const std::unordered_map<int, Vector3>* external_landmarks = nullptr) {
+        update(&visual_frame, external_landmarks);
+        return num_optimizations_;
     }
     
     // Overload for EstimatedLandmarkT
@@ -338,56 +417,59 @@ public:
             std::vector<FLOAT> residuals;
             std::vector<Eigen::Matrix<FLOAT, -1, -1, Eigen::RowMajor>> jacobian_rows;
             
-            // 1. IMU constraints
-            for (const auto& [kf_pair, imu_data] : imu_constraints_) {
-                int from_id = kf_pair.first;
-                int to_id = kf_pair.second;
+            // 1. IMU constraints between consecutive keyframes
+            for (size_t i = 0; i < keyframes_.size() - 1; ++i) {
+                const Keyframe& from_kf = keyframes_[i];
+                const Keyframe& to_kf = keyframes_[i + 1];
                 
-                // Find indices in current keyframe list
-                auto from_it = std::find(keyframe_ids_.begin(), keyframe_ids_.end(), from_id);
-                auto to_it = std::find(keyframe_ids_.begin(), keyframe_ids_.end(), to_id);
-                
-                if (from_it != keyframe_ids_.end() && to_it != keyframe_ids_.end()) {
-                    size_t from_idx = std::distance(keyframe_ids_.begin(), from_it);
-                    size_t to_idx = std::distance(keyframe_ids_.begin(), to_it);
+                if (from_kf.imu_preintegration.has_value()) {
+                    const auto& preint = from_kf.imu_preintegration.value();
                     
-                    if (from_idx < num_kf && to_idx < num_kf) {
-                        // IMU residual: position consistency
-                        Vector3 p_i = state.template segment<3>(from_idx * 3);
-                        Vector3 p_j = state.template segment<3>(to_idx * 3);
-                        
-                        // Get rotation from stored keyframe (not optimizing rotation here)
-                        Matrix3 R_i = keyframes_[from_idx].state.rotation_matrix;
-                        FLOAT dt = imu_data.delta_t;
-                        Vector3 gravity(0, 0, static_cast<FLOAT>(-9.81));
-                        
-                        // Predicted position change
-                        Vector3 predicted_p_j = p_i + keyframes_[from_idx].state.velocity * dt + 
-                                               static_cast<FLOAT>(0.5) * gravity * dt * dt + 
-                                               R_i * imu_data.delta_position;
-                        
-                        // Residual
-                        Vector3 r_imu = p_j - predicted_p_j;
-                        FLOAT imu_weight = static_cast<FLOAT>(10.0);  // Weight IMU constraints higher
-                        
-                        for (int i = 0; i < 3; ++i) {
-                            residuals.push_back(r_imu(i) * imu_weight);
-                        }
-                        
-                        // Jacobian (simplified)
-                        MatrixX J_row = MatrixX::Zero(3, state_dim);
-                        J_row.template block<3, 3>(0, from_idx * 3) = -Matrix3::Identity() * imu_weight;
-                        J_row.template block<3, 3>(0, to_idx * 3) = Matrix3::Identity() * imu_weight;
-                        jacobian_rows.push_back(J_row);
+                    // Get current state estimates
+                    Vector3 p_i = state.template segment<3>(i * 3);
+                    Vector3 p_j = state.template segment<3>((i + 1) * 3);
+                    Vector3 v_i = from_kf.state.velocity;
+                    Vector3 v_j = to_kf.state.velocity;
+                    Matrix3 R_i = from_kf.state.rotation_matrix;
+                    Matrix3 R_j = to_kf.state.rotation_matrix;
+                    
+                    Vector3 gravity(0, 0, static_cast<FLOAT>(-9.81));
+                    FLOAT dt = preint.delta_t;
+                    
+                    // CORRECT IMU residual computation in BODY frame (matching Python lines 780-788)
+                    // Position residual
+                    Vector3 r_p = R_i.transpose() * 
+                        (p_j - p_i - v_i * dt - static_cast<FLOAT>(0.5) * gravity * dt * dt) - 
+                        preint.delta_position;
+                    
+                    // Velocity residual (simplified - not optimizing velocity)
+                    Vector3 r_v = R_i.transpose() * (v_j - v_i - gravity * dt) - preint.delta_velocity;
+                    
+                    // Rotation residual (simplified - not optimizing rotation)
+                    Matrix3 R_error = preint.delta_rotation.transpose() * R_i.transpose() * R_j;
+                    Vector3 r_R = so3_log(R_error);
+                    
+                    // Weight IMU constraints
+                    FLOAT imu_weight = static_cast<FLOAT>(10.0);
+                    
+                    // Add position residual only (simplified optimization)
+                    for (int k = 0; k < 3; ++k) {
+                        residuals.push_back(r_p(k) * imu_weight);
                     }
+                    
+                    // Jacobian for position residual w.r.t positions
+                    MatrixX J_row = MatrixX::Zero(3, state_dim);
+                    J_row.template block<3, 3>(0, i * 3) = -R_i.transpose() * imu_weight;
+                    J_row.template block<3, 3>(0, (i + 1) * 3) = R_i.transpose() * imu_weight;
+                    jacobian_rows.push_back(J_row);
                 }
             }
             
             // 2. Visual constraints
             for (size_t kf_idx = 0; kf_idx < keyframes_.size(); ++kf_idx) {
-                const auto& frame = keyframes_[kf_idx].visual_frame;
+                const auto& kf = keyframes_[kf_idx];
                 
-                for (const auto& meas : frame.measurements) {
+                for (const auto& meas : kf.observations) {
                     if (!meas.is_valid() || lm_idx_map.find(meas.landmark_id) == lm_idx_map.end()) {
                         continue;
                     }
@@ -473,7 +555,7 @@ public:
             current_state_.position = keyframes_.back().state.position;
         }
         
-        total_iterations_ += iteration + 1;
+        num_optimizations_++;
         return iteration + 1;
     }
     
@@ -483,14 +565,38 @@ public:
     std::vector<simulation_io::EstimatedPoseT<FLOAT>> getFullTrajectory() const {
         std::vector<simulation_io::EstimatedPoseT<FLOAT>> trajectory;
         
-        // Use all_poses for complete trajectory
-        for (const auto& state : all_poses_) {
+        // Use trajectory_history for complete trajectory (Python approach)
+        for (const auto& kf : trajectory_history_) {
             simulation_io::EstimatedPoseT<FLOAT> pose;
-            pose.timestamp = state.timestamp;
-            pose.position = state.position;
-            pose.rotation_matrix = state.rotation_matrix;
-            pose.velocity = state.velocity;
+            pose.timestamp = kf.timestamp;
+            pose.position = kf.state.position;
+            pose.rotation_matrix = kf.state.rotation_matrix;
+            pose.velocity = kf.state.velocity;
             trajectory.push_back(pose);
+        }
+        
+        // Also include all_poses if available for inter-keyframe poses
+        if (!all_poses_.empty()) {
+            // Merge all_poses with trajectory_history, avoiding duplicates
+            std::set<FLOAT> existing_timestamps;
+            for (const auto& pose : trajectory) {
+                existing_timestamps.insert(pose.timestamp);
+            }
+            
+            for (const auto& state : all_poses_) {
+                if (existing_timestamps.find(state.timestamp) == existing_timestamps.end()) {
+                    simulation_io::EstimatedPoseT<FLOAT> pose;
+                    pose.timestamp = state.timestamp;
+                    pose.position = state.position;
+                    pose.rotation_matrix = state.rotation_matrix;
+                    pose.velocity = state.velocity;
+                    trajectory.push_back(pose);
+                }
+            }
+            
+            // Sort by timestamp
+            std::sort(trajectory.begin(), trajectory.end(), 
+                     [](const auto& a, const auto& b) { return a.timestamp < b.timestamp; });
         }
         
         // If no poses yet, add current state
@@ -538,6 +644,157 @@ public:
     }
     
 private:
+    /**
+     * Check if a new keyframe should be created (Python lines 394-431)
+     */
+    bool shouldCreateKeyframe(FLOAT timestamp) {
+        if (keyframes_.empty()) {
+            return true;
+        }
+        
+        const Keyframe& last_kf = keyframes_.back();
+        
+        // Time threshold
+        FLOAT time_diff = timestamp - last_kf.timestamp;
+        if (time_diff > config_.keyframe_time_threshold) {
+            return true;
+        }
+        
+        // Translation threshold
+        Vector3 trans_diff = current_state_.position - last_kf.state.position;
+        if (trans_diff.norm() > config_.keyframe_translation_threshold) {
+            return true;
+        }
+        
+        // Rotation threshold
+        Matrix3 R_diff = last_kf.state.rotation_matrix.transpose() * current_state_.rotation_matrix;
+        Vector3 angle_axis = so3_log(R_diff);
+        if (angle_axis.norm() > config_.keyframe_rotation_threshold) {
+            return true;
+        }
+        
+        return false;
+    }
+    
+    /**
+     * Add observations to an existing keyframe (Python lines 433-463)
+     */
+    void addObservationsToKeyframe(Keyframe* keyframe,
+                                   const std::vector<simulation_io::VisualMeasurementT<FLOAT>>& observations,
+                                   const std::unordered_map<int, Vector3>* landmarks) {
+        // Add observations to keyframe
+        keyframe->observations.insert(keyframe->observations.end(), observations.begin(), observations.end());
+        
+        // Track landmarks from observations
+        for (const auto& obs : observations) {
+            // Add to landmark tracking
+            if (landmark_observations_.find(obs.landmark_id) == landmark_observations_.end()) {
+                landmark_observations_[obs.landmark_id] = std::vector<std::pair<int, simulation_io::VisualMeasurementT<FLOAT>>>();
+            }
+            landmark_observations_[obs.landmark_id].push_back({keyframe->id, obs});
+            
+            // Initialize landmark if not known
+            if (landmarks_.find(obs.landmark_id) == landmarks_.end()) {
+                if (landmarks && landmarks->find(obs.landmark_id) != landmarks->end()) {
+                    landmarks_[obs.landmark_id] = landmarks->at(obs.landmark_id);
+                    if (config_.verbose) {
+                        std::cout << "[SimpleSWBA] Initialized landmark " << obs.landmark_id << std::endl;
+                    }
+                }
+            }
+        }
+    }
+    
+    /**
+     * Create a new keyframe (Python lines 464-513)
+     */
+    void createKeyframe(const simulation_io::ProcessedVisualFrameT<FLOAT>& camera_frame,
+                       const std::unordered_map<int, Vector3>* landmarks) {
+        if (config_.verbose) {
+            std::cout << "[SimpleSWBA] Creating keyframe with " << camera_frame.measurements.size() 
+                     << " observations" << std::endl;
+        }
+        
+        // Create new keyframe
+        Keyframe new_kf(next_keyframe_id_, camera_frame.timestamp, current_state_.copy());
+        new_kf.observations = camera_frame.measurements;
+        next_keyframe_id_++;
+        
+        // Add landmarks from observations
+        for (const auto& obs : camera_frame.measurements) {
+            // Add to landmark tracking
+            if (landmark_observations_.find(obs.landmark_id) == landmark_observations_.end()) {
+                landmark_observations_[obs.landmark_id] = std::vector<std::pair<int, simulation_io::VisualMeasurementT<FLOAT>>>();
+            }
+            landmark_observations_[obs.landmark_id].push_back({new_kf.id, obs});
+            
+            // Initialize landmark if not known
+            if (landmarks_.find(obs.landmark_id) == landmarks_.end()) {
+                if (landmarks && landmarks->find(obs.landmark_id) != landmarks->end()) {
+                    landmarks_[obs.landmark_id] = landmarks->at(obs.landmark_id);
+                    if (config_.verbose) {
+                        std::cout << "[SimpleSWBA] Initialized landmark " << obs.landmark_id << std::endl;
+                    }
+                }
+            }
+        }
+        
+        // Add keyframe to window and history
+        keyframes_.push_back(new_kf);
+        trajectory_history_.push_back(new_kf);
+        
+        // Marginalize old keyframe if window is full
+        if (config_.marginalize_old_keyframes && keyframes_.size() > static_cast<size_t>(config_.window_size)) {
+            marginalizeOldest();
+        }
+        
+        if (config_.verbose) {
+            std::cout << "[SimpleSWBA] Created keyframe " << new_kf.id 
+                     << " at time " << camera_frame.timestamp << std::endl;
+        }
+    }
+    
+    /**
+     * Create a minimal keyframe for simplified version without camera measurements (Python lines 515-550)
+     */
+    void createMinimalKeyframe() {
+        // Increment timestamp slightly to ensure chronological order
+        if (!keyframes_.empty()) {
+            // Ensure new timestamp is after the last keyframe
+            current_state_.timestamp = std::max(
+                current_state_.timestamp,
+                keyframes_.back().timestamp + static_cast<FLOAT>(0.001)
+            );
+        }
+        
+        // Create new keyframe with current state
+        Keyframe new_kf(next_keyframe_id_, current_state_.timestamp, current_state_.copy());
+        // No observations in simplified version
+        
+        keyframes_.push_back(new_kf);
+        trajectory_history_.push_back(new_kf);  // Add to full history
+        next_keyframe_id_++;
+        
+        // Trigger optimization if enough keyframes (use window_size/2 as threshold)
+        if (keyframes_.size() >= static_cast<size_t>(std::max(2, config_.window_size / 2))) {
+            if (config_.debug_enabled) {
+                std::cout << "DEBUG: Triggering optimization with " << keyframes_.size() 
+                         << " keyframes" << std::endl;
+            }
+            optimize();
+        }
+        
+        // Marginalize old keyframe if window is full
+        if (config_.marginalize_old_keyframes && keyframes_.size() > static_cast<size_t>(config_.window_size)) {
+            marginalizeOldest();
+        }
+        
+        if (config_.verbose) {
+            std::cout << "[SimpleSWBA] Created minimal keyframe " << new_kf.id 
+                     << " at time " << current_state_.timestamp << std::endl;
+        }
+    }
+    
     /**
      * Initialize new landmarks from measurements
      */
@@ -591,18 +848,30 @@ private:
             return;
         }
         
-        // Remove oldest
+        // Remove oldest keyframe
         int old_id = keyframes_.front().id;
         keyframes_.erase(keyframes_.begin());
-        keyframe_ids_.erase(keyframe_ids_.begin());
         
-        // Remove associated IMU constraints
-        auto it = imu_constraints_.begin();
-        while (it != imu_constraints_.end()) {
-            if (it->first.first == old_id || it->first.second == old_id) {
-                it = imu_constraints_.erase(it);
+        // Remove associated landmark observations
+        for (auto& [lm_id, obs_list] : landmark_observations_) {
+            auto it = obs_list.begin();
+            while (it != obs_list.end()) {
+                if (it->first == old_id) {
+                    it = obs_list.erase(it);
+                } else {
+                    ++it;
+                }
+            }
+        }
+        
+        // Clean up landmarks with no observations
+        auto lm_it = landmark_observations_.begin();
+        while (lm_it != landmark_observations_.end()) {
+            if (lm_it->second.empty()) {
+                landmarks_.erase(lm_it->first);
+                lm_it = landmark_observations_.erase(lm_it);
             } else {
-                ++it;
+                ++lm_it;
             }
         }
         

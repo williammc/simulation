@@ -25,7 +25,7 @@ inline Vector3 json_to_vector3(const json& j) {
     if (!j.is_array() || j.size() != 3) {
         throw std::runtime_error("Invalid Vector3 JSON format");
     }
-    return Vector3(j[0], j[1], j[2]);
+    return Vector3(j.at(0).get<double>(), j.at(1).get<double>(), j.at(2).get<double>());
 }
 
 inline json matrix3x3_to_json(const Matrix3x3& m) {
@@ -50,7 +50,7 @@ inline Matrix3x3 json_to_matrix3x3(const json& j) {
             throw std::runtime_error("Invalid Matrix3x3 row format");
         }
         for (int j_ = 0; j_ < 3; ++j_) {
-            m(i, j_) = j[i][j_];
+            m(i, j_) = j.at(i).at(j_).get<double>();
         }
     }
     return m;
@@ -78,7 +78,7 @@ inline Matrix4x4 json_to_matrix4x4(const json& j) {
             throw std::runtime_error("Invalid Matrix4x4 row format");
         }
         for (int j_ = 0; j_ < 4; ++j_) {
-            m(i, j_) = j[i][j_];
+            m(i, j_) = j.at(i).at(j_).get<double>();
         }
     }
     return m;
@@ -86,11 +86,12 @@ inline Matrix4x4 json_to_matrix4x4(const json& j) {
 
 inline VectorX json_to_vectorx(const json& j, int expected_size = -1) {
     if (!j.is_array()) {
-        throw std::runtime_error("Invalid VectorX JSON format");
+        throw std::runtime_error("Invalid VectorX JSON format - not an array");
     }
     
     // Handle 2D array (needs flattening) or 1D array
-    if (!j.empty() && j[0].is_array()) {
+    try {
+        if (!j.empty() && j.at(0).is_array()) {
         // It's a 2D array, flatten it
         std::vector<double> flat;
         for (const auto& row : j) {
@@ -107,9 +108,12 @@ inline VectorX json_to_vectorx(const json& j, int expected_size = -1) {
         // It's already a 1D array
         VectorX v(j.size());
         for (size_t i = 0; i < j.size(); ++i) {
-            v(i) = j[i];
+            v(i) = j.at(i).get<double>();
         }
         return v;
+    }
+    } catch (const json::exception& e) {
+        throw std::runtime_error(std::string("Error in json_to_vectorx: ") + e.what());
     }
 }
 
@@ -290,28 +294,36 @@ public:
         }
         
         json j;
-        file >> j;
+        try {
+            file >> j;
+        } catch (const json::exception& e) {
+            throw std::runtime_error(std::string("Error parsing JSON: ") + e.what());
+        }
         file.close();
         
         SimulationData data;
         
-        // Load metadata
-        if (j.contains("metadata")) {
-            const auto& meta = j["metadata"];
-            if (meta.contains("version")) data.metadata.version = meta["version"];
-            if (meta.contains("timestamp")) data.metadata.timestamp = meta["timestamp"];
-            if (meta.contains("trajectory_type")) data.metadata.trajectory_type = meta["trajectory_type"];
-            if (meta.contains("duration")) data.metadata.duration = meta["duration"];
-            if (meta.contains("coordinate_system")) data.metadata.coordinate_system = meta["coordinate_system"];
-            if (meta.contains("seed") && !meta["seed"].is_null()) {
-                data.metadata.seed = meta["seed"];
+        try {
+            // Load metadata
+            if (j.contains("metadata")) {
+                const auto& meta = j["metadata"];
+                if (meta.contains("version")) data.metadata.version = meta["version"];
+                if (meta.contains("timestamp")) data.metadata.timestamp = meta["timestamp"];
+                if (meta.contains("trajectory_type")) data.metadata.trajectory_type = meta["trajectory_type"];
+                if (meta.contains("duration")) data.metadata.duration = meta["duration"];
+                if (meta.contains("coordinate_system")) data.metadata.coordinate_system = meta["coordinate_system"];
+                if (meta.contains("seed") && !meta["seed"].is_null()) {
+                    data.metadata.seed = meta["seed"];
+                }
+                
+                if (meta.contains("units")) {
+                    if (meta["units"].contains("position")) data.metadata.units.position = meta["units"]["position"];
+                    if (meta["units"].contains("rotation")) data.metadata.units.rotation = meta["units"]["rotation"];
+                    if (meta["units"].contains("time")) data.metadata.units.time = meta["units"]["time"];
+                }
             }
-            
-            if (meta.contains("units")) {
-                if (meta["units"].contains("position")) data.metadata.units.position = meta["units"]["position"];
-                if (meta["units"].contains("rotation")) data.metadata.units.rotation = meta["units"]["rotation"];
-                if (meta["units"].contains("time")) data.metadata.units.time = meta["units"]["time"];
-            }
+        } catch (const json::exception& e) {
+            throw std::runtime_error(std::string("Error loading metadata: ") + e.what());
         }
         
         // Load calibration
@@ -438,7 +450,14 @@ public:
                             CameraObservation obs;
                             obs.landmark_id = obs_json["landmark_id"];
                             const auto& pixel = obs_json["pixel"];
-                            obs.pixel = ImagePoint(pixel[0], pixel[1]);
+                            // Handle both array format [u, v] and object format {u: ..., v: ...}
+                            if (pixel.is_array()) {
+                                obs.pixel = ImagePoint(pixel[0], pixel[1]);
+                            } else if (pixel.is_object()) {
+                                obs.pixel = ImagePoint(pixel["u"], pixel["v"]);
+                            } else {
+                                throw std::runtime_error("Invalid pixel format in observation");
+                            }
                             if (obs_json.contains("descriptor")) {
                                 obs.descriptor = obs_json["descriptor"].get<std::vector<double>>();
                             }

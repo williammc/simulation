@@ -10,20 +10,8 @@ target_link_libraries(save_estimator_result PRIVATE simulation_io)
 add_executable(verify_landmark_observations verify_landmark_observations.cpp)
 target_link_libraries(verify_landmark_observations PRIVATE simulation_io)
 
-add_executable(mock_estimator mock_estimator.cpp)
-target_link_libraries(mock_estimator PRIVATE simulation_io)
-# Add thread support for sleep_for
-find_package(Threads REQUIRED)
-target_link_libraries(mock_estimator PRIVATE Threads::Threads)
-
 add_executable(template_usage_example template_usage_example.cpp)
 target_link_libraries(template_usage_example PRIVATE simulation_io)
-
-add_executable(swba_example swba_example.cpp)
-target_link_libraries(swba_example PRIVATE simulation_io)
-
-add_executable(run_swba_estimator run_swba_estimator.cpp)
-target_link_libraries(run_swba_estimator PRIVATE simulation_io)
 
 add_executable(run_simple_swba_estimator run_simple_swba_estimator.cpp)
 target_link_libraries(run_simple_swba_estimator PRIVATE simulation_io)

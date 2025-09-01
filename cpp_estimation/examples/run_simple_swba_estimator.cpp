@@ -217,7 +217,9 @@ int main(int argc, char* argv[]) {
     
     SimulationData sim_data;
     try {
+        std::cout << "  Opening file: " << args.input_file << std::endl;
         sim_data = JsonIO::load(args.input_file);
+        std::cout << "  Successfully loaded!" << std::endl;
         std::cout << "  Trajectory states: " << sim_data.trajectory.size() << std::endl;
         std::cout << "  Landmarks: " << sim_data.landmarks.size() << std::endl;
         std::cout << "  Camera frames: " << sim_data.camera_frames.size() << std::endl;
@@ -227,13 +229,28 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     
-    // Configure estimator
+    // Configure estimator (matching Python SWBA)
     SimpleSWBAEstimator<double>::Config config;
     config.window_size = 10;
-    config.keyframe_spacing = 5;  // Process keyframe every 5 frames
+    config.marginalize_old_keyframes = true;
+    
+    // Keyframe selection parameters
+    config.use_keyframes_only = false;  // Use internal keyframe selection
+    config.keyframe_time_threshold = 0.5;  // seconds
+    config.keyframe_translation_threshold = 0.2;  // meters
+    config.keyframe_rotation_threshold = 0.2;  // radians
+    
+    // Optimization parameters
     config.max_iterations = 10;
+    config.convergence_threshold = 1e-4;
+    config.damping_factor = 0.01;
+    
+    // Visual measurement parameters
     config.ideal_coord_weight = 10.0;
     config.pixel_coord_weight = 1.0;
+    config.min_measurements = 5;
+    
+    // Debug/logging
     config.verbose = args.verbose;
     config.debug_enabled = true;
     
@@ -385,7 +402,10 @@ int main(int argc, char* argv[]) {
     result.metadata["estimator_variant"] = json("simple_swba");
     result.metadata["ideal_coordinates"] = json(args.use_ideal_coordinates);
     result.metadata["window_size"] = json(config.window_size);
-    result.metadata["keyframe_spacing"] = json(config.keyframe_spacing);
+    result.metadata["use_keyframes_only"] = json(config.use_keyframes_only);
+    result.metadata["keyframe_time_threshold"] = json(config.keyframe_time_threshold);
+    result.metadata["keyframe_translation_threshold"] = json(config.keyframe_translation_threshold);
+    result.metadata["keyframe_rotation_threshold"] = json(config.keyframe_rotation_threshold);
     result.metadata["num_frames_processed"] = json(frame_idx);
     
     // Add simulation info

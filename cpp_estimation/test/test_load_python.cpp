@@ -6,8 +6,17 @@
 using namespace simulation_io;
 using json = nlohmann::json;
 
-int main() {
-    std::string filepath = "../../data/trajectories/circle_easy.json";
+int main(int argc, char* argv[]) {
+    std::string filepath;
+    
+    // Accept input path from command line, or use default
+    if (argc > 1) {
+        filepath = argv[1];
+    } else {
+        filepath = "../../data/trajectories/circle_easy.json";
+        std::cout << "Usage: " << argv[0] << " <json_file>" << std::endl;
+        std::cout << "Using default: " << filepath << std::endl;
+    }
     
     std::cout << "Testing Python data compatibility..." << std::endl;
     std::cout << "Loading: " << filepath << std::endl;
@@ -86,8 +95,22 @@ int main() {
         }
         
         std::cout << "\nNow trying full load with JsonIO..." << std::endl;
-        SimulationData data = JsonIO::load(filepath);
-        std::cout << "SUCCESS! Loaded " << data.trajectory.size() << " trajectory states" << std::endl;
+        try {
+            SimulationData data = JsonIO::load(filepath);
+            std::cout << "SUCCESS! Loaded:" << std::endl;
+            std::cout << "  - Trajectory states: " << data.trajectory.size() << std::endl;
+            std::cout << "  - Landmarks: " << data.landmarks.size() << std::endl;
+            std::cout << "  - Camera frames: " << data.camera_frames.size() << std::endl;
+            std::cout << "  - IMU measurements: " << data.imu_measurements.size() << std::endl;
+            std::cout << "  - Preintegrated IMU: " << data.preintegrated_imu.size() << std::endl;
+        } catch (const json::exception& je) {
+            std::cerr << "JsonIO load failed with JSON error: " << je.what() << std::endl;
+            std::cerr << "Error ID: " << je.id << std::endl;
+            throw;
+        } catch (const std::exception& e) {
+            std::cerr << "JsonIO load failed: " << e.what() << std::endl;
+            throw;
+        }
         
     } catch (const json::exception& e) {
         std::cerr << "JSON error: " << e.what() << std::endl;
