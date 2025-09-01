@@ -9,8 +9,8 @@
 #include <optional>
 #include <algorithm>
 #include <iostream>
-#include <random>
 #include <set>
+#include <random>
 
 #include "simulation_io/preprocessed_interfaces.hpp"
 #include "simulation_io/estimator_result_io.hpp"
@@ -59,6 +59,7 @@ public:
         int max_iterations = 10;                 // Max optimization iterations
         FLOAT convergence_threshold = static_cast<FLOAT>(1e-4);  // Convergence threshold
         FLOAT damping_factor = static_cast<FLOAT>(0.01);         // Levenberg-Marquardt damping
+        FLOAT lambda_factor = static_cast<FLOAT>(10.0);          // LM damping adjustment factor
         
         // Visual measurement parameters
         int min_measurements = 5;                // Minimum measurements for update
@@ -137,7 +138,49 @@ private:
     int num_optimizations_;
     FLOAT last_optimization_cost_;
     
+    // For normally distributed noise to match Python's randn
+    std::default_random_engine generator_;
+    std::normal_distribution<FLOAT> pos_noise_dist_{static_cast<FLOAT>(0.0), static_cast<FLOAT>(0.01)};
+    std::normal_distribution<FLOAT> vel_noise_dist_{static_cast<FLOAT>(0.0), static_cast<FLOAT>(0.001)};
+
     bool initialized_;
+    
+    // SO(3) helper functions
+    static Matrix3 skew_symmetric(const Vector3& v) {
+        Matrix3 S;
+        S << static_cast<FLOAT>(0), -v(2), v(1),
+             v(2), static_cast<FLOAT>(0), -v(0),
+             -v(1), v(0), static_cast<FLOAT>(0);
+        return S;
+    }
+    
+    static Vector3 so3_log(const Matrix3& R) {
+        FLOAT trace = R.trace();
+        if (trace >= static_cast<FLOAT>(3.0 - 1e-6)) {
+            // Near identity
+            return static_cast<FLOAT>(0.5) * Vector3(R(2,1) - R(1,2), 
+                                                      R(0,2) - R(2,0), 
+                                                      R(1,0) - R(0,1));
+        }
+        
+        FLOAT theta = std::acos((trace - static_cast<FLOAT>(1.0)) * static_cast<FLOAT>(0.5));
+        Vector3 axis = static_cast<FLOAT>(1.0 / (2.0 * std::sin(theta))) * 
+                      Vector3(R(2,1) - R(1,2), R(0,2) - R(2,0), R(1,0) - R(0,1));
+        return theta * axis;
+    }
+    
+    static Matrix3 so3_exp(const Vector3& w) {
+        FLOAT theta = w.norm();
+        if (theta < static_cast<FLOAT>(1e-6)) {
+            // Small angle approximation
+            return Matrix3::Identity() + skew_symmetric(w);
+        }
+        
+        Vector3 axis = w / theta;
+        Matrix3 K = skew_symmetric(axis);
+        return Matrix3::Identity() + std::sin(theta) * K + 
+               (static_cast<FLOAT>(1.0) - std::cos(theta)) * K * K;
+    }
     
 public:
     /**
@@ -195,6 +238,15 @@ public:
             return;
         }
         
+        if (config_.debug_enabled) {
+            std::cout << "\n=== C++ SWBA predict() ===" << std::endl;
+            std::cout << "Preintegration from frame " << preintegrated.from_frame_id 
+                     << " to " << preintegrated.to_frame_id << std::endl;
+            std::cout << "Delta_t: " << preintegrated.delta_t << std::endl;
+            std::cout << "Delta_position: " << preintegrated.delta_position.transpose() << std::endl;
+            std::cout << "Delta_velocity: " << preintegrated.delta_velocity.transpose() << std::endl;
+        }
+        
         // Create keyframes if they don't exist yet (Python lines 252-276)
         // This happens when we have preintegrated IMU but no camera frames
         while (next_keyframe_id_ <= preintegrated.to_frame_id) {
@@ -212,6 +264,10 @@ public:
             keyframes_.push_back(kf);
             trajectory_history_.push_back(kf);  // Add to full history
             next_keyframe_id_++;
+            
+            if (config_.debug_enabled) {
+                std::cout << "Created keyframe " << kf.id << " at timestamp " << kf_timestamp << std::endl;
+            }
         }
         
         // Find the keyframes this preintegration corresponds to (Python lines 278-286)
@@ -237,32 +293,35 @@ public:
                 Matrix3 R_old = from_kf->state.rotation_matrix;
                 Vector3 gravity(0, 0, static_cast<FLOAT>(-9.81));
                 
-                // Add small initialization noise to create non-zero residuals
-                std::default_random_engine generator;
-                std::normal_distribution<FLOAT> distribution(0.0, 1.0);
-                Vector3 position_noise(distribution(generator) * static_cast<FLOAT>(0.01),
-                                      distribution(generator) * static_cast<FLOAT>(0.01),
-                                      distribution(generator) * static_cast<FLOAT>(0.01));
-                Vector3 velocity_noise(distribution(generator) * static_cast<FLOAT>(0.001),
-                                      distribution(generator) * static_cast<FLOAT>(0.001),
-                                      distribution(generator) * static_cast<FLOAT>(0.001));
+                // Add small initialization noise to match Python (lines 310-311)
+                Vector3 position_noise(pos_noise_dist_(generator_), pos_noise_dist_(generator_), pos_noise_dist_(generator_));
+                Vector3 velocity_noise(vel_noise_dist_(generator_), vel_noise_dist_(generator_), vel_noise_dist_(generator_));
                 
-                // CORRECT position equation (Python lines 313-317)
+                // FIX: Restore gravity terms to match the optimization model and Python version
                 to_kf->state.position = from_kf->state.position + 
                     from_kf->state.velocity * preintegrated.delta_t +
                     R_old * preintegrated.delta_position +
-                    static_cast<FLOAT>(0.5) * gravity * preintegrated.delta_t * preintegrated.delta_t +
+                    static_cast<FLOAT>(0.5) * gravity * preintegrated.delta_t * preintegrated.delta_t + // Add this back
                     position_noise;
                 
-                // CORRECT velocity equation (Python lines 318-321)
+                // FIX: Restore gravity terms to match the optimization model and Python version
                 to_kf->state.velocity = from_kf->state.velocity +
                     R_old * preintegrated.delta_velocity +
-                    gravity * preintegrated.delta_t +
+                    gravity * preintegrated.delta_t + // Add this back
                     velocity_noise;
                 
                 // Rotation propagation (Python line 322)
                 to_kf->state.rotation_matrix = R_old * preintegrated.delta_rotation;
                 to_kf->state.timestamp = from_kf->state.timestamp + preintegrated.delta_t;
+                
+                if (config_.debug_enabled) {
+                    std::cout << "Propagated state from keyframe " << from_kf->id 
+                             << " to " << to_kf->id << std::endl;
+                    std::cout << "  From position: " << from_kf->state.position.transpose() << std::endl;
+                    std::cout << "  To position: " << to_kf->state.position.transpose() << std::endl;
+                    std::cout << "  From velocity: " << from_kf->state.velocity.transpose() << std::endl;
+                    std::cout << "  To velocity: " << to_kf->state.velocity.transpose() << std::endl;
+                }
                 
                 // Update current state to match the latest keyframe (Python lines 326-333)
                 current_state_ = to_kf->state.copy();
@@ -274,8 +333,7 @@ public:
             }
         }
         
-        // Store all poses for complete trajectory
-        all_poses_.push_back(current_state_);
+        // Poses are now stored at the beginning of update()
         
         if (config_.verbose) {
             std::cout << "[SimpleSWBA] Predicted with preintegration from frame " 
@@ -311,6 +369,10 @@ public:
             return;
         }
         
+        // Update timestamp only - don't store poses here as Python doesn't
+        current_state_.timestamp = camera_frame->timestamp;
+        // NOTE: Python doesn't store poses in update() - trajectory comes from keyframes only
+        
         // If we have observations, add them to the most recent keyframe
         // instead of creating a new one (to avoid timestamp conflicts) (Python lines 358-375)
         if (!camera_frame->measurements.empty() && !keyframes_.empty()) {
@@ -332,6 +394,7 @@ public:
                     std::cout << "[SimpleSWBA] Added " << camera_frame->measurements.size() 
                              << " observations to keyframe " << best_kf->id << std::endl;
                 }
+                // Current state already stored at beginning of update()
                 return;
             }
         }
@@ -378,6 +441,153 @@ public:
         return update(visual_frame, &simple_landmarks);
     }
     
+private:
+    /**
+     * Helper function for optimization: computes residuals and Jacobians for a given state.
+     * This is refactored from the main optimize() loop to support the LM algorithm.
+     * It is marked 'const' as it does not modify the estimator's state.
+     */
+    void compute_residuals_and_jacobian(
+        const VectorX& state,
+        const std::unordered_map<int, int>& lm_idx_map,
+        VectorX& r,
+        MatrixX& J) const
+    {
+        const size_t num_kf = keyframes_.size();
+        const int state_dim = state.size();
+
+        std::vector<FLOAT> residuals_list;
+        std::vector<Eigen::Matrix<FLOAT, -1, -1, Eigen::RowMajor>> jacobian_rows_list;
+
+        // 1. IMU constraints
+        for (size_t i = 0; i < keyframes_.size() - 1; ++i) {
+            const Keyframe& from_kf = keyframes_[i];
+
+            if (from_kf.imu_preintegration.has_value()) {
+                const auto& preint = from_kf.imu_preintegration.value();
+                int idx_i = i * 15;
+                int idx_j = (i + 1) * 15;
+
+                Vector3 p_i = state.template segment<3>(idx_i);
+                Vector3 v_i = state.template segment<3>(idx_i + 3);
+                Vector3 theta_i = state.template segment<3>(idx_i + 6);
+                Vector3 p_j = state.template segment<3>(idx_j);
+                Vector3 v_j = state.template segment<3>(idx_j + 3);
+                Vector3 theta_j = state.template segment<3>(idx_j + 6);
+
+                Matrix3 R_i = so3_exp(theta_i);
+                Vector3 gravity(0, 0, static_cast<FLOAT>(-9.81));
+                FLOAT dt = preint.delta_t;
+
+                Vector3 r_p = R_i.transpose() * (p_j - p_i - v_i * dt - static_cast<FLOAT>(0.5) * gravity * dt * dt) - preint.delta_position;
+                Vector3 r_v = R_i.transpose() * (v_j - v_i - gravity * dt) - preint.delta_velocity;
+                Vector3 r_R = so3_log(preint.delta_rotation.transpose() * R_i.transpose() * so3_exp(theta_j));
+
+                FLOAT imu_weight = static_cast<FLOAT>(10.0);
+                for (int k = 0; k < 3; ++k) residuals_list.push_back(r_p(k) * imu_weight);
+                for (int k = 0; k < 3; ++k) residuals_list.push_back(r_v(k) * imu_weight);
+                for (int k = 0; k < 3; ++k) residuals_list.push_back(r_R(k) * imu_weight);
+
+                // Skip Jacobian computation if J has zero rows (just computing cost)
+                if (J.rows() > 0) {
+                    MatrixX J_i = MatrixX::Zero(9, 15);
+                    MatrixX J_j = MatrixX::Zero(9, 15);
+                    J_i.template block<3, 3>(0, 0) = -R_i.transpose();
+                    J_i.template block<3, 3>(0, 3) = -R_i.transpose() * dt;
+                    J_i.template block<3, 3>(0, 6) = skew_symmetric(R_i.transpose() * (p_j - p_i - v_i * dt - static_cast<FLOAT>(0.5) * gravity * dt * dt));
+                    J_j.template block<3, 3>(0, 0) = R_i.transpose();
+                    J_i.template block<3, 3>(3, 3) = -R_i.transpose();
+                    J_i.template block<3, 3>(3, 6) = skew_symmetric(R_i.transpose() * (v_j - v_i - gravity * dt));
+                    J_j.template block<3, 3>(3, 3) = R_i.transpose();
+                    J_i.template block<3, 3>(6, 6) = -Matrix3::Identity();
+                    J_j.template block<3, 3>(6, 6) = Matrix3::Identity();
+                    J_i *= imu_weight;
+                    J_j *= imu_weight;
+
+                    MatrixX J_row = MatrixX::Zero(9, state_dim);
+                    J_row.template block<9, 15>(0, i * 15) = J_i;
+                    J_row.template block<9, 15>(0, (i + 1) * 15) = J_j;
+                    jacobian_rows_list.push_back(J_row);
+                }
+            }
+        }
+
+        // 2. Visual constraints
+        for (size_t kf_idx = 0; kf_idx < keyframes_.size(); ++kf_idx) {
+            const auto& kf = keyframes_[kf_idx];
+            for (const auto& meas : kf.observations) {
+                if (!meas.is_valid() || lm_idx_map.find(meas.landmark_id) == lm_idx_map.end()) {
+                    continue;
+                }
+                int lm_idx = lm_idx_map.at(meas.landmark_id);
+
+                FLOAT weight;
+                Vector2 r_vis;
+                Eigen::Matrix<FLOAT, 2, 6> J_pose;
+                Eigen::Matrix<FLOAT, 2, 3> J_lm;
+
+                if (meas.has_ideal_coordinates() && meas.ideal_residual.has_value()) {
+                    r_vis = meas.ideal_residual.value();
+                    if (J.rows() > 0) {
+                        J_pose = meas.ideal_jacobian_wrt_pose.value_or(Eigen::Matrix<FLOAT, 2, 6>::Zero());
+                        J_lm = meas.ideal_jacobian_wrt_landmark.value_or(Eigen::Matrix<FLOAT, 2, 3>::Zero());
+                    }
+                    weight = config_.ideal_coord_weight;
+                } else {
+                    r_vis = meas.residual;
+                    if (J.rows() > 0) {
+                        J_pose = meas.jacobian_wrt_pose.value_or(Eigen::Matrix<FLOAT, 2, 6>::Zero());
+                        J_lm = meas.jacobian_wrt_landmark.value_or(Eigen::Matrix<FLOAT, 2, 3>::Zero());
+                    }
+                    weight = config_.pixel_coord_weight;
+                }
+                weight *= meas.robust_weight;
+
+                residuals_list.push_back(r_vis(0) * weight);
+                residuals_list.push_back(r_vis(1) * weight);
+
+                if (J.rows() > 0) {
+                    MatrixX J_row = MatrixX::Zero(2, state_dim);
+                    // DEBUG: Try Python's convention - J_pose has [rotation(0:3), position(3:6)]
+                    // State vector: [..., position, velocity, rotation, ...]
+                    // Map: position from J_pose cols 3-5, rotation from J_pose cols 0-2
+                    J_row.template block<2, 3>(0, kf_idx * 15) = J_pose.template block<2, 3>(0, 3) * weight;      // position from cols 3-5
+                    J_row.template block<2, 3>(0, kf_idx * 15 + 6) = J_pose.template block<2, 3>(0, 0) * weight;  // rotation from cols 0-2
+                    J_row.template block<2, 3>(0, num_kf * 15 + lm_idx * 3) = J_lm * weight;
+                    
+                    // Debug first visual Jacobian
+                    if (config_.debug_enabled && kf_idx == 0 && lm_idx == 0) {
+                        std::cout << "Visual Jacobian for first measurement:" << std::endl;
+                        std::cout << "  J_pose: " << J_pose << std::endl;
+                        std::cout << "  J_lm: " << J_lm << std::endl;
+                        std::cout << "  Residual: " << r_vis.transpose() << std::endl;
+                    }
+                    
+                    jacobian_rows_list.push_back(J_row);
+                }
+            }
+        }
+
+        if (residuals_list.empty()) {
+            r.resize(0);
+            if (J.rows() > 0) J.resize(0, state_dim);
+            return;
+        }
+
+        r = Eigen::Map<VectorX>(residuals_list.data(), residuals_list.size());
+        
+        if (J.rows() > 0) {
+            J.resize(r.size(), state_dim);
+            J.setZero();
+            size_t row_offset = 0;
+            for (const auto& J_row : jacobian_rows_list) {
+                J.middleRows(row_offset, J_row.rows()) = J_row;
+                row_offset += J_row.rows();
+            }
+        }
+    }
+
+public:
     /**
      * Bundle adjustment optimization over sliding window
      * 
@@ -393,14 +603,24 @@ public:
         size_t num_kf = keyframes_.size();
         size_t num_lm = landmarks_.size();
         
-        // State vector: [kf_positions..., landmark_positions...]
-        // Simplified: only optimize positions (3 DOF each)
-        int state_dim = num_kf * 3 + num_lm * 3;
+        if (config_.debug_enabled) {
+            std::cout << "\n=== C++ SWBA optimize() ===" << std::endl;
+            std::cout << "Optimizing with " << num_kf << " keyframes and " 
+                     << num_lm << " landmarks" << std::endl;
+        }
+        
+        // State vector: [kf_states..., landmark_positions...]
+        int state_dim = num_kf * 15 + num_lm * 3;  // 15 DOF per keyframe like Python!
         VectorX state = VectorX::Zero(state_dim);
         
-        // Initialize state
+        // Initialize state with full 15 DOF per keyframe (matching Python lines 606-615)
         for (size_t i = 0; i < num_kf; ++i) {
-            state.template segment<3>(i * 3) = keyframes_[i].state.position;
+            int kf_idx = i * 15;
+            state.template segment<3>(kf_idx) = keyframes_[i].state.position;           // position
+            state.template segment<3>(kf_idx + 3) = keyframes_[i].state.velocity;       // velocity
+            state.template segment<3>(kf_idx + 6) = so3_log(keyframes_[i].state.rotation_matrix); // rotation
+            state.template segment<3>(kf_idx + 9) = keyframes_[i].state.bias_accel;     // accel bias
+            state.template segment<3>(kf_idx + 12) = keyframes_[i].state.bias_gyro;     // gyro bias
         }
         
         std::vector<int> lm_ids;
@@ -408,157 +628,100 @@ public:
         for (const auto& [lid, pos] : landmarks_) {
             lm_ids.push_back(lid);
             lm_idx_map[lid] = lm_ids.size() - 1;
-            state.template segment<3>(num_kf * 3 + (lm_ids.size() - 1) * 3) = pos;
+            state.template segment<3>(num_kf * 15 + (lm_ids.size() - 1) * 3) = pos;  // Offset by 15*num_kf now!
         }
         
-        // Gauss-Newton optimization
+        // Levenberg-Marquardt optimization
+        FLOAT lambda = config_.damping_factor;
         int iteration;
         for (iteration = 0; iteration < config_.max_iterations; ++iteration) {
-            std::vector<FLOAT> residuals;
-            std::vector<Eigen::Matrix<FLOAT, -1, -1, Eigen::RowMajor>> jacobian_rows;
-            
-            // 1. IMU constraints between consecutive keyframes
-            for (size_t i = 0; i < keyframes_.size() - 1; ++i) {
-                const Keyframe& from_kf = keyframes_[i];
-                const Keyframe& to_kf = keyframes_[i + 1];
-                
-                if (from_kf.imu_preintegration.has_value()) {
-                    const auto& preint = from_kf.imu_preintegration.value();
-                    
-                    // Get current state estimates
-                    Vector3 p_i = state.template segment<3>(i * 3);
-                    Vector3 p_j = state.template segment<3>((i + 1) * 3);
-                    Vector3 v_i = from_kf.state.velocity;
-                    Vector3 v_j = to_kf.state.velocity;
-                    Matrix3 R_i = from_kf.state.rotation_matrix;
-                    Matrix3 R_j = to_kf.state.rotation_matrix;
-                    
-                    Vector3 gravity(0, 0, static_cast<FLOAT>(-9.81));
-                    FLOAT dt = preint.delta_t;
-                    
-                    // CORRECT IMU residual computation in BODY frame (matching Python lines 780-788)
-                    // Position residual
-                    Vector3 r_p = R_i.transpose() * 
-                        (p_j - p_i - v_i * dt - static_cast<FLOAT>(0.5) * gravity * dt * dt) - 
-                        preint.delta_position;
-                    
-                    // Velocity residual (simplified - not optimizing velocity)
-                    Vector3 r_v = R_i.transpose() * (v_j - v_i - gravity * dt) - preint.delta_velocity;
-                    
-                    // Rotation residual (simplified - not optimizing rotation)
-                    Matrix3 R_error = preint.delta_rotation.transpose() * R_i.transpose() * R_j;
-                    Vector3 r_R = so3_log(R_error);
-                    
-                    // Weight IMU constraints
-                    FLOAT imu_weight = static_cast<FLOAT>(10.0);
-                    
-                    // Add position residual only (simplified optimization)
-                    for (int k = 0; k < 3; ++k) {
-                        residuals.push_back(r_p(k) * imu_weight);
-                    }
-                    
-                    // Jacobian for position residual w.r.t positions
-                    MatrixX J_row = MatrixX::Zero(3, state_dim);
-                    J_row.template block<3, 3>(0, i * 3) = -R_i.transpose() * imu_weight;
-                    J_row.template block<3, 3>(0, (i + 1) * 3) = R_i.transpose() * imu_weight;
-                    jacobian_rows.push_back(J_row);
-                }
-            }
-            
-            // 2. Visual constraints
-            for (size_t kf_idx = 0; kf_idx < keyframes_.size(); ++kf_idx) {
-                const auto& kf = keyframes_[kf_idx];
-                
-                for (const auto& meas : kf.observations) {
-                    if (!meas.is_valid() || lm_idx_map.find(meas.landmark_id) == lm_idx_map.end()) {
-                        continue;
-                    }
-                    
-                    int lm_idx = lm_idx_map[meas.landmark_id];
-                    
-                    // Use ideal coordinates if available
-                    FLOAT weight;
-                    Vector2 r;
-                    Eigen::Matrix<FLOAT, 2, 6> J_pose;
-                    Eigen::Matrix<FLOAT, 2, 3> J_lm;
-                    
-                    if (meas.has_ideal_coordinates() && meas.ideal_residual.has_value()) {
-                        r = meas.ideal_residual.value();
-                        J_pose = meas.ideal_jacobian_wrt_pose.value_or(Eigen::Matrix<FLOAT, 2, 6>::Zero());
-                        J_lm = meas.ideal_jacobian_wrt_landmark.value_or(Eigen::Matrix<FLOAT, 2, 3>::Zero());
-                        weight = config_.ideal_coord_weight;
-                    } else {
-                        r = meas.residual;
-                        J_pose = meas.jacobian_wrt_pose.value_or(Eigen::Matrix<FLOAT, 2, 6>::Zero());
-                        J_lm = meas.jacobian_wrt_landmark.value_or(Eigen::Matrix<FLOAT, 2, 3>::Zero());
-                        weight = config_.pixel_coord_weight;
-                    }
-                    
-                    // Apply robust weight from preprocessing
-                    weight *= meas.robust_weight;
-                    
-                    residuals.push_back(r(0) * weight);
-                    residuals.push_back(r(1) * weight);
-                    
-                    // Build Jacobian row (only position part)
-                    MatrixX J_row = MatrixX::Zero(2, state_dim);
-                    J_row.template block<2, 3>(0, kf_idx * 3) = J_pose.template block<2, 3>(0, 0) * weight;
-                    J_row.template block<2, 3>(0, num_kf * 3 + lm_idx * 3) = J_lm * weight;
-                    jacobian_rows.push_back(J_row);
-                }
-            }
-            
-            if (residuals.empty()) {
+            VectorX r;
+            MatrixX J = MatrixX::Zero(1, state_dim);  // Initialize with non-zero size
+            compute_residuals_and_jacobian(state, lm_idx_map, r, J);
+
+            if (r.size() == 0) {
                 break;
             }
             
-            // Stack and solve
-            VectorX r = Eigen::Map<VectorX>(residuals.data(), residuals.size());
-            MatrixX J = MatrixX::Zero(r.size(), state_dim);
-            
-            size_t row_offset = 0;
-            for (const auto& J_row : jacobian_rows) {
-                J.middleRows(row_offset, J_row.rows()) = J_row;
-                row_offset += J_row.rows();
+            FLOAT cost = static_cast<FLOAT>(0.5) * r.dot(r);
+            if (config_.debug_enabled && iteration == 0) {
+                std::cout << "Optimization iteration 0:" << std::endl;
+                std::cout << "  Number of residuals: " << r.size() << std::endl;
+                std::cout << "  Initial cost: " << cost << std::endl;
+                std::cout << "  Residual norm: " << r.norm() << std::endl;
             }
             
-            // Levenberg-Marquardt
-            MatrixX H = J.transpose() * J + config_.damping_factor * MatrixX::Identity(state_dim, state_dim);
+            MatrixX H = J.transpose() * J + lambda * MatrixX::Identity(state_dim, state_dim);
             VectorX g = -J.transpose() * r;
             
-            // Solve
             VectorX delta = H.ldlt().solve(g);
             
-            // Update state
-            state += delta;
+            VectorX state_new = state + delta;
+
+            VectorX r_new;
+            MatrixX J_dummy = MatrixX::Zero(0, 0); // Empty matrix to skip Jacobian computation
+            compute_residuals_and_jacobian(state_new, lm_idx_map, r_new, J_dummy);
+            FLOAT cost_new = static_cast<FLOAT>(0.5) * r_new.dot(r_new);
+
+            if (cost_new < cost) {
+                state = state_new;
+                lambda /= config_.lambda_factor;
+            } else {
+                lambda *= config_.lambda_factor;
+            }
             
-            // Check convergence
             if (delta.norm() < config_.convergence_threshold) {
-                if (config_.verbose) {
-                    std::cout << "[SimpleSWBA] Converged at iteration " << iteration << std::endl;
+                if (config_.verbose || config_.debug_enabled) {
+                    std::cout << "[SimpleSWBA] Converged at iteration " << iteration 
+                             << ", delta norm: " << delta.norm() << std::endl;
                 }
                 break;
             }
         }
         
-        // Update estimates
+        // Update estimates with full 15 DOF state (Python lines 1040-1046)
         for (size_t i = 0; i < num_kf; ++i) {
-            keyframes_[i].state.position = state.template segment<3>(i * 3);
+            Vector3 old_pos = keyframes_[i].state.position;
+            int idx = i * 15;
+            
+            keyframes_[i].state.position = state.template segment<3>(idx);           // position
+            keyframes_[i].state.velocity = state.template segment<3>(idx + 3);       // velocity
+            keyframes_[i].state.rotation_matrix = so3_exp(state.template segment<3>(idx + 6)); // rotation
+            keyframes_[i].state.bias_accel = state.template segment<3>(idx + 9);     // accel bias
+            keyframes_[i].state.bias_gyro = state.template segment<3>(idx + 12);     // gyro bias
+            
+            if (config_.debug_enabled && i < 2) {  // Debug first two keyframes
+                Vector3 pos_change = keyframes_[i].state.position - old_pos;
+                std::cout << "Keyframe " << keyframes_[i].id << " position change: " 
+                         << pos_change.transpose() << " (norm: " << pos_change.norm() << ")" << std::endl;
+            }
         }
         
         for (size_t idx = 0; idx < lm_ids.size(); ++idx) {
-            landmarks_[lm_ids[idx]] = state.template segment<3>(num_kf * 3 + idx * 3);
+            landmarks_[lm_ids[idx]] = state.template segment<3>(num_kf * 15 + idx * 3);  // Now offset by 15*num_kf
         }
         
-        // Update current pose to match last keyframe
+        // CRITICAL FIX: Update the full trajectory history with the optimized states
+        // This mirrors the logic in the Python implementation's _update_states_from_solution
+        for (const auto& kf_in_window : keyframes_) {
+            for (auto& kf_in_history : trajectory_history_) {
+                if (kf_in_history.id == kf_in_window.id) {
+                    kf_in_history.state = kf_in_window.state.copy();
+                    break; // Found the matching keyframe, move to the next one in the window
+                }
+            }
+        }
+        
+        // Update current state to match last keyframe (full state like Python line 1055)
         if (!keyframes_.empty()) {
-            current_state_.position = keyframes_.back().state.position;
+            current_state_ = keyframes_.back().state.copy();
         }
         
         num_optimizations_++;
         return iteration + 1;
     }
     
+public:
     /**
      * Get full estimated trajectory (all frames, not just keyframes)
      */
@@ -643,7 +806,7 @@ public:
         return pose;
     }
     
-private:
+private: // Back to private
     /**
      * Check if a new keyframe should be created (Python lines 394-431)
      */
