@@ -24,7 +24,7 @@ def test_simulation_with_preintegration():
             fixed_interval=5
         )
         
-        exit_code = run_simulation(
+        output_file = run_simulation(
             trajectory="circle",
             config=None,
             duration=2.0,  # Short duration for test
@@ -36,7 +36,7 @@ def test_simulation_with_preintegration():
             keyframe_config=keyframe_config
         )
         
-        assert exit_code == 0, "Simulation should succeed"
+        assert output_file is not None and output_file.exists(), "Simulation should succeed"
         
         # Check that output file was created
         output_files = list(output_dir.glob("simulation_circle_*.json"))
@@ -86,7 +86,7 @@ def test_simulation_without_preintegration():
         output_dir = Path(tmpdir)
         
         # Run simulation without preintegration
-        exit_code = run_simulation(
+        output_file = run_simulation(
             trajectory="circle",
             config=None,
             duration=1.0,
@@ -98,7 +98,7 @@ def test_simulation_without_preintegration():
             keyframe_config=None  # Use default config
         )
         
-        assert exit_code == 0, "Simulation should succeed"
+        assert output_file is not None and output_file.exists(), "Simulation should succeed"
         
         # Check that output file was created
         output_files = list(output_dir.glob("simulation_circle_*.json"))
@@ -133,7 +133,7 @@ def test_preintegration_consistency():
         )
         
         for i in range(2):
-            exit_code = run_simulation(
+            output_file = run_simulation(
                 trajectory="spiral",
                 config=None,
                 duration=1.5,
@@ -144,7 +144,7 @@ def test_preintegration_consistency():
                 enable_preintegration=True,
                 keyframe_config=keyframe_config
             )
-            assert exit_code == 0
+            assert output_file is not None and output_file.exists()
         
         # Load both outputs
         file1 = list((output_dir / "run_0").glob("*.json"))[0]

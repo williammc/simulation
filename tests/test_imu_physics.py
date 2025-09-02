@@ -1,15 +1,24 @@
 """
 Comprehensive tests for IMU physics correctness.
 Ensures IMU measurements match expected physical behavior.
+
+CRITICAL: These tests verify the IMU preintegration gravity handling bug
+identified in context.md. The constant vertical velocity test is expected
+to FAIL with current implementation.
 """
+
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import numpy as np
 import pytest
 from src.simulation.imu_model import IMUModel
+from src.simulation.imu_integration import IMUPreintegrator
 from src.common.config import IMUConfig, IMUNoiseParams
 from src.simulation.trajectory_generator import generate_trajectory
 from src.common.data_structures import (
-    IMUCalibration, Trajectory, TrajectoryState, Pose
+    IMUCalibration, Trajectory, TrajectoryState, Pose, IMUMeasurement
 )
 
 

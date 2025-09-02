@@ -337,14 +337,20 @@ int main(int argc, char* argv[]) {
     std::cout << "\nProcessing..." << std::endl;
     auto start_time = std::chrono::high_resolution_clock::now();
     
-    // Important: Process ALL frames, not just keyframes
-    // This matches Python simple_swba_vio.py behavior
-    size_t frame_idx = 0;
+    // Identify keyframes in camera_frames
+    std::vector<size_t> keyframe_indices;
+    for (size_t i = 0; i < sim_data.camera_frames.size(); ++i) {
+        if (sim_data.camera_frames[i].is_keyframe) {
+            keyframe_indices.push_back(i);
+        }
+    }
+    std::cout << "Found " << keyframe_indices.size() << " keyframes out of " 
+             << sim_data.camera_frames.size() << " total frames" << std::endl;
+    
     size_t imu_idx = 0;
     int total_iterations = 0;
     
     std::cout << "Total IMU segments: " << sim_data.preintegrated_imu.size() << std::endl;
-    std::cout << "Total camera frames: " << sim_data.camera_frames.size() << std::endl;
     
     // Process IMU and camera frames in sequence
     for (const auto& imu_data : sim_data.preintegrated_imu) {
@@ -371,9 +377,11 @@ int main(int argc, char* argv[]) {
         // Predict with IMU
         estimator.predict(processed_imu, processed_imu.delta_t);
         
-        // Process corresponding camera frame (if available)
-        if (frame_idx < sim_data.camera_frames.size()) {
-            const auto& camera_frame = sim_data.camera_frames[frame_idx];
+        // Process corresponding keyframe (if available)
+        // Each IMU segment should correspond to a keyframe
+        if (imu_idx < keyframe_indices.size()) {
+            size_t kf_idx = keyframe_indices[imu_idx];
+            const auto& camera_frame = sim_data.camera_frames[kf_idx];
             
             // Get current state for preprocessing
             auto current_pos = estimator.getCurrentPosition();
@@ -384,23 +392,26 @@ int main(int argc, char* argv[]) {
                 camera_frame, current_pos, current_rot, landmarks_map
             );
             
-            // Update estimator (will decide internally if this is a keyframe)
+            // Update estimator with actual keyframe observations
             int iterations = estimator.update(processed_frame, landmarks_map);
             total_iterations += iterations;
             
             if (args.verbose) {
-                std::cout << "  Frame " << frame_idx << " at t=" << camera_frame.timestamp
-                         << ": " << processed_frame.measurements.size() 
+                std::cout << "  Keyframe " << imu_idx << " (frame " << kf_idx 
+                         << ") at t=" << camera_frame.timestamp
+                         << ": " << camera_frame.observations.size() << " observations, "
+                         << processed_frame.measurements.size() 
                          << " measurements, " << iterations << " iterations" << std::endl;
+            } else if (imu_idx % 5 == 0) {
+                std::cout << "  Keyframe " << imu_idx << ": " 
+                         << camera_frame.observations.size() << " observations" << std::endl;
             }
-            
-            frame_idx++;
         }
         
         // Show progress
         if ((imu_idx + 1) % 10 == 0 || args.verbose) {
             std::cout << "  Processed " << (imu_idx + 1) << "/" << sim_data.preintegrated_imu.size() 
-                     << " IMU factors, " << frame_idx << " camera frames" << std::endl;
+                     << " IMU factors" << std::endl;
         }
         imu_idx++;
     }
@@ -409,7 +420,7 @@ int main(int argc, char* argv[]) {
     auto runtime_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
     
     std::cout << "\nEstimation complete in " << runtime_ms << " ms" << std::endl;
-    std::cout << "  Processed frames: " << frame_idx << std::endl;
+    std::cout << "  Processed keyframes: " << keyframe_indices.size() << std::endl;
     std::cout << "  Keyframes: " << estimator.getNumKeyframes() << std::endl;
     std::cout << "  Landmarks: " << estimator.getNumLandmarks() << std::endl;
     std::cout << "  Total iterations: " << total_iterations << std::endl;
@@ -431,7 +442,7 @@ int main(int argc, char* argv[]) {
     result.metadata["keyframe_time_threshold"] = json(config.keyframe_time_threshold);
     result.metadata["keyframe_translation_threshold"] = json(config.keyframe_translation_threshold);
     result.metadata["keyframe_rotation_threshold"] = json(config.keyframe_rotation_threshold);
-    result.metadata["num_frames_processed"] = json(frame_idx);
+    result.metadata["num_keyframes_processed"] = json(keyframe_indices.size());
     
     // Add simulation info
     result.input_file = args.input_file;
@@ -468,7 +479,7 @@ int main(int argc, char* argv[]) {
     // Print summary
     std::cout << "\n=== Summary ===" << std::endl;
     std::cout << "Runtime:         " << runtime_ms << " ms" << std::endl;
-    std::cout << "Frames:          " << frame_idx << std::endl;
+    std::cout << "Frames:          " << keyframe_indices.size() << std::endl;
     std::cout << "Keyframes:       " << estimator.getNumKeyframes() << std::endl;
     std::cout << "Trajectory size: " << full_trajectory.size() << " poses" << std::endl;
     std::cout << "Landmarks:       " << result.landmarks.landmarks.size() << std::endl;

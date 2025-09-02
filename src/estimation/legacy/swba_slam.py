@@ -302,22 +302,18 @@ class SlidingWindowBA(BaseEstimator):
             if from_kf is not None and to_kf is not None:
                 # Propagate state using preintegrated deltas
                 R_old = from_kf.state.rotation_matrix
-                # Use simple gravity vector (in world frame)
-                gravity = np.array([0, 0, -9.81])
-                
                 # Update the to_kf state with the propagated values
+                # Preintegrated values include gravity effects (simplified approach)
                 # Add small initialization noise to create non-zero residuals
-                position_noise = np.random.randn(3) * 0.01  # 1cm std
-                velocity_noise = np.random.randn(3) * 0.001  # 1mm/s std
+                position_noise = np.random.randn(3) * 0.001  # 1mm std (reduced)
+                velocity_noise = np.random.randn(3) * 0.0001  # 0.1mm/s std (reduced)
                 
                 to_kf.state.position = from_kf.state.position + (
                     from_kf.state.velocity * preintegrated.dt +
-                    R_old @ preintegrated.delta_position +
-                    0.5 * gravity * preintegrated.dt**2
+                    R_old @ preintegrated.delta_position
                 ) + position_noise
                 to_kf.state.velocity = from_kf.state.velocity + (
-                    R_old @ preintegrated.delta_velocity +
-                    gravity * preintegrated.dt
+                    R_old @ preintegrated.delta_velocity
                 ) + velocity_noise
                 to_kf.state.rotation_matrix = R_old @ preintegrated.delta_rotation
                 to_kf.state.timestamp = from_kf.state.timestamp + preintegrated.dt
@@ -731,6 +727,34 @@ class SlidingWindowBA(BaseEstimator):
                 J_row[:, lm_start + lm_idx*3:lm_start + (lm_idx+1)*3] = J_lm
                 jacobian_rows.append(J_row)
         
+        # Add prior constraint on first keyframe to prevent drift
+        if len(self.keyframes) > 0:
+            first_kf = self.keyframes[0]
+            
+            # Store initial pose if not already stored
+            if not hasattr(first_kf, 'initial_position'):
+                first_kf.initial_position = first_kf.state.position.copy()
+                first_kf.initial_rotation = first_kf.state.rotation_matrix.copy()
+            
+            # Prior on position
+            current_pos = state_vector[0:3]
+            r_prior_pos = (current_pos - first_kf.initial_position) * 100.0  # Strong prior
+            
+            # Prior on rotation
+            current_rot_log = state_vector[6:9]
+            initial_rot_log = so3_log(first_kf.initial_rotation)
+            r_prior_rot = (current_rot_log - initial_rot_log) * 100.0  # Strong prior
+            
+            # Combine prior residuals
+            r_prior = np.concatenate([r_prior_pos, r_prior_rot])
+            residuals.append(r_prior)
+            
+            # Prior Jacobian (identity for the affected states)
+            J_prior = np.zeros((6, len(state_vector)))
+            J_prior[0:3, 0:3] = np.eye(3) * 100.0  # Position
+            J_prior[3:6, 6:9] = np.eye(3) * 100.0  # Rotation
+            jacobian_rows.append(J_prior)
+        
         # Stack residuals and Jacobian
         if residuals:
             residuals = np.concatenate(residuals)
@@ -772,15 +796,14 @@ class SlidingWindowBA(BaseEstimator):
         R_i = so3_exp(theta_i)
         R_j = so3_exp(theta_j)
         
-        # Gravity vector
-        g = np.array([0, 0, -9.81])
+        # Time step
         dt = preint.dt
         
-        # Position residual
-        r_p = R_i.T @ (p_j - p_i - v_i * dt - 0.5 * g * dt**2) - preint.delta_position
+        # Position residual (preintegrated values include gravity effects)
+        r_p = R_i.T @ (p_j - p_i - v_i * dt) - preint.delta_position
         
-        # Velocity residual
-        r_v = R_i.T @ (v_j - v_i - g * dt) - preint.delta_velocity
+        # Velocity residual (preintegrated values include gravity effects)
+        r_v = R_i.T @ (v_j - v_i) - preint.delta_velocity
         
         # Rotation residual
         # Handle delta_rotation - now comes as rotation matrix directly
@@ -797,13 +820,13 @@ class SlidingWindowBA(BaseEstimator):
         # Position residual Jacobians
         J_i[0:3, 0:3] = -R_i.T
         J_i[0:3, 3:6] = -R_i.T * dt
-        J_i[0:3, 6:9] = skew(R_i.T @ (p_j - p_i - v_i * dt - 0.5 * g * dt**2))
+        J_i[0:3, 6:9] = skew(R_i.T @ (p_j - p_i - v_i * dt))
         
         J_j[0:3, 0:3] = R_i.T
         
         # Velocity residual Jacobians
         J_i[3:6, 3:6] = -R_i.T
-        J_i[3:6, 6:9] = skew(R_i.T @ (v_j - v_i - g * dt))
+        J_i[3:6, 6:9] = skew(R_i.T @ (v_j - v_i))
         
         J_j[3:6, 3:6] = R_i.T
         

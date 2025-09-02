@@ -77,7 +77,7 @@ class TestCompletePipeline:
             )
             
             # Run simulation with preintegration
-            exit_code = run_simulation(
+            output_file = run_simulation(
                 trajectory="circle",
                 config=None,
                 duration=3.0,
@@ -89,7 +89,7 @@ class TestCompletePipeline:
                 keyframe_config=keyframe_config
             )
             
-            assert exit_code == 0, "Simulation should succeed"
+            assert output_file is not None and output_file.exists(), "Simulation should succeed"
             
             # Load generated data
             output_files = list(output_dir.glob("simulation_circle_*.json"))
@@ -137,7 +137,7 @@ class TestCompletePipeline:
                 fixed_interval=3
             )
             
-            exit_code = run_simulation(
+            output_file = run_simulation(
                 trajectory="circle",
                 config=None,
                 duration=2.0,
@@ -149,7 +149,7 @@ class TestCompletePipeline:
                 keyframe_config=keyframe_config
             )
             
-            assert exit_code == 0
+            assert output_file is not None and output_file.exists()
             
             # Load data
             output_files = list(output_dir.glob("*.json"))
@@ -236,7 +236,7 @@ class TestCompletePipeline:
                 min_time_gap=0.1
             )
             
-            exit_code = run_simulation(
+            output_file = run_simulation(
                 trajectory="circle",
                 config=None,
                 duration=3.0,
@@ -248,7 +248,7 @@ class TestCompletePipeline:
                 keyframe_config=keyframe_config
             )
             
-            assert exit_code == 0
+            assert output_file is not None and output_file.exists()
             
             # Load data
             output_files = list(output_dir.glob("*.json"))
@@ -327,7 +327,7 @@ class TestCompletePipeline:
                     )
                 
                 # Run simulation
-                exit_code = run_simulation(
+                output_file = run_simulation(
                     trajectory="spiral",
                     config=None,
                     duration=2.0,
@@ -339,7 +339,7 @@ class TestCompletePipeline:
                     keyframe_config=config
                 )
                 
-                assert exit_code == 0, f"Simulation with {strategy} should succeed"
+                assert output_file is not None and output_file.exists(), f"Simulation with {strategy} should succeed"
                 
                 # Load and verify data
                 output_files = list(output_dir.glob("*.json"))
@@ -379,7 +379,7 @@ class TestCompletePipeline:
             )
             
             # Run longer simulation
-            exit_code = run_simulation(
+            output_file = run_simulation(
                 trajectory="circle",
                 config=None,
                 duration=10.0,  # Longer duration
@@ -391,7 +391,7 @@ class TestCompletePipeline:
                 keyframe_config=keyframe_config
             )
             
-            assert exit_code == 0
+            assert output_file is not None and output_file.exists()
             
             # Load data
             output_files = list(output_dir.glob("*.json"))

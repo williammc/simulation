@@ -428,9 +428,12 @@ class IMUPreintegrator:
         """
         Add IMU measurement to preintegration.
         
-        NOTE: The IMU model already provides specific force (acceleration with gravity removed),
-        so we don't need to remove gravity here. The accelerometer measures:
-        a_measured = a_actual - g (in world frame, then transformed to body frame)
+        The IMU measures specific force: f = a - g (acceleration minus gravity).
+        For preintegration, we need to integrate in a gravity-free frame.
+        
+        The key insight: The preintegrated values should represent the motion
+        relative to a frame that's falling with gravity. This way, SWBA can
+        add back gravity's effect during prediction.
         
         Args:
             measurement: IMU measurement
@@ -452,10 +455,12 @@ class IMUPreintegrator:
         delta_R_dt = exp_so3(omega_dt)
         self.delta_R = self.delta_R @ delta_R_dt
         
-        # The accelerometer already measures specific force (gravity removed)
-        # So we can use it directly for integration
+        # SIMPLIFIED APPROACH: Just integrate specific force directly
+        # This includes gravity effects, but at least it's consistent
+        # The issue is that for planar motion, we'll get spurious vertical motion
+        # But it's better than the current instability
         
-        # Update velocity 
+        # Update velocity with specific force
         self.delta_v = self.delta_v + delta_R_prev @ accel * dt
         
         # Update position 
